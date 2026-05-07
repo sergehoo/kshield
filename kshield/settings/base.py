@@ -32,6 +32,8 @@ DJANGO_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    # django.contrib.gis activé conditionnellement dans dev.py/prod.py
+    # quand DATABASES["default"]["ENGINE"] == postgis (nécessite GDAL natif).
 ]
 
 THIRD_PARTY_APPS = [

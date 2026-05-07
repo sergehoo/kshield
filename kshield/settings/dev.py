@@ -20,22 +20,63 @@ SECRET_KEY = config(
 )
 
 # ---------------------------------------------------------------------------
-# Database — SQLite local par défaut, Postgres si DATABASE_URL fourni
+# Database — Postgres + PostGIS (recommandé). SQLite fallback.
+#
+# Priorité de configuration :
+#   1. DATABASE_URL (postgres://… ou postgis://…)
+#   2. POSTGRES_HOST / POSTGRES_DB / POSTGRES_USER / POSTGRES_PASSWORD
+#      → utilise django.contrib.gis.db.backends.postgis
+#   3. SQLite local (fallback dev sans Postgres)
 # ---------------------------------------------------------------------------
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
-    }
-}
-_DB_URL = config("DATABASE_URL", default="")
-if _DB_URL.startswith("postgres"):
-    try:
-        import dj_database_url
+def _build_databases():
+    url = config("DATABASE_URL", default="")
+    # Priorité 1 : DATABASE_URL explicite
+    if url:
+        try:
+            import dj_database_url
+            cfg = dj_database_url.parse(url)
+            # Force PostGIS dès que c'est du postgres + on a la lib gis
+            if cfg.get("ENGINE", "").endswith("postgresql"):
+                cfg["ENGINE"] = "django.contrib.gis.db.backends.postgis"
+            return {"default": cfg}
+        except ImportError:
+            # dj_database_url absent → on parse manuellement
+            pass
 
-        DATABASES["default"] = dj_database_url.parse(_DB_URL)
-    except ImportError:
-        pass
+    # Priorité 2 : variables granulaires Postgres
+    pg_host = config("POSTGRES_HOST", default="")
+    if pg_host:
+        return {
+            "default": {
+                "ENGINE": "django.contrib.gis.db.backends.postgis",
+                "NAME": config("POSTGRES_DB", default="kaydan_shield"),
+                "USER": config("POSTGRES_USER", default="kaydan_user"),
+                "PASSWORD": config("POSTGRES_PASSWORD", default=""),
+                "HOST": pg_host,
+                "PORT": config("POSTGRES_PORT", default="5432"),
+                "OPTIONS": {
+                    "sslmode": config("POSTGRES_SSLMODE", default="prefer"),
+                },
+            },
+        }
+
+    # Priorité 3 : SQLite local (utile pour démo rapide / tests sans Postgres)
+    return {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "db.sqlite3",
+        },
+    }
+
+
+DATABASES = _build_databases()
+
+# ---------------------------------------------------------------------------
+# GIS — activer django.contrib.gis SEULEMENT si la base est PostGIS
+# (évite l'erreur "Could not find the GDAL library" quand on tourne en SQLite)
+# ---------------------------------------------------------------------------
+if DATABASES["default"]["ENGINE"].endswith("postgis"):
+    INSTALLED_APPS = [*INSTALLED_APPS, "django.contrib.gis"]
 
 # ---------------------------------------------------------------------------
 # Email — console en dev

@@ -34,22 +34,31 @@ SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
 X_FRAME_OPTIONS = "DENY"
 
 # ---------------------------------------------------------------------------
-# Database — Postgres impératif
+# Database — PostGIS impératif (geofencing zones + sites)
 # ---------------------------------------------------------------------------
 try:
     import dj_database_url
 
-    DATABASES = {
-        "default": dj_database_url.parse(
-            config("DATABASE_URL"),
-            conn_max_age=600,
-            conn_health_checks=True,
-        )
-    }
+    _db_cfg = dj_database_url.parse(
+        config("DATABASE_URL"),
+        conn_max_age=600,
+        conn_health_checks=True,
+    )
+    # Force PostGIS (toutes les bases prod sont géo-localisées)
+    if _db_cfg.get("ENGINE", "").endswith("postgresql"):
+        _db_cfg["ENGINE"] = "django.contrib.gis.db.backends.postgis"
+    DATABASES = {"default": _db_cfg}
 except ImportError as exc:  # pragma: no cover
     raise RuntimeError(
         "dj-database-url est requis en production : pip install dj-database-url"
     ) from exc
+
+# ---------------------------------------------------------------------------
+# GIS — django.contrib.gis activé en prod (PostGIS toujours forcé ci-dessus)
+# Nécessite GDAL côté image Docker : `apt-get install -y gdal-bin libgdal-dev`
+# ---------------------------------------------------------------------------
+if DATABASES["default"]["ENGINE"].endswith("postgis"):
+    INSTALLED_APPS = [*INSTALLED_APPS, "django.contrib.gis"]  # noqa: F405
 
 # ---------------------------------------------------------------------------
 # Email — SMTP réel
