@@ -1,0 +1,34 @@
+{% extends "layout/base.html" %}
+{% load static %}
+
+{% block title %}Supprimer · {{ object }} · KAYDAN SHIELD{% endblock %}
+{% block page_title %}Supprimer {{ entity_label|lower }}{% endblock %}
+{% block page_subtitle %}{{ object }}{% endblock %}
+{% block breadcrumb %}{{ entity_label_plural }} · Supprimer{% endblock %}
+
+{% block page_actions %}
+  <a class="btn btn-ghost" href="{% url list_url_name %}">
+    <i data-lucide="arrow-left" style="width:16px;height:16px"></i> Retour
+  </a>
+{% endblock %}
+
+{% block content %}
+<section class="card" style="max-width:560px">
+  <div style="background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.25);border-radius:10px;padding:14px;margin-bottom:18px">
+    <strong style="color:var(--danger)">⚠ Action destructive</strong>
+    <p class="text-muted" style="margin-top:4px">
+      Êtes-vous certain de vouloir supprimer <strong>{{ object }}</strong> ? Cette action est irréversible.
+    </p>
+  </div>
+
+  <form method="post">
+    {% csrf_token %}
+    <div class="form-actions">
+      <a class="btn btn-ghost" href="{% if url_key %}{% url 'admin-'|add:url_key|add:'-detail' object.pk %}{% else %}{% url list_url_name %}{% endif %}">Annuler</a>
+      <button class="btn" type="submit" style="background:var(--danger);color:white">
+        <i data-lucide="trash-2" style="width:16px;height:16px"></i> Supprimer définitivement
+      </button>
+    </div>
+  </form>
+</section>
+{% endblock %}

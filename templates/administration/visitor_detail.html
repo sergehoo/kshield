@@ -1,0 +1,25 @@
+{% extends "administration/_detail.html" %}
+{% block content %}
+  {{ block.super }}
+
+  <section class="card mt-2" style="margin-top:18px">
+    <div class="card-title"><h3><i data-lucide="qr-code" style="color:var(--ks-orange-400)"></i> Badges QR utilisés</h3></div>
+    {% with assignments=object.visit_requests.all %}
+      {% if assignments %}
+        <p class="text-muted" style="font-size:13px">{{ assignments|length }} demande(s) de visite enregistrée(s).</p>
+        <div class="row gap-2" style="flex-wrap:wrap">
+          {% for vr in assignments|slice:":6" %}
+            {% for ba in vr.badge_assignments.all %}
+              <div style="flex:0 0 auto">
+                {% include "administration/_partials/badge_card.html" with badge=ba.badge %}
+                <div class="text-dim" style="text-align:center;font-size:11px;margin-top:4px">Visite du {{ vr.scheduled_at|date:"d/m/Y"|default:vr.created_at|date:"d/m/Y" }}</div>
+              </div>
+            {% endfor %}
+          {% endfor %}
+        </div>
+      {% else %}<p class="text-muted">Aucune visite enregistrée.</p>{% endif %}
+    {% endwith %}
+  </section>
+
+  {% include "administration/_partials/movement_timeline.html" %}
+{% endblock %}

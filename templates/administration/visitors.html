@@ -1,0 +1,54 @@
+{% extends "layout/base.html" %}
+{% load static %}
+{% block title %}Visiteurs · KAYDAN SHIELD{% endblock %}
+{% block page_title %}Visiteurs{% endblock %}
+{% block page_subtitle %}OCR pièce d'identité + QR self-service.{% endblock %}
+{% block breadcrumb %}Visiteurs{% endblock %}
+
+{% block page_actions %}
+  <a class="btn btn-ghost" href="{% url 'admin-visitrequest-create' %}"><i data-lucide="calendar-plus"></i> Nouvelle visite</a>
+  <a class="btn btn-primary" href="{% url 'admin-visitor-create' %}"><i data-lucide="user-plus"></i> Nouveau visiteur</a>
+{% endblock %}
+
+{% block content %}
+  <section class="statstrip mb-2">
+    <div><div class="label">Total visiteurs</div><div class="value">{{ total_visitors }}</div></div>
+    <div><div class="label">Visites aujourd'hui</div><div class="value">{{ today_visits }}</div></div>
+    <div><div class="label">Sur site</div><div class="value text-info">{{ on_site_count }}</div></div>
+    <div><div class="label">Pseudonymisés</div><div class="value text-warning">{{ watchlist_count }}</div></div>
+  </section>
+
+  {% include "administration/_partials/filterbar.html" with chips=chips active_chip=active_chip q=q search_placeholder="Nom, email, n° pièce…" filtered_count=filtered_count total=total_visitors %}
+
+  <section class="card" style="padding:0">
+    {% if visitors %}
+      <div class="table-wrap">
+      <table class="table">
+        <thead><tr><th>Visiteur</th><th>Pièce</th><th>Société</th><th>Contact</th><th>Statut</th><th></th></tr></thead>
+        <tbody>
+          {% for v in visitors %}
+          <tr>
+            <td><div class="row gap-2">
+              <div class="avatar" style="width:32px;height:32px;font-size:11px">{{ v.first_name|slice:":1" }}{{ v.last_name|slice:":1" }}</div>
+              <div><strong>{{ v.first_name }} {{ v.last_name }}</strong>
+              <div class="text-dim" style="font-size:11px">{{ v.nationality|default:"—" }}</div></div>
+            </div></td>
+            <td><span class="pill pill-info">{{ v.id_type|upper }}</span> <span class="tag-uid">{{ v.id_number|default:"—" }}</span></td>
+            <td>{{ v.company|default:"—" }}</td>
+            <td>{{ v.phone|default:"" }}<br><span class="text-dim" style="font-size:11px">{{ v.email|default:"" }}</span></td>
+            <td>{% if v.pseudonymized_at %}<span class="pill pill-muted">Pseudonymisé</span>{% else %}<span class="pill pill-success">Actif</span>{% endif %}</td>
+            <td><div class="row gap-2">
+              <a class="icon-btn" href="{% url 'admin-visitor-detail' v.pk %}"><i data-lucide="eye"></i></a>
+              <a class="icon-btn" href="{% url 'admin-visitor-update' v.pk %}"><i data-lucide="pencil"></i></a>
+            </div></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      </div>
+    {% else %}
+      {% include "administration/_partials/empty_card.html" with icon="user-plus" title="Aucun visiteur" cta_label="Nouveau visiteur" cta_url="/visitors-mng/new/" %}
+    {% endif %}
+    {% include "administration/_partials/pagination.html" %}
+  </section>
+{% endblock %}

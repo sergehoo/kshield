@@ -1,0 +1,53 @@
+{% extends "layout/base.html" %}
+{% load static %}
+
+{% block title %}{{ page_title }} · KAYDAN SHIELD{% endblock %}
+{% block page_title %}{{ page_title }}{% endblock %}
+{% block page_subtitle %}
+{% if object %}Modifier les informations de cet enregistrement.{% else %}Renseignez les informations ci-dessous.{% endif %}{% endblock %}
+{% block breadcrumb %}{{ entity_label_plural }} · {% if object %}Modifier{% else %}Nouveau{% endif %}{% endblock %}
+
+{% block page_actions %}
+  <a class="btn btn-ghost" href="{% url list_url_name %}">
+    <i data-lucide="arrow-left" style="width:16px;height:16px"></i> Retour à la liste
+  </a>
+{% endblock %}
+
+{% block content %}
+  <section class="card">
+    <form method="post" enctype="multipart/form-data" class="form" novalidate>
+      {% csrf_token %}
+
+      {% if form.non_field_errors %}
+        <div class="form-error" style="padding:10px;border-radius:10px;background:rgba(248,113,113,.06);border:1px solid rgba(248,113,113,.25);margin-bottom:12px">
+          {% for err in form.non_field_errors %}<div>{{ err }}</div>{% endfor %}
+        </div>
+      {% endif %}
+
+      <div class="form-grid">
+        {% for field in form %}
+          {% if field.field.widget.input_type == "textarea" or field.name == "description" or field.name == "notes" or field.name == "settings" or field.name == "payload" or field.name == "spec" or field.name == "geofence" or field.name == "permissions_text" %}
+            {% include "administration/_partials/form_field.html" with field=field span="full" %}
+          {% else %}
+            {% include "administration/_partials/form_field.html" with field=field %}
+          {% endif %}
+        {% endfor %}
+      </div>
+
+      <div class="form-actions">
+        {% if object and url_key %}
+          <a class="btn btn-ghost left" href="{% url 'admin-'|add:url_key|add:'-delete' object.pk %}" style="color:var(--danger)">
+            <i data-lucide="trash-2" style="width:16px;height:16px"></i> Supprimer
+          </a>
+        {% endif %}
+        <a class="btn btn-ghost" href="{% if object and url_key %}{% url 'admin-'|add:url_key|add:'-detail' object.pk %}{% else %}{% url list_url_name %}{% endif %}">
+          Annuler
+        </a>
+        <button class="btn btn-primary" type="submit">
+          <i data-lucide="check" style="width:16px;height:16px"></i>
+          {% if object %}Enregistrer les modifications{% else %}Créer{% endif %}
+        </button>
+      </div>
+    </form>
+  </section>
+{% endblock %}

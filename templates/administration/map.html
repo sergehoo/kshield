@@ -1,0 +1,76 @@
+{% extends "layout/base.html" %}
+{% load static %}
+{% block title %}Cartographie · KAYDAN SHIELD{% endblock %}
+{% block breadcrumb %}Cartographie{% endblock %}
+{% block page_title %}{% endblock %}
+{% block page_subtitle %}{% endblock %}
+{% block extra_head %}
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+{% endblock %}
+{% block extra_css %}
+<style>
+.main > .page-header { display: none !important; }
+.main { padding: 0 !important; overflow: hidden !important; }
+#map-container { position: fixed; top: 0; left: var(--sidebar-w,240px); right: 0; bottom: 0; }
+.is-collapsed #map-container { left: var(--sidebar-w-collapsed,76px); }
+#leaflet-map { width: 100%; height: 100%; background: #0f1d34; }
+.map-floating-panel { position: absolute; top: 14px; bottom: 14px; left: 14px; width: 320px;
+  background: rgba(17,39,66,.92); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,.1);
+  border-radius: 14px; z-index: 600; padding: 14px; overflow-y: auto; color: white; }
+.map-floating-panel h4 { font-size: 11px; text-transform: uppercase; color: var(--text-muted); margin: 0 0 6px; }
+.map-floating-panel select { width: 100%; margin-bottom: 12px; }
+</style>
+{% endblock %}
+{% block content %}
+<div id="map-container">
+  <aside class="map-floating-panel">
+    <h3 style="margin:0 0 14px;font-size:14px"><i data-lucide="map" style="color:var(--ks-orange-400)"></i> Filtres</h3>
+    <h4>Site</h4>
+    <select id="f-site" class="form-select"><option value="">Tous</option>
+      {% for s in sites %}<option value="{{ s.id }}">{{ s.name }}</option>{% endfor %}
+    </select>
+    <h4>Type</h4>
+    <select id="f-kind" class="form-select"><option value="">Tous</option>
+      <option value="employee">Employés</option><option value="worker">Ouvriers</option><option value="visitor">Visiteurs</option>
+    </select>
+    <h4>Statistiques</h4>
+    <div id="map-stats" class="text-dim" style="font-size:13px">Chargement…</div>
+  </aside>
+  <div id="leaflet-map"></div>
+</div>
+<script>
+const map = L.map("leaflet-map").setView([5.345317, -4.024429], 12);
+L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
+  {attribution:"© OpenStreetMap, © CARTO", subdomains:"abcd", maxZoom:20}).addTo(map);
+const layers = {sites:L.layerGroup().addTo(map), checkpoints:L.layerGroup().addTo(map),
+  zones:L.layerGroup().addTo(map), people:L.layerGroup().addTo(map)};
+
+async function load() {
+  const params = new URLSearchParams();
+  const s = document.getElementById("f-site").value;
+  const k = document.getElementById("f-kind").value;
+  if (s) params.set("site", s); if (k) params.set("holder_kind", k);
+  const r = await fetch(`/map/data/?${params}`);
+  if (!r.ok) return;
+  const d = await r.json();
+  Object.values(layers).forEach(l => l.clearLayers());
+  d.sites.forEach(s => L.circleMarker([s.lat,s.lng],{radius:7,color:"#F26B1F",fillColor:"#F26B1F",fillOpacity:.85})
+    .bindPopup(`<strong>${s.name}</strong>`).addTo(layers.sites));
+  d.zones.forEach(z => L.polygon(z.polygon[0].map(c=>[c[1],c[0]]),{color:"#5eaaff",fillOpacity:.2})
+    .bindPopup(z.name).addTo(layers.zones));
+  d.checkpoints.forEach(c => L.marker([c.lat,c.lng]).bindPopup(`<strong>${c.name}</strong>`).addTo(layers.checkpoints));
+  d.people.forEach(p => L.circleMarker([p.lat,p.lng],{radius:8,color:"#5eaaff",fillColor:"#5eaaff",fillOpacity:.7})
+    .bindPopup(`<strong>${p.name}</strong><br>${p.last_site}`).addTo(layers.people));
+  document.getElementById("map-stats").innerHTML =
+    `${d.stats.total_present} présent(s)<br>${d.stats.employees} empl · ${d.stats.workers} ouvr · ${d.stats.visitors} vis<br><span style="color:#e35858">${d.stats.anomalies_count} alertes</span>`;
+  if (d.sites.length > 0) {
+    const bounds = L.latLngBounds(d.sites.map(s=>[s.lat,s.lng]));
+    map.fitBounds(bounds.pad(0.2), {maxZoom:15});
+  }
+}
+document.getElementById("f-site").addEventListener("change", load);
+document.getElementById("f-kind").addEventListener("change", load);
+load(); setInterval(load, 60000);
+</script>
+{% endblock %}

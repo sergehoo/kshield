@@ -1,0 +1,21 @@
+"""
+KAYDAN SHIELD — Ancien fichier settings.py (déprécié).
+
+Les settings ont été déplacés vers le package `kshield.settings/`
+(voir base.py / dev.py / prod.py).
+
+Ce fichier reste présent pour des raisons d'historique mais n'est PLUS chargé
+par Python : le package `kshield/settings/` (avec son __init__.py) prend
+toujours la priorité sur ce module .py de même nom.
+
+Si vous tombez ici en débogage, utilisez :
+
+    DJANGO_SETTINGS_MODULE=kshield.settings.dev   # développement
+    DJANGO_SETTINGS_MODULE=kshield.settings.prod  # production
+
+Vous pouvez supprimer ce fichier sans risque.
+"""
+raise ImportError(
+    "Ce fichier est déprécié. Utilisez `kshield.settings.dev` ou "
+    "`kshield.settings.prod`. Le package `kshield/settings/` shadow ce module."
+)

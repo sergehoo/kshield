@@ -1,0 +1,35 @@
+{% extends "administration/_detail.html" %}
+{% block content %}
+  {{ block.super }}
+
+  <section class="card mt-2" style="margin-top:18px">
+    <div class="card-title"><h3><i data-lucide="hard-hat" style="color:var(--ks-orange-400)"></i> Badge RFID + Casque (couplage obligatoire)</h3></div>
+    {% if object.badge %}
+      <div class="row gap-4" style="align-items:flex-start;flex-wrap:wrap">
+        <div style="flex:0 0 auto">{% include "administration/_partials/badge_card.html" with badge=object.badge %}</div>
+        <div style="flex:1;min-width:280px">
+          <div class="detail-grid">
+            <div class="detail-row"><span class="key">Badge UHF</span><span class="val mono" style="color:var(--ks-orange-400)">{{ object.badge.uid }}</span></div>
+            <div class="detail-row"><span class="key">Casque RFID</span><span class="val">{% if object.badge.paired_helmet %}<span class="helmet-chip"><i data-lucide="hard-hat"></i> {{ object.badge.paired_helmet.serial_number }}</span>{% else %}<span class="pill pill-danger">SANS CASQUE</span>{% endif %}</span></div>
+            <div class="detail-row"><span class="key">QR couplage</span><span class="val mono" style="font-size:11px">{{ object.badge.qr_payload|truncatechars:38 }}</span></div>
+            <div class="detail-row"><span class="key">Statut</span><span class="val"><span class="pill {% if object.badge.status == 'active' %}pill-success{% else %}pill-muted{% endif %}">{{ object.badge.get_status_display }}</span></span></div>
+          </div>
+          <div class="row gap-2 mt-2">
+            <a class="btn btn-primary" href="{% url 'admin-badge-detail' object.badge.pk %}"><i data-lucide="eye"></i> Détail badge</a>
+            <a class="btn btn-ghost" href="/badges/{{ object.badge.id }}/pdf/" target="_blank"><i data-lucide="file-down"></i> PDF</a>
+          </div>
+        </div>
+      </div>
+    {% else %}
+      <p class="text-warning">⚠ Cet ouvrier n'a pas de badge ni de casque. <a href="{% url 'admin-badges' %}">Émettre depuis Badges</a>.</p>
+    {% endif %}
+  </section>
+
+  {% include "administration/_partials/movement_timeline.html" %}
+
+<style>
+.helmet-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px;
+  border-radius: 6px; background: rgba(243,183,58,0.12); border: 1px solid rgba(243,183,58,0.3);
+  color: #f3b73a; font-size: 11.5px; font-family: ui-monospace, monospace; }
+</style>
+{% endblock %}

@@ -1,0 +1,106 @@
+{# Timeline des mouvements basée sur les scans de badge.
+   Variables : movement_events, movement_total, movement_granted_30d,
+   movement_denied_30d, sites_visited, last_scan #}
+<section class="card mt-2" style="margin-top:18px">
+  <div class="card-title">
+    <h3>
+      <i data-lucide="footprints" style="width:18px;height:18px;color:var(--ks-orange-400);vertical-align:-3px"></i>
+      Mouvements & présence
+    </h3>
+  </div>
+
+  <div class="kpi-grid mb-2" style="margin-bottom:14px">
+    <div class="kpi-card kpi-info">
+      <div class="kpi-icon"><i data-lucide="scan-line"></i></div>
+      <div class="kpi-body">
+        <div class="kpi-label">Scans (total)</div>
+        <div class="kpi-value">{{ movement_total }}</div>
+        <div class="kpi-sub">depuis l'enrôlement</div>
+      </div>
+    </div>
+    <div class="kpi-card kpi-success">
+      <div class="kpi-icon"><i data-lucide="check"></i></div>
+      <div class="kpi-body">
+        <div class="kpi-label">Autorisés (30j)</div>
+        <div class="kpi-value">{{ movement_granted_30d }}</div>
+      </div>
+    </div>
+    <div class="kpi-card kpi-danger">
+      <div class="kpi-icon"><i data-lucide="x-circle"></i></div>
+      <div class="kpi-body">
+        <div class="kpi-label">Refusés (30j)</div>
+        <div class="kpi-value">{{ movement_denied_30d }}</div>
+      </div>
+    </div>
+    <div class="kpi-card kpi-orange">
+      <div class="kpi-icon"><i data-lucide="map-pin"></i></div>
+      <div class="kpi-body">
+        <div class="kpi-label">Sites visités</div>
+        <div class="kpi-value">{{ sites_visited|length }}</div>
+      </div>
+    </div>
+  </div>
+
+  {% if last_scan %}
+    <div class="alert" style="background:rgba(94,170,255,.08);border:1px solid rgba(94,170,255,.25);padding:10px 14px;border-radius:8px;margin-bottom:14px">
+      <span class="text-dim" style="font-size:11px;text-transform:uppercase">Dernier mouvement</span>
+      <div style="font-size:14px;margin-top:2px">
+        sur <strong>{{ last_scan.site.name|default:"site inconnu" }}</strong>
+        — {{ last_scan.timestamp|date:"d/m/Y à H:i:s" }}
+        {% if last_scan.decision == 'denied' %}<span class="pill pill-danger" style="margin-left:8px">Refusé</span>
+        {% elif last_scan.decision == 'granted' %}<span class="pill pill-success" style="margin-left:8px">Autorisé</span>{% endif %}
+      </div>
+    </div>
+  {% endif %}
+
+  {% if movement_events %}
+    <div class="movement-timeline">
+      {% for e in movement_events|slice:":15" %}
+        <div class="mtl-item">
+          <div class="mtl-dot {% if e.movement_kind == 'in' %}is-success{% elif e.movement_kind == 'out' %}is-warning{% endif %}"></div>
+          <div class="mtl-body">
+            <div class="row between" style="align-items:baseline">
+              <strong>
+                {% if e.movement_kind == 'in' %}Entrée
+                {% elif e.movement_kind == 'out' %}Sortie / re-scan
+                {% else %}Scan{% endif %}
+                — {{ e.site.name|default:"site ?" }}
+              </strong>
+              <span class="text-dim" style="font-size:12px">{{ e.timestamp|date:"d/m/Y H:i:s" }}</span>
+            </div>
+            <div class="text-dim" style="font-size:12px">
+              Badge <span class="mono" style="color:var(--ks-orange-400)">{{ e.badge.uid }}</span>
+              {% if e.decision == 'granted' %}<span class="pill pill-success" style="font-size:9.5px;margin-left:6px">OK</span>
+              {% elif e.decision == 'denied' %}<span class="pill pill-danger" style="font-size:9.5px;margin-left:6px">{{ e.denial_reason|default:"Refusé" }}</span>
+              {% else %}<span class="pill pill-warning" style="font-size:9.5px;margin-left:6px">{{ e.decision }}</span>{% endif %}
+            </div>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="text-dim">Aucun mouvement enregistré pour cette personne.</p>
+  {% endif %}
+</section>
+
+<style>
+.movement-timeline { position: relative; padding-left: 22px; }
+.movement-timeline:before {
+  content: ""; position: absolute; top: 0; bottom: 0; left: 9px;
+  width: 2px; background: rgba(255,255,255,0.06);
+}
+.mtl-item { position: relative; padding: 10px 0 10px 18px; min-height: 38px; }
+.mtl-dot {
+  position: absolute; left: -16px; top: 14px;
+  width: 14px; height: 14px; border-radius: 50%;
+  background: rgba(154,170,203,0.4); border: 3px solid var(--bg, #0B1B33);
+}
+.mtl-dot.is-success { background: #36c97c; }
+.mtl-dot.is-warning { background: #f3b73a; }
+.mtl-body {
+  background: rgba(255,255,255,0.02);
+  border: 1px solid rgba(255,255,255,0.04);
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+</style>

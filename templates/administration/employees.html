@@ -1,0 +1,87 @@
+{% extends "layout/base.html" %}
+{% load static admin_filters %}
+
+{% block title %}Employés · KAYDAN SHIELD{% endblock %}
+{% block page_title %}Employés{% endblock %}
+{% block page_subtitle %}Annuaire RH — porteurs de badge NFC.{% endblock %}
+{% block breadcrumb %}Employés{% endblock %}
+
+{% block page_actions %}
+  <a class="btn btn-ghost" href="{% url 'admin-face-test' %}">
+    <i data-lucide="scan-face" style="width:16px;height:16px"></i> Test reconnaissance faciale
+  </a>
+  <a class="btn btn-primary" href="{% url 'admin-employee-create' %}">
+    <i data-lucide="user-plus" style="width:16px;height:16px"></i> Nouvel employé
+  </a>
+{% endblock %}
+
+{% block content %}
+  <section class="statstrip mb-2">
+    <div><div class="label">Effectif total</div><div class="value">{{ total }}</div></div>
+    <div><div class="label">Profils faciaux</div><div class="value">{{ facial_count }}</div></div>
+    <div><div class="label">Sites autorisés</div><div class="value">{{ sites_count }}</div></div>
+    <div><div class="label">Badges actifs</div><div class="value text-success">{{ with_badge_count }}</div></div>
+  </section>
+
+  {% include "administration/_partials/filterbar.html" with chips=chips active_chip=active_chip q=q search_placeholder="Nom, matricule, email…" filtered_count=filtered_count total=total %}
+
+  {% if companies %}
+  <form method="get" class="row gap-2 mb-2" style="align-items:center">
+    {% if request.GET.q %}<input type="hidden" name="q" value="{{ request.GET.q }}">{% endif %}
+    {% if request.GET.f %}<input type="hidden" name="f" value="{{ request.GET.f }}">{% endif %}
+    <label class="text-dim" style="font-size:12px">Filiale&nbsp;:</label>
+    <select name="company" class="form-select" style="width:auto;min-width:200px" onchange="this.form.submit()">
+      <option value="">Toutes les filiales</option>
+      {% for c in companies %}<option value="{{ c.id }}" {% if company_filter == c.id|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>{% endfor %}
+    </select>
+  </form>
+  {% endif %}
+
+  <section class="card" style="padding:0">
+    {% if employees %}
+      <div class="table-wrap">
+      <table class="table">
+        <thead><tr>
+          <th>Employé</th><th>Matricule</th><th>Filiale</th><th>Département</th>
+          <th>Poste</th><th>Contrat</th><th>Statut</th><th></th>
+        </tr></thead>
+        <tbody>
+          {% for e in employees %}
+          <tr>
+            <td>
+              <div class="row">
+                {% if e.photo %}<img src="{{ e.photo.url }}" class="avatar" style="width:32px;height:32px;border-radius:50%;object-fit:cover">
+                {% else %}<div class="avatar" style="width:32px;height:32px;font-size:11px">{{ e.first_name|slice:":1" }}{{ e.last_name|slice:":1" }}</div>{% endif %}
+                <div>
+                  <div style="font-weight:600">{{ e.first_name }} {{ e.last_name }}</div>
+                  <div class="text-dim" style="font-size:12px">{{ e.email|default:"—" }}</div>
+                </div>
+              </div>
+            </td>
+            <td class="mono">{{ e.matricule }}</td>
+            <td>{% if e.company %}<span class="pill" style="background:rgba(242,107,31,.12);color:var(--ks-orange-400)">{{ e.company.name }}</span>{% else %}—{% endif %}</td>
+            <td>{{ e.department.name|default:"—" }}</td>
+            <td>{{ e.position.title|default:"—" }}</td>
+            <td><span class="pill pill-info">{{ e.get_contract_type_display }}</span></td>
+            <td>
+              {% if e.status == 'active' %}<span class="pill pill-success">Actif</span>
+              {% elif e.status == 'on_leave' %}<span class="pill pill-info">En congé</span>
+              {% else %}<span class="pill pill-muted">{{ e.get_status_display }}</span>{% endif %}
+            </td>
+            <td>
+              <div class="row gap-2">
+                <a class="icon-btn" href="{% url 'admin-employee-detail' e.pk %}"><i data-lucide="eye"></i></a>
+                <a class="icon-btn" href="{% url 'admin-employee-update' e.pk %}"><i data-lucide="pencil"></i></a>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      </div>
+    {% else %}
+      {% include "administration/_partials/empty_card.html" with icon="users" title="Aucun employé" description="Créez le premier employé de KAYDAN." cta_label="Nouvel employé" cta_url="/employees/new/" %}
+    {% endif %}
+    {% include "administration/_partials/pagination.html" %}
+  </section>
+{% endblock %}

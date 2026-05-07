@@ -1,0 +1,55 @@
+{% extends "administration/_detail.html" %}
+{% load static %}
+{% block content %}
+<section class="card" style="margin-bottom:18px">
+  <div class="row gap-4" style="align-items:center;flex-wrap:wrap">
+    {% if object.logo %}
+      <img src="{{ object.logo.url }}" alt="" style="max-width:140px;max-height:90px;object-fit:contain;background:white;border-radius:10px;padding:8px;border:1px solid var(--border)">
+    {% else %}
+      <div style="width:140px;height:90px;background:var(--surface-strong);border:1px dashed var(--border);border-radius:10px;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:11px">Sans logo</div>
+    {% endif %}
+    <div style="flex:1;min-width:240px">
+      <div class="text-dim" style="font-size:11px;text-transform:uppercase">Filiale KAYDAN</div>
+      <h2 style="margin:2px 0 4px">{{ object.name }}</h2>
+      <span class="pill pill-info">{{ object.get_sector_display }}</span>
+      {% if object.is_active %}<span class="pill pill-success">Actif</span>{% else %}<span class="pill pill-muted">Inactif</span>{% endif %}
+    </div>
+  </div>
+</section>
+
+<div class="kpi-grid" style="margin-bottom:18px">
+  <a href="{% url 'admin-employees' %}?company={{ object.id }}" class="kpi-card kpi-info">
+    <div class="kpi-icon"><i data-lucide="users"></i></div>
+    <div class="kpi-body">
+      <div class="kpi-label">Employés</div>
+      <div class="kpi-value">{{ employees_count }}</div>
+      <div class="kpi-sub">{{ employees_active }} actifs · {{ employees_with_badge }} avec badge</div>
+    </div>
+  </a>
+  <a href="{% url 'admin-workers' %}" class="kpi-card kpi-warning">
+    <div class="kpi-icon"><i data-lucide="hard-hat"></i></div>
+    <div class="kpi-body">
+      <div class="kpi-label">Ouvriers</div>
+      <div class="kpi-value">{{ workers_count }}</div>
+      <div class="kpi-sub">{{ workers_active }} actifs · {{ workers_with_badge }} avec badge</div>
+    </div>
+  </a>
+  <a href="{% url 'admin-visitors' %}" class="kpi-card kpi-purple">
+    <div class="kpi-icon"><i data-lucide="user-plus"></i></div>
+    <div class="kpi-body">
+      <div class="kpi-label">Visiteurs</div>
+      <div class="kpi-value">{{ visitors_count }}</div>
+      <div class="kpi-sub">{{ visitors_recent }} sur 30 jours</div>
+    </div>
+  </a>
+  <a href="{% url 'admin-sites' %}" class="kpi-card kpi-orange">
+    <div class="kpi-icon"><i data-lucide="map-pin"></i></div>
+    <div class="kpi-body">
+      <div class="kpi-label">Sites rattachés</div>
+      <div class="kpi-value">{{ sites_count }}</div>
+    </div>
+  </a>
+</div>
+
+{{ block.super }}
+{% endblock %}

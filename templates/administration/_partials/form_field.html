@@ -1,0 +1,17 @@
+{# Single form field rendering.
+   Variables : field (BoundField), span="full"|"" #}
+<div class="form-row {% if span == 'full' %}form-row--full{% endif %}">
+  <label class="form-label" for="{{ field.id_for_label }}">
+    {{ field.label }}
+    {% if field.field.required %}<span style="color:var(--ks-orange-400)">*</span>{% endif %}
+  </label>
+  {{ field }}
+  {% if field.help_text %}
+    <small class="form-help">{{ field.help_text }}</small>
+  {% endif %}
+  {% if field.errors %}
+    <div class="form-field-error">
+      {% for err in field.errors %}<div>{{ err }}</div>{% endfor %}
+    </div>
+  {% endif %}
+</div>

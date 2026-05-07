@@ -1,0 +1,256 @@
+{% extends "layout/base.html" %}
+{% load static admin_filters %}
+
+{% block title %}Badges · KAYDAN SHIELD{% endblock %}
+{% block page_title %}Badges & casques{% endblock %}
+{% block page_subtitle %}{{ page_subtitle }}{% endblock %}
+{% block breadcrumb %}Badges & casques{% endblock %}
+
+{% block page_actions %}
+  <a class="btn btn-ghost" href="{% url 'admin-badge-scan' %}">
+    <i data-lucide="scan-line" style="width:16px;height:16px"></i> Scanner
+  </a>
+{% endblock %}
+
+{% block content %}
+<section>
+  {# ============== KPIs globaux ============== #}
+  <div class="kpi-grid mb-2">
+    <div class="kpi-card kpi-success">
+      <div class="kpi-icon"><i data-lucide="check-circle"></i></div>
+      <div class="kpi-body">
+        <div class="kpi-label">Actifs</div>
+        <div class="kpi-value">{{ stats_active }}</div>
+        <div class="kpi-sub">+ {{ stats_assigned }} attribués</div>
+      </div>
+    </div>
+    <div class="kpi-card kpi-info">
+      <div class="kpi-icon"><i data-lucide="circle-dashed"></i></div>
+      <div class="kpi-body">
+        <div class="kpi-label">Disponibles</div>
+        <div class="kpi-value">{{ stats_available }}</div>
+        <div class="kpi-sub">prêts à attribuer</div>
+      </div>
+    </div>
+    <div class="kpi-card kpi-warning">
+      <div class="kpi-icon"><i data-lucide="pause-circle"></i></div>
+      <div class="kpi-body">
+        <div class="kpi-label">Suspendus</div>
+        <div class="kpi-value">{{ stats_suspended }}</div>
+      </div>
+    </div>
+    <div class="kpi-card kpi-muted">
+      <div class="kpi-icon"><i data-lucide="clock"></i></div>
+      <div class="kpi-body">
+        <div class="kpi-label">Expirés</div>
+        <div class="kpi-value">{{ stats_expired }}</div>
+      </div>
+    </div>
+    <div class="kpi-card kpi-danger">
+      <div class="kpi-icon"><i data-lucide="alert-octagon"></i></div>
+      <div class="kpi-body">
+        <div class="kpi-label">Perdus</div>
+        <div class="kpi-value">{{ stats_lost }}</div>
+      </div>
+    </div>
+    <div class="kpi-card kpi-danger">
+      <div class="kpi-icon"><i data-lucide="ban"></i></div>
+      <div class="kpi-body">
+        <div class="kpi-label">Révoqués</div>
+        <div class="kpi-value">{{ stats_revoked }}</div>
+      </div>
+    </div>
+    <div class="kpi-card kpi-orange">
+      <div class="kpi-icon"><i data-lucide="scan-line"></i></div>
+      <div class="kpi-body">
+        <div class="kpi-label">Scans aujourd'hui</div>
+        <div class="kpi-value">{{ scans_today }}</div>
+        <div class="kpi-sub">{{ scans_today_granted }} OK · {{ scans_today_denied }} refusés</div>
+      </div>
+    </div>
+    <div class="kpi-card kpi-orange">
+      <div class="kpi-icon"><i data-lucide="trending-up"></i></div>
+      <div class="kpi-body">
+        <div class="kpi-label">Scans 7 jours</div>
+        <div class="kpi-value">{{ scans_7d }}</div>
+      </div>
+    </div>
+  </div>
+
+  {# ============== Onglets (liens serveur) ============== #}
+  <div class="row between mb-2" style="flex-wrap:wrap;gap:12px">
+    <div class="tab-bar">
+      <a href="?{% qs_replace request tab='visitor' page=None %}" class="{% if tab == 'visitor' %}active{% endif %}">
+        Visiteurs QR ({{ visitor_pool_count|add:visitor_assigned_count }})
+      </a>
+      <a href="?{% qs_replace request tab='employee' page=None %}" class="{% if tab == 'employee' %}active{% endif %}">
+        Employés RFID ({{ employee_total }})
+      </a>
+      <a href="?{% qs_replace request tab='worker' page=None %}" class="{% if tab == 'worker' %}active{% endif %}">
+        Ouvriers RFID ({{ worker_total }})
+      </a>
+    </div>
+  </div>
+
+  {# ============== TAB Visiteurs QR ============== #}
+  {% if tab == 'visitor' %}
+  <section class="card mb-2" x-data="{count: 10, busy: false, msg: ''}">
+    <div class="card-title">
+      <h3><i data-lucide="qr-code" style="width:18px;height:18px;color:var(--ks-orange-400);vertical-align:-3px"></i> Workflow 1 — Pool QR visiteurs</h3>
+    </div>
+    <p class="text-muted" style="font-size:13px">
+      Pré-générer N badges QR « disponibles » qui pourront être attribués au fil de l'eau.
+    </p>
+    <div class="row gap-2">
+      <input type="number" x-model.number="count" min="1" max="200" class="form-input" style="width:120px">
+      <button class="btn btn-primary" :disabled="busy" @click="
+        busy = true; msg = '';
+        fetch('/api/v1/devices/badges/issue/', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json','X-CSRFToken':document.cookie.split('csrftoken=')[1]?.split(';')[0]||''},
+          body: JSON.stringify({workflow:'visitor_qr_pool', count:count})
+        }).then(r=>r.json()).then(d=>{busy=false; msg='Créé '+d.total+' badges'; setTimeout(()=>location.reload(),700)})
+          .catch(e=>{busy=false; msg='Erreur: '+e})">
+        <i data-lucide="plus" style="width:14px;height:14px"></i> <span x-text="busy?'Création…':'Générer '+count+' badges'"></span>
+      </button>
+      <span class="text-dim" x-text="msg"></span>
+    </div>
+  </section>
+
+  <section class="card" style="padding:0">
+    <div class="card-title" style="padding:14px 18px"><h3>Pool de badges QR</h3></div>
+    {% if visitor_badges %}
+      <div class="badge-grid">
+        {% for b in visitor_badges %}
+          <div class="badge-grid-item">
+            {% include "administration/_partials/badge_card.html" with badge=b %}
+            <div class="badge-actions">
+              <a class="icon-btn" href="{% url 'admin-badge-detail' b.pk %}"><i data-lucide="eye"></i></a>
+              <a class="icon-btn" href="{% url 'badge-pdf' b.pk %}" target="_blank"><i data-lucide="file-down"></i></a>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+      {% include "administration/_partials/pagination.html" %}
+    {% else %}
+      {% include "administration/_partials/empty_card.html" with icon="qr-code" title="Aucun badge QR pré-généré" description="Cliquez sur 'Générer N badges' ci-dessus." %}
+    {% endif %}
+  </section>
+  {% endif %}
+
+  {# ============== TAB Employés ============== #}
+  {% if tab == 'employee' %}
+  <section class="card mb-2" x-data="{employeeId:'',helmetId:'',needsHelmet:false,busy:false,msg:''}">
+    <div class="card-title"><h3><i data-lucide="briefcase" style="color:var(--ks-orange-400)"></i> Workflow 2 — Émettre un badge employé</h3></div>
+    <div class="grid grid-3 gap-2" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;align-items:end">
+      <div>
+        <label class="form-label">Employé sans badge</label>
+        <select class="form-select" x-model="employeeId" @change="
+          const sel = $event.target; const opt = sel.options[sel.selectedIndex];
+          const wl = opt?.dataset?.wl || 'office';
+          needsHelmet = (wl === 'field' || wl === 'both'); if (!needsHelmet) helmetId = '';">
+          <option value="">— sélectionner —</option>
+          {% for e in unbadged_employees %}<option value="{{ e.id }}" data-wl="{{ e.work_location }}">{{ e.matricule }} · {{ e.first_name }} {{ e.last_name }} · {{ e.get_work_location_display }}</option>{% endfor %}
+        </select>
+      </div>
+      <div x-show="needsHelmet" x-cloak>
+        <label class="form-label">Casque RFID</label>
+        <select class="form-select" x-model="helmetId">
+          <option value="">— casque —</option>
+          {% for h in available_helmets %}<option value="{{ h.id }}">{{ h.serial_number }}</option>{% endfor %}
+        </select>
+      </div>
+      <button class="btn btn-primary" :disabled="!employeeId||(needsHelmet&&!helmetId)||busy" @click="
+        busy=true;msg='';
+        const body={workflow:'employee',employee_id:parseInt(employeeId)};
+        if(helmetId)body.helmet_id=parseInt(helmetId);
+        fetch('/api/v1/devices/badges/issue/',{method:'POST',headers:{'Content-Type':'application/json','X-CSRFToken':document.cookie.split('csrftoken=')[1]?.split(';')[0]||''},body:JSON.stringify(body)})
+          .then(r=>r.json()).then(d=>{busy=false;msg=d.uid?'Badge '+d.uid+' émis':d.error||'Erreur';setTimeout(()=>location.reload(),700)});">
+        <i data-lucide="plus" style="width:14px;height:14px"></i> <span x-text="busy?'…':'Émettre badge'"></span>
+      </button>
+    </div>
+    <p x-show="msg" x-text="msg" class="text-dim mt-2"></p>
+  </section>
+
+  <section class="card" style="padding:0">
+    <div class="card-title" style="padding:14px 18px"><h3>Badges employés RFID</h3></div>
+    {% if employee_badges %}
+      <div class="badge-grid">
+        {% for b in employee_badges %}
+          <div class="badge-grid-item">
+            {% include "administration/_partials/badge_card.html" with badge=b %}
+            <div class="badge-actions">
+              <a class="icon-btn" href="{% url 'admin-badge-detail' b.pk %}"><i data-lucide="eye"></i></a>
+              <a class="icon-btn" href="{% url 'badge-pdf' b.pk %}" target="_blank"><i data-lucide="file-down"></i></a>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+      {% include "administration/_partials/pagination.html" %}
+    {% else %}
+      {% include "administration/_partials/empty_card.html" with icon="briefcase" title="Aucun badge employé" description="Émettez le premier badge ci-dessus." %}
+    {% endif %}
+  </section>
+  {% endif %}
+
+  {# ============== TAB Ouvriers ============== #}
+  {% if tab == 'worker' %}
+  <section class="card mb-2" x-data="{workerId:'',helmetId:'',busy:false,msg:''}">
+    <div class="card-title"><h3><i data-lucide="hard-hat" style="color:var(--ks-orange-400)"></i> Workflow 3 — Émettre badge ouvrier (couplé casque)</h3></div>
+    <div class="grid grid-3 gap-2" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;align-items:end">
+      <div>
+        <label class="form-label">Ouvrier sans badge</label>
+        <select class="form-select" x-model="workerId">
+          <option value="">— ouvrier —</option>
+          {% for w in unbadged_workers %}<option value="{{ w.id }}">{{ w.matricule }} · {{ w.first_name }} {{ w.last_name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="form-label">Casque RFID (obligatoire)</label>
+        <select class="form-select" x-model="helmetId">
+          <option value="">— casque —</option>
+          {% for h in available_helmets %}<option value="{{ h.id }}">{{ h.serial_number }}</option>{% endfor %}
+        </select>
+      </div>
+      <button class="btn btn-primary" :disabled="!workerId||!helmetId||busy" @click="
+        busy=true;msg='';
+        fetch('/api/v1/devices/badges/issue/',{method:'POST',headers:{'Content-Type':'application/json','X-CSRFToken':document.cookie.split('csrftoken=')[1]?.split(';')[0]||''},body:JSON.stringify({workflow:'worker',worker_id:parseInt(workerId),helmet_id:parseInt(helmetId)})})
+          .then(r=>r.json()).then(d=>{busy=false;msg=d.uid?'Badge '+d.uid+' émis':d.error||'Erreur';setTimeout(()=>location.reload(),700)});">
+        <i data-lucide="plus" style="width:14px;height:14px"></i> <span x-text="busy?'…':'Émettre badge + casque'"></span>
+      </button>
+    </div>
+    <p x-show="msg" x-text="msg" class="text-dim mt-2"></p>
+  </section>
+
+  <section class="card" style="padding:0">
+    <div class="card-title" style="padding:14px 18px"><h3>Badges ouvriers RFID + casques</h3></div>
+    {% if worker_badges %}
+      <div class="badge-grid">
+        {% for b in worker_badges %}
+          <div class="badge-grid-item">
+            {% include "administration/_partials/badge_card.html" with badge=b %}
+            <div class="badge-actions">
+              <a class="icon-btn" href="{% url 'admin-badge-detail' b.pk %}"><i data-lucide="eye"></i></a>
+              <a class="icon-btn" href="{% url 'badge-pdf' b.pk %}" target="_blank"><i data-lucide="file-down"></i></a>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+      {% include "administration/_partials/pagination.html" %}
+    {% else %}
+      {% include "administration/_partials/empty_card.html" with icon="hard-hat" title="Aucun badge ouvrier" description="Couplage badge + casque obligatoire." %}
+    {% endif %}
+  </section>
+  {% endif %}
+</section>
+
+<style>
+.tab-bar { display: inline-flex; gap: 4px; padding: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
+.tab-bar a { padding: 8px 14px; border-radius: 8px; font-size: 12.5px; font-weight: 600; color: var(--text-muted); text-decoration: none; }
+.tab-bar a:hover { background: var(--surface-strong); color: var(--text); }
+.tab-bar a.active { background: var(--grad-brand,var(--ks-orange-400)); color: white; }
+.badge-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; padding: 14px 18px; }
+.badge-grid-item { display: flex; flex-direction: column; gap: 8px; }
+.badge-actions { display: flex; gap: 6px; justify-content: center; }
+</style>
+{% endblock %}

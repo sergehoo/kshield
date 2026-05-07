@@ -1,0 +1,19 @@
+{% load admin_filters %}
+
+<form method="get" class="filterbar" autocomplete="off">
+  <input type="search" name="q" value="{{ q }}"
+         placeholder="{{ search_placeholder|default:'Rechercher…' }}"
+         onchange="this.form.submit()">
+  <input type="hidden" name="f" value="{{ active_chip }}">
+  {% for key, label in chips %}
+    <a class="chip {% if active_chip == key %}active{% endif %}"
+       href="?{% if q %}q={{ q|urlencode }}&amp;{% endif %}f={{ key }}">{{ label }}</a>
+  {% endfor %}
+  <span style="margin-left:auto" class="text-dim" style="font-size:12px">
+    {% if active_chip and active_chip != "all" or q %}
+      {{ filtered_count }} / {{ total }} affichés
+    {% else %}
+      {{ filtered_count|default:total }} affichés
+    {% endif %}
+  </span>
+</form>

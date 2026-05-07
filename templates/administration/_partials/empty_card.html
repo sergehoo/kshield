@@ -1,0 +1,15 @@
+{# Empty state card.
+   Variables : icon (lucide name), title, description, cta_label?, cta_url? #}
+<div class="card" style="text-align:center;padding:48px 24px">
+  <div style="width:64px;height:64px;border-radius:50%;background:rgba(242,107,31,.12);
+              display:flex;align-items:center;justify-content:center;margin:0 auto 14px">
+    <i data-lucide="{{ icon|default:'inbox' }}" style="width:30px;height:30px;color:var(--ks-orange-400)"></i>
+  </div>
+  <h3 style="margin:0 0 6px">{{ title|default:"Aucun élément" }}</h3>
+  <p class="text-muted" style="font-size:13px;max-width:480px;margin:0 auto 14px">{{ description }}</p>
+  {% if cta_label and cta_url %}
+    <a class="btn btn-primary" href="{{ cta_url }}">
+      <i data-lucide="plus" style="width:14px;height:14px"></i> {{ cta_label }}
+    </a>
+  {% endif %}
+</div>

@@ -1,0 +1,76 @@
+{% extends "layout/base.html" %}
+{% load static %}
+{% block title %}Flux temps réel · KAYDAN SHIELD{% endblock %}
+{% block page_title %}Flux temps réel{% endblock %}
+{% block page_subtitle %}{{ page_subtitle }}{% endblock %}
+{% block breadcrumb %}Flux temps réel{% endblock %}
+
+{% block page_actions %}
+  <button class="btn btn-ghost" onclick="location.reload()"><i data-lucide="refresh-cw"></i> Rafraîchir</button>
+  <a class="btn btn-primary" href="{% url 'admin-realtime-export' %}?{{ request.GET.urlencode }}"><i data-lucide="file-spreadsheet"></i> Export Excel</a>
+{% endblock %}
+
+{% block content %}
+  <section class="statstrip mb-2">
+    <div><div class="label">Scans / minute</div><div class="value">{{ events_last_min }}</div></div>
+    <div><div class="label">5 dernières min</div><div class="value">{{ events_last_5min }}</div></div>
+    <div><div class="label">Refus 1h</div><div class="value text-danger">{{ denied_last_hour }}</div></div>
+    <div><div class="label">Sites</div><div class="value">{{ sites|length }}</div></div>
+  </section>
+
+  <form method="get" class="card mb-2" style="display:grid;grid-template-columns:repeat(5,1fr) auto;gap:8px;align-items:end;padding:14px">
+    <div><label class="form-label">Période</label>
+      <select name="period" class="form-select" onchange="this.form.submit()">
+        <option value="today" {% if f_period == "today" %}selected{% endif %}>Aujourd'hui</option>
+        <option value="week" {% if f_period == "week" %}selected{% endif %}>7 jours</option>
+        <option value="month" {% if f_period == "month" %}selected{% endif %}>30 jours</option>
+        <option value="all" {% if f_period == "all" %}selected{% endif %}>Toutes</option>
+      </select></div>
+    <div><label class="form-label">Type</label>
+      <select name="holder_kind" class="form-select" onchange="this.form.submit()">
+        <option value="">Tous</option>
+        <option value="employee" {% if f_holder_kind == "employee" %}selected{% endif %}>Employés</option>
+        <option value="worker" {% if f_holder_kind == "worker" %}selected{% endif %}>Ouvriers</option>
+        <option value="visitor" {% if f_holder_kind == "visitor" %}selected{% endif %}>Visiteurs</option>
+      </select></div>
+    <div><label class="form-label">Site</label>
+      <select name="site" class="form-select" onchange="this.form.submit()">
+        <option value="">Tous</option>
+        {% for s in sites %}<option value="{{ s.id }}" {% if f_site == s.id|stringformat:"s" %}selected{% endif %}>{{ s.name }}</option>{% endfor %}
+      </select></div>
+    <div><label class="form-label">Décision</label>
+      <select name="decision" class="form-select" onchange="this.form.submit()">
+        <option value="">Toutes</option>
+        <option value="granted" {% if f_decision == "granted" %}selected{% endif %}>OK</option>
+        <option value="denied" {% if f_decision == "denied" %}selected{% endif %}>Refus</option>
+      </select></div>
+    <div><label class="form-label">Recherche UID</label>
+      <input name="individual" type="search" class="form-input" value="{{ f_individual }}"></div>
+    <button class="btn btn-primary" type="submit"><i data-lucide="filter"></i> Filtrer</button>
+  </form>
+
+  <section class="card" style="padding:0">
+    {% if events %}
+      <div class="table-wrap">
+      <table class="table">
+        <thead><tr><th>Heure</th><th>Site</th><th>Type</th><th>Personne</th><th>Badge</th><th>Décision</th></tr></thead>
+        <tbody>
+          {% for e in events %}
+          <tr>
+            <td class="mono">{{ e.timestamp|date:"d/m H:i:s" }}</td>
+            <td>{{ e.site.name|default:"—" }}</td>
+            <td>{% if e.holder_kind == 'employee' %}<span class="pill pill-info">Employé</span>{% elif e.holder_kind == 'worker' %}<span class="pill pill-warning">Ouvrier</span>{% elif e.holder_kind == 'visitor' %}<span class="pill" style="background:rgba(192,132,252,.14);color:#c084fc">Visiteur</span>{% else %}<span class="pill pill-muted">—</span>{% endif %}</td>
+            <td>{% if e.holder_obj %}<strong>{{ e.holder_obj.first_name }} {{ e.holder_obj.last_name }}</strong> <span class="text-dim">{{ e.holder_obj.matricule|default:"" }}</span>{% else %}<span class="text-dim">—</span>{% endif %}</td>
+            <td><span class="tag-uid">{{ e.badge_uid|default:"—" }}</span></td>
+            <td>{% if e.decision == 'granted' %}<span class="pill pill-success">Autorisé</span>{% elif e.decision == 'denied' %}<span class="pill pill-danger">Refusé · {{ e.denial_reason|truncatechars:24 }}</span>{% else %}<span class="pill pill-warning">{{ e.decision }}</span>{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      </div>
+      {% include "administration/_partials/pagination.html" %}
+    {% else %}
+      {% include "administration/_partials/empty_card.html" with icon="activity" title="Aucun événement" description="Élargissez les filtres ou attendez un scan." %}
+    {% endif %}
+  </section>
+{% endblock %}

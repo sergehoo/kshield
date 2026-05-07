@@ -1,0 +1,60 @@
+{% extends "layout/base.html" %}
+{% block title %}Scanner badge · KAYDAN SHIELD{% endblock %}
+{% block page_title %}Scanner un badge{% endblock %}
+{% block page_subtitle %}Saisie / scan QR — vérification immédiate.{% endblock %}
+{% block breadcrumb %}Badges · Scanner{% endblock %}
+
+{% block page_actions %}
+  <a class="btn btn-ghost" href="{% url 'admin-badges' %}"><i data-lucide="arrow-left"></i> Retour Badges</a>
+{% endblock %}
+
+{% block content %}
+<div x-data="badgeScanner()">
+  <section class="card">
+    <h3>Scan QR / UID</h3>
+    <input type="text" class="form-input" x-model="query" @keyup.enter="lookup()"
+           placeholder="UID ou QR payload, puis Entrée" autofocus
+           style="width:100%;padding:14px;font-size:16px;font-family:monospace">
+    <div class="row gap-2 mt-2">
+      <button class="btn btn-primary" @click="lookup()"><i data-lucide="search"></i> Vérifier</button>
+    </div>
+    <template x-if="result">
+      <div class="card mt-2" style="margin-top:12px">
+        <strong x-text="result.uid"></strong>
+        <div x-text="result.holder_label"></div>
+        <div class="text-dim" x-text="`Statut: ${result.status_label}`"></div>
+      </div>
+    </template>
+    <template x-if="error">
+      <div class="text-danger mt-2" x-text="error"></div>
+    </template>
+  </section>
+
+  <section class="card mt-2">
+    <h3>Activité récente (2 dernières heures)</h3>
+    {% if recent_scans %}
+      {% for s in recent_scans %}
+      <div style="padding:8px 0;border-bottom:1px solid var(--border)">
+        <span class="mono">{{ s.timestamp|date:"H:i:s" }}</span> · <span class="mono" style="color:var(--ks-orange-400)">{{ s.badge.uid }}</span> · {{ s.site.name|default:"—" }}
+        {% if s.decision == 'granted' %}<span class="pill pill-success">OK</span>{% else %}<span class="pill pill-danger">{{ s.denial_reason|default:"refusé" }}</span>{% endif %}
+      </div>
+      {% endfor %}
+    {% else %}<p class="text-dim">Aucun scan récent.</p>{% endif %}
+  </section>
+</div>
+
+<script>
+function badgeScanner() {
+  return {
+    query: "", result: null, error: "",
+    async lookup() {
+      this.error = ""; this.result = null;
+      const r = await fetch(`/api/v1/devices/badges/lookup/?q=${encodeURIComponent(this.query)}`);
+      if (r.status === 404) this.error = "Badge introuvable";
+      else if (!r.ok) this.error = `Erreur ${r.status}`;
+      else this.result = await r.json();
+    },
+  };
+}
+</script>
+{% endblock %}

@@ -1,0 +1,40 @@
+{% load admin_filters %}
+
+{% if page_obj.paginator.num_pages > 1 %}
+<nav class="pagination" aria-label="Pagination">
+  <span class="pagination__info">
+    Page <strong>{{ page_obj.number }}</strong> / {{ page_obj.paginator.num_pages }}
+    · {{ page_obj.paginator.count }} résultat{{ page_obj.paginator.count|pluralize }}
+  </span>
+
+  <div class="pagination__links">
+    {% if page_obj.has_previous %}
+      <a class="pagination__btn" href="?{% qs_replace request page=1 %}" title="Première page">«</a>
+      <a class="pagination__btn" href="?{% qs_replace request page=page_obj.previous_page_number %}" title="Précédent">‹ Préc.</a>
+    {% else %}
+      <span class="pagination__btn is-disabled">«</span>
+      <span class="pagination__btn is-disabled">‹ Préc.</span>
+    {% endif %}
+
+    {% with current=page_obj.number total=page_obj.paginator.num_pages %}
+      {% for i in page_obj.paginator.page_range %}
+        {% if i == current %}
+          <span class="pagination__btn is-active">{{ i }}</span>
+        {% elif i == 1 or i == total or i >= current|add:'-2' and i <= current|add:'2' %}
+          <a class="pagination__btn" href="?{% qs_replace request page=i %}">{{ i }}</a>
+        {% elif i == 2 and current > 4 or i == total|add:'-1' and current < total|add:'-3' %}
+          <span class="pagination__ellipsis">…</span>
+        {% endif %}
+      {% endfor %}
+    {% endwith %}
+
+    {% if page_obj.has_next %}
+      <a class="pagination__btn" href="?{% qs_replace request page=page_obj.next_page_number %}" title="Suivant">Suiv. ›</a>
+      <a class="pagination__btn" href="?{% qs_replace request page=page_obj.paginator.num_pages %}" title="Dernière">»</a>
+    {% else %}
+      <span class="pagination__btn is-disabled">Suiv. ›</span>
+      <span class="pagination__btn is-disabled">»</span>
+    {% endif %}
+  </div>
+</nav>
+{% endif %}

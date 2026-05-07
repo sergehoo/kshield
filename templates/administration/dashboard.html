@@ -1,0 +1,59 @@
+{% extends "layout/base.html" %}
+{% load static %}
+
+{% block title %}Tableau de bord · KAYDAN SHIELD{% endblock %}
+{% block page_title %}Tableau de bord{% endblock %}
+{% block page_subtitle %}Vue d'ensemble en temps réel — accès, présence, alertes.{% endblock %}
+{% block breadcrumb %}Tableau de bord{% endblock %}
+
+{% block page_actions %}
+  <a class="btn btn-ghost" href="{% url 'admin-realtime' %}">
+    <i data-lucide="activity" style="width:16px;height:16px"></i> Flux temps réel
+  </a>
+  <a class="btn btn-primary" href="{% url 'admin-map' %}">
+    <i data-lucide="map" style="width:16px;height:16px"></i> Cartographie
+  </a>
+{% endblock %}
+
+{% block content %}
+  <div class="kpi-grid mb-2">
+    <a href="{% url 'admin-employees' %}" class="kpi-card kpi-info" style="text-decoration:none">
+      <div class="kpi-icon"><i data-lucide="users"></i></div>
+      <div class="kpi-body">
+        <div class="kpi-label">Employés</div>
+        <div class="kpi-value">—</div>
+        <div class="kpi-sub">Annuaire RH</div>
+      </div>
+    </a>
+    <a href="{% url 'admin-workers' %}" class="kpi-card kpi-warning" style="text-decoration:none">
+      <div class="kpi-icon"><i data-lucide="hard-hat"></i></div>
+      <div class="kpi-body">
+        <div class="kpi-label">Ouvriers</div>
+        <div class="kpi-value">—</div>
+        <div class="kpi-sub">Chantiers</div>
+      </div>
+    </a>
+    <a href="{% url 'admin-visitors' %}" class="kpi-card kpi-purple" style="text-decoration:none">
+      <div class="kpi-icon"><i data-lucide="user-plus"></i></div>
+      <div class="kpi-body">
+        <div class="kpi-label">Visiteurs</div>
+        <div class="kpi-value">—</div>
+        <div class="kpi-sub">QR self-service</div>
+      </div>
+    </a>
+    <a href="{% url 'admin-badges' %}" class="kpi-card kpi-orange" style="text-decoration:none">
+      <div class="kpi-icon"><i data-lucide="id-card"></i></div>
+      <div class="kpi-body">
+        <div class="kpi-label">Badges</div>
+        <div class="kpi-value">—</div>
+        <div class="kpi-sub">3 workflows</div>
+      </div>
+    </a>
+  </div>
+
+  <section class="card">
+    <p class="text-muted">
+      Bienvenue sur KAYDAN SHIELD. Utilisez le menu latéral pour naviguer entre les modules.
+    </p>
+  </section>
+{% endblock %}

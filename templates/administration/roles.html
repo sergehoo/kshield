@@ -1,0 +1,29 @@
+{% extends "layout/base.html" %}
+{% block page_title %}Rôles & permissions{% endblock %}
+{% block breadcrumb %}Rôles{% endblock %}
+
+{% block page_actions %}
+  <a class="btn btn-primary" href="{% url 'admin-role-create' %}"><i data-lucide="plus"></i> Nouveau rôle</a>
+{% endblock %}
+
+{% block content %}
+{% if roles %}
+<div class="kpi-grid">
+  {% for r in roles %}
+  <div class="card" style="padding:14px">
+    <div class="text-dim" style="font-size:11px;text-transform:uppercase">{{ r.get_scope_display }}</div>
+    <h3 style="margin:2px 0 4px">{{ r.name }}</h3>
+    <code class="tag-uid">{{ r.code }}</code>
+    {% if r.description %}<p class="text-dim" style="font-size:12px;margin:8px 0">{{ r.description|truncatechars:120 }}</p>{% endif %}
+    <div class="row gap-2 mt-2">
+      <span class="pill pill-info">{{ r.user_count }} util.</span>
+      <span class="pill pill-warning">{{ r.permissions.count }} perm.</span>
+      <a class="btn btn-ghost" href="{% url 'admin-role-update' r.pk %}" style="margin-left:auto"><i data-lucide="pencil"></i></a>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+{% include "administration/_partials/empty_card.html" with icon="shield" title="Aucun rôle" cta_label="Créer un rôle" cta_url="/roles/new/" %}
+{% endif %}
+{% endblock %}

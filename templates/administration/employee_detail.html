@@ -1,0 +1,27 @@
+{% extends "administration/_detail.html" %}
+{% block content %}
+  {{ block.super }}
+
+  <section class="card mt-2" style="margin-top:18px">
+    <div class="card-title"><h3><i data-lucide="id-card" style="color:var(--ks-orange-400)"></i> Badge RFID associé</h3></div>
+    {% if object.badge %}
+      <div class="row gap-4" style="align-items:flex-start;flex-wrap:wrap">
+        <div style="flex:0 0 auto">{% include "administration/_partials/badge_card.html" with badge=object.badge %}</div>
+        <div style="flex:1;min-width:240px">
+          <div class="detail-grid">
+            <div class="detail-row"><span class="key">UID</span><span class="val mono">{{ object.badge.uid }}</span></div>
+            <div class="detail-row"><span class="key">Type</span><span class="val"><span class="pill pill-info">{{ object.badge.type|upper }}</span></span></div>
+            <div class="detail-row"><span class="key">Statut</span><span class="val"><span class="pill pill-success">{{ object.badge.get_status_display }}</span></span></div>
+            <div class="detail-row"><span class="key">Casque</span><span class="val">{% if object.badge.paired_helmet %}{{ object.badge.paired_helmet.serial_number }}{% else %}—{% endif %}</span></div>
+          </div>
+          <div class="row gap-2 mt-2">
+            <a class="btn btn-primary" href="{% url 'admin-badge-detail' object.badge.pk %}"><i data-lucide="eye"></i> Détail badge</a>
+            <a class="btn btn-ghost" href="/badges/{{ object.badge.id }}/pdf/" target="_blank"><i data-lucide="file-down"></i> PDF</a>
+          </div>
+        </div>
+      </div>
+    {% else %}<p class="text-muted">Aucun badge attribué. <a href="{% url 'admin-badges' %}">Émettre depuis Badges</a>.</p>{% endif %}
+  </section>
+
+  {% include "administration/_partials/movement_timeline.html" %}
+{% endblock %}

@@ -1,0 +1,119 @@
+services:
+  web:
+    build: .
+    container_name: kaydan_shield_web
+    restart: always
+    command: >
+      sh -c "
+      python manage.py migrate &&
+      python manage.py collectstatic --noinput &&
+      gunicorn config.asgi:application
+      -k uvicorn.workers.UvicornWorker
+      --bind 0.0.0.0:8000
+      --workers 3
+      "
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+      - static_volume:/app/staticfiles
+      - media_volume:/app/media
+    depends_on:
+      - db
+      - redis
+      - minio
+    ports:
+      - "8000:8000"
+
+  db:
+    image: postgis/postgis:16-3.4
+    container_name: kaydan_shield_db
+    restart: always
+    environment:
+      POSTGRES_DB: kaydan_shield
+      POSTGRES_USER: kaydan_user
+      POSTGRES_PASSWORD: kaydan_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7-alpine
+    container_name: kaydan_shield_redis
+    restart: always
+    ports:
+      - "6379:6379"
+
+  celery_worker:
+    build: .
+    container_name: kaydan_shield_celery_worker
+    restart: always
+    command: celery -A config worker -l info
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+      - media_volume:/app/media
+    depends_on:
+      - web
+      - redis
+      - db
+
+  celery_beat:
+    build: .
+    container_name: kaydan_shield_celery_beat
+    restart: always
+    command: celery -A config beat -l info
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    depends_on:
+      - web
+      - redis
+      - db
+
+  daphne:
+    build: .
+    container_name: kaydan_shield_daphne
+    restart: always
+    command: daphne -b 0.0.0.0 -p 8001 config.asgi:application
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    depends_on:
+      - redis
+      - db
+    ports:
+      - "8001:8001"
+
+  minio:
+    image: minio/minio:latest
+    container_name: kaydan_shield_minio
+    restart: always
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: kaydan_minio
+      MINIO_ROOT_PASSWORD: kaydan_minio_password
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+
+  adminer:
+    image: adminer:4
+    container_name: kaydan_shield_adminer
+    restart: always
+    ports:
+      - "8080:8080"
+    depends_on:
+      - db
+
+volumes:
+  postgres_data:
+  static_volume:
+  media_volume:
+  minio_data:

@@ -1,0 +1,44 @@
+{% extends "layout/base.html" %}
+{% load static %}
+
+{% block title %}{{ page_title }} · KAYDAN SHIELD{% endblock %}
+{% block page_title %}{{ object }}{% endblock %}
+{% block page_subtitle %}Détail de l'enregistrement {{ entity_label|lower }}.{% endblock %}
+{% block breadcrumb %}{{ entity_label_plural }} · {{ object }}{% endblock %}
+
+{% block page_actions %}
+  <a class="btn btn-ghost" href="{% url list_url_name %}">
+    <i data-lucide="arrow-left" style="width:16px;height:16px"></i> Retour
+  </a>
+  <a class="btn btn-ghost" href="{{ delete_url }}" style="color:var(--danger)">
+    <i data-lucide="trash-2" style="width:16px;height:16px"></i> Supprimer
+  </a>
+  <a class="btn btn-primary" href="{{ update_url }}">
+    <i data-lucide="pencil" style="width:16px;height:16px"></i> Modifier
+  </a>
+{% endblock %}
+
+{% block content %}
+  <section class="card">
+    <div class="card-title">
+      <h3><i data-lucide="info" style="width:18px;height:18px;color:var(--ks-orange-400);vertical-align:-3px"></i> Informations</h3>
+    </div>
+
+    <div class="detail-grid">
+      {% for label, value in fields %}
+        <div class="detail-row">
+          <span class="key">{{ label }}</span>
+          {% if value is None or value == "" %}
+            <span class="val empty"></span>
+          {% elif value is True %}
+            <span class="val"><span class="pill pill-success">Oui</span></span>
+          {% elif value is False %}
+            <span class="val"><span class="pill pill-muted">Non</span></span>
+          {% else %}
+            <span class="val">{{ value }}</span>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </div>
+  </section>
+{% endblock %}

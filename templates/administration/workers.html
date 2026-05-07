@@ -1,0 +1,111 @@
+{% extends "layout/base.html" %}
+{% load static admin_filters %}
+{% block title %}Ouvriers · KAYDAN SHIELD{% endblock %}
+{% block page_title %}Ouvriers{% endblock %}
+{% block page_subtitle %}Segment chantier — badge UHF + casque connecté.{% endblock %}
+{% block breadcrumb %}Ouvriers{% endblock %}
+
+{% block page_actions %}
+  <a class="btn btn-ghost" href="{% url 'admin-badges' %}?tab=worker"><i data-lucide="id-card"></i> Émettre badges</a>
+  <a class="btn btn-primary" href="{% url 'admin-worker-create' %}"><i data-lucide="user-plus"></i> Enrôler un ouvrier</a>
+{% endblock %}
+
+{% block content %}
+  <section class="statstrip mb-2">
+    <div><div class="label">Total</div><div class="value">{{ total }}</div></div>
+    <div><div class="label">Avec badge</div><div class="value text-success">{{ with_badge }}</div></div>
+    <div><div class="label">Avec casque</div><div class="value text-warning">{{ with_helmet }}</div></div>
+    <div><div class="label">Sans badge</div><div class="value text-danger">{{ without_badge }}</div></div>
+  </section>
+
+  {% include "administration/_partials/filterbar.html" with chips=chips active_chip=active_chip q=q search_placeholder="Matricule, nom, téléphone…" filtered_count=filtered_count total=total %}
+
+  <form method="get" class="row gap-2 mb-2" style="align-items:center">
+    {% if request.GET.q %}<input type="hidden" name="q" value="{{ request.GET.q }}">{% endif %}
+    {% if request.GET.f %}<input type="hidden" name="f" value="{{ request.GET.f }}">{% endif %}
+    <label class="text-dim" style="font-size:12px">Filiale&nbsp;/&nbsp;sous-traitant&nbsp;:</label>
+    <select name="subcontractor" class="form-select" style="width:auto;min-width:240px" onchange="this.form.submit()">
+      <option value="">Toutes</option>
+      <option value="direct" {% if subcontractor_filter == "direct" %}selected{% endif %}>— KAYDAN direct —</option>
+      {% for s in subcontractors %}<option value="{{ s.id }}" {% if subcontractor_filter == s.id|stringformat:"s" %}selected{% endif %}>{{ s.name }}</option>{% endfor %}
+    </select>
+  </form>
+
+  <section class="card" style="padding:0">
+    {% if workers %}
+      <div class="table-wrap">
+      <table class="table">
+        <thead><tr>
+          <th>Ouvrier</th><th>Métier</th><th>Filiale / sous-traitant</th>
+          <th>Badge UHF</th><th>Casque RFID</th><th>Statut</th><th></th>
+        </tr></thead>
+        <tbody>
+          {% for w in workers %}
+          <tr>
+            <td>
+              <div class="row">
+                {% if w.photo %}<img src="{{ w.photo.url }}" class="avatar" style="width:32px;height:32px;border-radius:50%;object-fit:cover">
+                {% else %}<div class="avatar" style="width:32px;height:32px;font-size:11px">{{ w.first_name|slice:":1" }}{{ w.last_name|slice:":1" }}</div>{% endif %}
+                <div>
+                  <div style="font-weight:600">{{ w.first_name }} {{ w.last_name }}</div>
+                  <div class="text-dim mono">{{ w.matricule }}</div>
+                </div>
+              </div>
+            </td>
+            <td>{{ w.trade.name|default:"—" }}</td>
+            <td>{% if w.subcontractor %}<span class="pill" style="background:rgba(242,107,31,.12);color:var(--ks-orange-400)">{{ w.subcontractor.name }}</span>{% else %}<span class="pill pill-info" style="font-size:10.5px">KAYDAN direct</span>{% endif %}</td>
+            <td>
+              {% if w.active_badge %}
+                <span class="badge-tip">
+                  <span class="badge-tip__trigger tag-uid" style="color:var(--ks-orange-400)">{{ w.active_badge.uid }}</span>
+                  <div class="badge-tip__panel">
+                    {% include "administration/_partials/badge_card.html" with badge=w.active_badge %}
+                  </div>
+                </span>
+              {% else %}<span class="pill pill-danger">Aucun badge</span>{% endif %}
+            </td>
+            <td>
+              {% if w.active_badge.paired_helmet %}
+                <span class="helmet-chip"><i data-lucide="hard-hat" style="width:13px;height:13px"></i> {{ w.active_badge.paired_helmet.serial_number }}</span>
+              {% elif w.active_badge %}<span class="pill pill-danger">SANS CASQUE</span>
+              {% else %}<span class="text-dim">—</span>{% endif %}
+            </td>
+            <td>
+              {% if w.status == 'active' %}<span class="pill pill-success">Actif</span>
+              {% elif w.status == 'suspended' %}<span class="pill pill-warning">Suspendu</span>
+              {% else %}<span class="pill pill-muted">{{ w.get_status_display }}</span>{% endif %}
+            </td>
+            <td>
+              <div class="row gap-2">
+                <a class="icon-btn" href="{% url 'admin-worker-detail' w.pk %}"><i data-lucide="eye"></i></a>
+                <a class="icon-btn" href="{% url 'admin-worker-update' w.pk %}"><i data-lucide="pencil"></i></a>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      </div>
+    {% else %}
+      {% include "administration/_partials/empty_card.html" with icon="hard-hat" title="Aucun ouvrier" cta_label="Enrôler un ouvrier" cta_url="/workers/new/" %}
+    {% endif %}
+    {% include "administration/_partials/pagination.html" %}
+  </section>
+
+<style>
+.badge-tip { position: relative; display: inline-block; }
+.badge-tip__trigger { cursor: pointer; border-bottom: 1px dashed rgba(242,107,31,0.45); }
+.badge-tip__panel {
+  position: absolute; z-index: 1000; bottom: calc(100% + 8px); left: 50%;
+  transform: translateX(-50%); visibility: hidden; opacity: 0;
+  transition: opacity 0.15s, visibility 0.15s; pointer-events: none;
+  background: var(--surface-strong); border: 1px solid var(--border);
+  border-radius: 12px; padding: 10px;
+  box-shadow: 0 12px 36px rgba(0,0,0,0.5); width: 280px;
+}
+.badge-tip:hover .badge-tip__panel { visibility: visible; opacity: 1; }
+.helmet-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px;
+  border-radius: 6px; background: rgba(243,183,58,0.12); border: 1px solid rgba(243,183,58,0.3);
+  color: #f3b73a; font-size: 11.5px; font-family: ui-monospace, monospace; }
+</style>
+{% endblock %}

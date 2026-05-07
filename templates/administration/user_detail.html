@@ -1,0 +1,38 @@
+{% extends "layout/base.html" %}
+{% block title %}{{ object.email }} · KAYDAN SHIELD{% endblock %}
+{% block page_title %}{{ object.get_full_name|default:object.email }}{% endblock %}
+{% block page_subtitle %}{{ object.email }}{% endblock %}
+{% block breadcrumb %}{{ breadcrumb }}{% endblock %}
+
+{% block page_actions %}
+  <a class="btn btn-ghost" href="{% url 'admin-accounts' %}"><i data-lucide="arrow-left"></i> Retour</a>
+  <a class="btn btn-ghost" href="{{ password_url }}"><i data-lucide="key"></i> Mot de passe</a>
+  <form method="post" action="{{ toggle_url }}" style="display:inline">{% csrf_token %}
+    <button class="btn btn-ghost" type="submit">{% if object.is_active %}Désactiver{% else %}Réactiver{% endif %}</button>
+  </form>
+  <a class="btn btn-primary" href="{{ update_url }}"><i data-lucide="pencil"></i> Modifier</a>
+{% endblock %}
+
+{% block content %}
+<section class="card">
+  <div class="detail-grid">
+    <div class="detail-row"><span class="key">Email</span><span class="val mono">{{ object.email }}</span></div>
+    <div class="detail-row"><span class="key">Téléphone</span><span class="val">{{ object.phone|default:"—" }}</span></div>
+    <div class="detail-row"><span class="key">Filiale</span><span class="val">{{ object.company|default:"—" }}</span></div>
+    <div class="detail-row"><span class="key">Statut</span><span class="val">{% if object.is_active %}<span class="pill pill-success">Actif</span>{% else %}<span class="pill pill-muted">Désactivé</span>{% endif %}</span></div>
+    <div class="detail-row"><span class="key">Rôle</span><span class="val">{% if object.is_superuser %}<span class="pill pill-danger">Super Admin</span>{% elif object.is_staff %}<span class="pill pill-warning">Staff</span>{% else %}<span class="pill pill-info">Utilisateur</span>{% endif %}</span></div>
+    <div class="detail-row"><span class="key">Dernière connexion</span><span class="val">{{ object.last_login|date:"d/m/Y H:i"|default:"jamais" }}</span></div>
+  </div>
+</section>
+
+{% if assignments %}
+<section class="card mt-2">
+  <h3>Rôles attribués</h3>
+  <div class="row gap-2" style="flex-wrap:wrap">
+    {% for a in assignments %}
+      <span class="pill" style="background:rgba(242,107,31,.12);color:var(--ks-orange-400)">{{ a.role.name }}</span>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+{% endblock %}

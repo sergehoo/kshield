@@ -1,0 +1,116 @@
+{% extends "layout/base.html" %}
+{% load static %}
+
+{% block title %}Badge · {{ object.uid }} · KAYDAN SHIELD{% endblock %}
+{% block page_title %}Badge {{ object.uid }}{% endblock %}
+{% block page_subtitle %}{{ object.get_category_display }} · statut <strong>{{ object.get_status_display }}</strong>{% endblock %}
+{% block breadcrumb %}Badges · {{ object.uid }}{% endblock %}
+
+{% block page_actions %}
+  <a class="btn btn-ghost" href="{% url list_url_name %}"><i data-lucide="arrow-left"></i> Retour</a>
+  <a class="btn btn-ghost" href="{{ pdf_url }}" target="_blank"><i data-lucide="file-down"></i> PDF</a>
+  <a class="btn btn-primary" href="{{ update_url }}"><i data-lucide="pencil"></i> Modifier</a>
+{% endblock %}
+
+{% block content %}
+<div x-data="badgeLifecycle({apiBase: '{{ api_base }}', currentStatus: '{{ object.status }}'})">
+
+  <section class="card" style="margin-bottom:18px">
+    <div class="row gap-4" style="align-items:center;flex-wrap:wrap">
+      <div>{% include "administration/_partials/badge_card.html" with badge=object %}</div>
+      <div style="flex:1;min-width:280px">
+        <div class="detail-grid">
+          <div class="detail-row"><span class="key">UID</span><span class="val mono" style="color:var(--ks-orange-400)">{{ object.uid }}</span></div>
+          <div class="detail-row"><span class="key">Statut</span><span class="val"><span class="pill {% if object.status == 'active' %}pill-success{% elif object.status == 'available' %}pill-info{% elif object.status == 'suspended' %}pill-warning{% else %}pill-muted{% endif %}">{{ object.get_status_display }}</span></span></div>
+          <div class="detail-row"><span class="key">Porteur</span><span class="val">{{ object.holder|default:"—" }}</span></div>
+          <div class="detail-row"><span class="key">Casque</span><span class="val">{{ object.paired_helmet.serial_number|default:"—" }}</span></div>
+          <div class="detail-row"><span class="key">Total scans</span><span class="val">{{ scans_total }} ({{ scans_granted }} OK, {{ scans_denied }} refusés)</span></div>
+        </div>
+        <div class="row gap-2 mt-2">
+          <template x-if="status === 'active' || status === 'assigned'">
+            <button class="btn btn-warning" @click="askSuspend()"><i data-lucide="pause-circle"></i> Suspendre</button>
+          </template>
+          <template x-if="status === 'suspended' || status === 'disabled'">
+            <button class="btn btn-success" @click="reactivate()"><i data-lucide="play-circle"></i> Réactiver</button>
+          </template>
+          <template x-if="status !== 'revoked'">
+            <button class="btn btn-danger" @click="askRevoke()"><i data-lucide="ban"></i> Révoquer</button>
+          </template>
+        </div>
+        <p x-show="message" x-text="message" :class="messageKind === 'error' ? 'text-danger' : 'text-success'" class="mt-2"></p>
+      </div>
+    </div>
+  </section>
+
+  {% if timeline %}
+  <section class="card" style="margin-bottom:18px">
+    <div class="card-title"><h3><i data-lucide="git-commit" style="color:var(--ks-orange-400)"></i> Cycle de vie</h3></div>
+    {% for ev in timeline %}
+      <div style="padding:8px 0;border-bottom:1px solid var(--border)">
+        <strong>{{ ev.label }}</strong> <span class="text-dim">— {{ ev.ts|date:"d/m/Y H:i" }}</span>
+        <div class="text-dim" style="font-size:12px">{{ ev.detail }}</div>
+      </div>
+    {% endfor %}
+  </section>
+  {% endif %}
+
+  {% if assignments %}
+  <section class="card" style="margin-bottom:18px;padding:0">
+    <div class="card-title" style="padding:14px 18px"><h3>Journal des attributions</h3></div>
+    <div class="table-wrap">
+      <table class="table">
+        <thead><tr><th>Porteur</th><th>Type</th><th>Attribué</th><th>Restitué</th></tr></thead>
+        <tbody>
+          {% for a in assignments %}
+          <tr><td>{{ a.holder_label }}</td><td>{{ a.get_holder_kind_display }}</td>
+            <td>{{ a.assigned_at|date:"d/m/Y H:i" }}</td>
+            <td>{% if a.released_at %}{{ a.released_at|date:"d/m/Y H:i" }}{% else %}<span class="pill pill-success">en cours</span>{% endif %}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
+
+  {% if scan_events %}
+  <section class="card" style="padding:0">
+    <div class="card-title" style="padding:14px 18px"><h3>Historique des scans (30 derniers)</h3></div>
+    <div class="table-wrap">
+      <table class="table">
+        <thead><tr><th>Horodatage</th><th>Site</th><th>Décision</th><th>Méthode</th></tr></thead>
+        <tbody>
+          {% for s in scan_events %}
+          <tr><td class="mono">{{ s.timestamp|date:"d/m/Y H:i:s" }}</td><td>{{ s.site.name|default:"—" }}</td>
+            <td>{% if s.decision == 'granted' %}<span class="pill pill-success">OK</span>{% else %}<span class="pill pill-danger">{{ s.denial_reason|default:"Refusé" }}</span>{% endif %}</td>
+            <td>{{ s.method|default:"—" }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
+</div>
+
+<script>
+function badgeLifecycle({apiBase, currentStatus}) {
+  return {
+    apiBase, status: currentStatus, message: "", messageKind: "success",
+    async _post(suffix, body=null) {
+      const csrf = document.cookie.split('; ').find(r => r.startsWith('csrftoken='))?.split('=')[1] || '';
+      const res = await fetch(`${this.apiBase}/${suffix}`, {
+        method: "POST",
+        headers: {"Content-Type":"application/json","X-CSRFToken":csrf},
+        body: body ? JSON.stringify(body) : null,
+      });
+      const d = await res.json();
+      if (!res.ok) { this.messageKind="error"; this.message=d.error||`Erreur ${res.status}`; return; }
+      this.status = d.status; this.message = `→ ${d.status_label}`;
+      setTimeout(()=>location.reload(), 700);
+    },
+    askSuspend() { const r=prompt("Motif :",""); if(r!==null) this._post("suspend/",{reason:r}); },
+    reactivate() { if(confirm("Réactiver ?")) this._post("reactivate/"); },
+    askRevoke() { if(!confirm("⚠ IRRÉVERSIBLE")) return; const r=prompt("Motif :",""); if(r!==null) this._post("revoke/",{reason:r}); },
+  };
+}
+</script>
+{% endblock %}

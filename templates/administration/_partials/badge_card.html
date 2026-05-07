@@ -1,0 +1,10 @@
+{% load static %}
+<div class="badge-card-wrap" data-status="{{ badge.status }}">
+  <a class="badge-card-img-link" href="{% url 'badge-pdf' badge.pk %}" target="_blank"
+     title="Ouvrir le PDF">
+    <img class="badge-card-img"
+         src="{% url 'badge-thumbnail' badge.pk %}"
+         alt="Badge {{ badge.uid }}"
+         loading="lazy">
+  </a>
+</div>
