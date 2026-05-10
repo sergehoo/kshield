@@ -1,42 +1,79 @@
 {% extends "layout/base.html" %}
-{% load static %}
+{% load static admin_filters %}
+
 {% block title %}Visiteurs · KAYDAN SHIELD{% endblock %}
 {% block page_title %}Visiteurs{% endblock %}
-{% block page_subtitle %}OCR pièce d'identité + QR self-service.{% endblock %}
+{% block page_subtitle %}Pré-enregistrement, QR self-service, check-in et liste rouge.{% endblock %}
 {% block breadcrumb %}Visiteurs{% endblock %}
 
 {% block page_actions %}
-  <a class="btn btn-ghost" href="{% url 'admin-visitrequest-create' %}"><i data-lucide="calendar-plus"></i> Nouvelle visite</a>
-  <a class="btn btn-primary" href="{% url 'admin-visitor-create' %}"><i data-lucide="user-plus"></i> Nouveau visiteur</a>
+  {% if tab == "purposes" %}
+    <a class="btn btn-primary" href="{% url 'admin-visitpurpose-create' %}"><i data-lucide="plus" style="width:14px;height:14px"></i> Nouveau motif</a>
+  {% elif tab == "watchlist" %}
+    <a class="btn btn-primary" href="{% url 'admin-watchlist-create' %}"><i data-lucide="shield-x" style="width:14px;height:14px"></i> Ajouter à la liste rouge</a>
+  {% elif tab == "invitations" %}
+    <a class="btn btn-primary" href="{% url 'admin-visitorinvitation-create' %}"><i data-lucide="send" style="width:14px;height:14px"></i> Nouvelle invitation</a>
+  {% elif tab == "requests" %}
+    <a class="btn btn-primary" href="{% url 'admin-visitrequest-create' %}"><i data-lucide="plus" style="width:14px;height:14px"></i> Nouvelle demande</a>
+  {% else %}
+    <a class="btn btn-primary" href="{% url 'admin-visitor-create' %}"><i data-lucide="user-plus" style="width:14px;height:14px"></i> Nouveau visiteur</a>
+  {% endif %}
 {% endblock %}
 
 {% block content %}
   <section class="statstrip mb-2">
-    <div><div class="label">Total visiteurs</div><div class="value">{{ total_visitors }}</div></div>
-    <div><div class="label">Visites aujourd'hui</div><div class="value">{{ today_visits }}</div></div>
-    <div><div class="label">Sur site</div><div class="value text-info">{{ on_site_count }}</div></div>
-    <div><div class="label">Pseudonymisés</div><div class="value text-warning">{{ watchlist_count }}</div></div>
+    <div><div class="label">Visiteurs</div><div class="value">{{ count_visitors }}</div></div>
+    <div><div class="label">Demandes en attente</div><div class="value text-warning">{{ count_pending }}</div></div>
+    <div><div class="label">Sur site</div><div class="value text-success">{{ on_site_count }}</div></div>
+    <div><div class="label">Pass actifs</div><div class="value">{{ count_passes }}</div></div>
+    <div><div class="label">Liste rouge</div><div class="value text-danger">{{ count_watchlist }}</div></div>
   </section>
 
-  {% include "administration/_partials/filterbar.html" with chips=chips active_chip=active_chip q=q search_placeholder="Nom, email, n° pièce…" filtered_count=filtered_count total=total_visitors %}
+  <nav class="tabs mb-2">
+    <a class="tab {% if tab == 'visitors' %}is-active{% endif %}" href="?tab=visitors">
+      Visiteurs <span class="text-dim" style="font-size:10px">({{ count_visitors }})</span>
+    </a>
+    <a class="tab {% if tab == 'requests' %}is-active{% endif %}" href="?tab=requests">
+      Demandes <span class="text-dim" style="font-size:10px">({{ count_requests }})</span>
+    </a>
+    <a class="tab {% if tab == 'invitations' %}is-active{% endif %}" href="?tab=invitations">
+      Invitations <span class="text-dim" style="font-size:10px">({{ count_invitations }})</span>
+    </a>
+    <a class="tab {% if tab == 'passes' %}is-active{% endif %}" href="?tab=passes">
+      Pass <span class="text-dim" style="font-size:10px">({{ count_passes }})</span>
+    </a>
+    <a class="tab {% if tab == 'watchlist' %}is-active{% endif %}" href="?tab=watchlist">
+      Liste rouge <span class="text-dim" style="font-size:10px">({{ count_watchlist }})</span>
+    </a>
+    <a class="tab {% if tab == 'purposes' %}is-active{% endif %}" href="?tab=purposes">
+      Motifs <span class="text-dim" style="font-size:10px">({{ count_purposes }})</span>
+    </a>
+  </nav>
 
-  <section class="card" style="padding:0">
-    {% if visitors %}
-      <div class="table-wrap">
-      <table class="table">
-        <thead><tr><th>Visiteur</th><th>Pièce</th><th>Société</th><th>Contact</th><th>Statut</th><th></th></tr></thead>
+  {% if tab == 'visitors' %}
+    {% include "administration/_partials/filterbar.html" with chips=chips active_chip=active_chip q=q search_placeholder="Nom, CNI, email…" filtered_count=filtered_count total=total_visitors %}
+    <section class="card" style="padding:0">
+      {% if visitors %}
+      <div class="table-wrap"><table class="table">
+        <thead><tr>
+          <th>Visiteur</th><th>CNI</th><th>Société</th><th>Téléphone</th><th>Statut</th><th></th>
+        </tr></thead>
         <tbody>
           {% for v in visitors %}
           <tr>
-            <td><div class="row gap-2">
-              <div class="avatar" style="width:32px;height:32px;font-size:11px">{{ v.first_name|slice:":1" }}{{ v.last_name|slice:":1" }}</div>
-              <div><strong>{{ v.first_name }} {{ v.last_name }}</strong>
-              <div class="text-dim" style="font-size:11px">{{ v.nationality|default:"—" }}</div></div>
-            </div></td>
-            <td><span class="pill pill-info">{{ v.id_type|upper }}</span> <span class="tag-uid">{{ v.id_number|default:"—" }}</span></td>
+            <td>
+              <div class="row" style="gap:10px;align-items:center">
+                <div class="avatar" style="width:32px;height:32px;font-size:11px;background:rgba(167,139,250,.15);color:#a78bfa">{{ v.first_name|slice:":1" }}{{ v.last_name|slice:":1" }}</div>
+                <div>
+                  <div style="font-weight:600">{{ v.first_name }} {{ v.last_name }}</div>
+                  <div class="text-dim" style="font-size:11px">{{ v.email|default:"—" }}</div>
+                </div>
+              </div>
+            </td>
+            <td class="mono" style="font-size:11px">{{ v.id_number|default:"—" }}</td>
             <td>{{ v.company|default:"—" }}</td>
-            <td>{{ v.phone|default:"" }}<br><span class="text-dim" style="font-size:11px">{{ v.email|default:"" }}</span></td>
-            <td>{% if v.pseudonymized_at %}<span class="pill pill-muted">Pseudonymisé</span>{% else %}<span class="pill pill-success">Actif</span>{% endif %}</td>
+            <td class="mono" style="font-size:11px">{{ v.phone|default:"—" }}</td>
+            <td>{% if v.pseudonymized_at %}<span class="pill pill-muted">Pseudo</span>{% else %}<span class="pill pill-success">Actif</span>{% endif %}</td>
             <td><div class="row gap-2">
               <a class="icon-btn" href="{% url 'admin-visitor-detail' v.pk %}"><i data-lucide="eye"></i></a>
               <a class="icon-btn" href="{% url 'admin-visitor-update' v.pk %}"><i data-lucide="pencil"></i></a>
@@ -44,11 +81,172 @@
           </tr>
           {% endfor %}
         </tbody>
-      </table>
-      </div>
-    {% else %}
-      {% include "administration/_partials/empty_card.html" with icon="user-plus" title="Aucun visiteur" cta_label="Nouveau visiteur" cta_url="/visitors-mng/new/" %}
-    {% endif %}
-    {% include "administration/_partials/pagination.html" %}
-  </section>
+      </table></div>
+      {% else %}{% include "administration/_partials/empty_card.html" with icon="user-plus" title="Aucun visiteur" cta_label="Créer un visiteur" cta_url="/visitors-mng/new/" %}{% endif %}
+      {% include "administration/_partials/pagination.html" %}
+    </section>
+
+  {% elif tab == 'requests' %}
+    <section class="card mb-2" style="padding:12px 16px">
+      <form method="get" class="row gap-2" style="align-items:center">
+        <input type="hidden" name="tab" value="requests">
+        <select name="status" class="form-select" style="max-width:200px" onchange="this.form.submit()">
+          <option value="">Tous les statuts</option>
+          <option value="pending" {% if req_status == "pending" %}selected{% endif %}>En attente</option>
+          <option value="approved" {% if req_status == "approved" %}selected{% endif %}>Approuvée</option>
+          <option value="checked_in" {% if req_status == "checked_in" %}selected{% endif %}>Sur site</option>
+          <option value="completed" {% if req_status == "completed" %}selected{% endif %}>Terminée</option>
+          <option value="rejected" {% if req_status == "rejected" %}selected{% endif %}>Rejetée</option>
+          <option value="cancelled" {% if req_status == "cancelled" %}selected{% endif %}>Annulée</option>
+        </select>
+      </form>
+    </section>
+    <section class="card" style="padding:0">
+      {% if visit_requests %}
+      <div class="table-wrap"><table class="table">
+        <thead><tr>
+          <th>Visiteur</th><th>Site</th><th>Hôte</th><th>Mode</th><th>Prévue</th><th>Statut</th><th>Actions</th>
+        </tr></thead>
+        <tbody>
+          {% for vr in visit_requests %}
+          <tr>
+            <td><strong>{{ vr.visitor.first_name }} {{ vr.visitor.last_name }}</strong></td>
+            <td>{{ vr.site.name|default:"—" }}</td>
+            <td>{% if vr.host_employee %}{{ vr.host_employee.first_name }} {{ vr.host_employee.last_name }}{% else %}—{% endif %}</td>
+            <td><span class="pill pill-info">{{ vr.get_mode_display }}</span></td>
+            <td class="mono" style="font-size:11px">{{ vr.scheduled_at|date:"d/m H:i"|default:"—" }}</td>
+            <td>
+              {% if vr.status == 'pending' %}<span class="pill pill-warning">En attente</span>
+              {% elif vr.status == 'approved' %}<span class="pill pill-info">Approuvée</span>
+              {% elif vr.status == 'checked_in' %}<span class="pill pill-success">Sur site</span>
+              {% elif vr.status == 'completed' %}<span class="pill pill-muted">Terminée</span>
+              {% elif vr.status == 'rejected' %}<span class="pill pill-danger">Rejetée</span>
+              {% else %}<span class="pill pill-muted">{{ vr.get_status_display }}</span>{% endif %}
+            </td>
+            <td>
+              <div class="row gap-2" style="flex-wrap:wrap">
+                <a class="icon-btn" href="{% url 'admin-visitrequest-detail' vr.pk %}" title="Détail"><i data-lucide="eye"></i></a>
+                {% if vr.status == 'pending' %}
+                <form method="post" action="{% url 'admin-visitrequest-action' vr.pk 'approve' %}" style="display:inline">{% csrf_token %}
+                  <button class="icon-btn" type="submit" title="Approuver" style="color:var(--success)"><i data-lucide="check"></i></button>
+                </form>
+                <form method="post" action="{% url 'admin-visitrequest-action' vr.pk 'reject' %}" style="display:inline">{% csrf_token %}
+                  <button class="icon-btn" type="submit" title="Rejeter" style="color:var(--danger)"><i data-lucide="x"></i></button>
+                </form>
+                {% endif %}
+                {% if vr.status == 'approved' or vr.status == 'pending' %}
+                <form method="post" action="{% url 'admin-visitrequest-action' vr.pk 'check_in' %}" style="display:inline">{% csrf_token %}
+                  <button class="icon-btn" type="submit" title="Check-in" style="color:var(--info)"><i data-lucide="log-in"></i></button>
+                </form>
+                {% endif %}
+                {% if vr.status == 'checked_in' %}
+                <form method="post" action="{% url 'admin-visitrequest-action' vr.pk 'check_out' %}" style="display:inline">{% csrf_token %}
+                  <button class="icon-btn" type="submit" title="Check-out" style="color:var(--ks-orange-400)"><i data-lucide="log-out"></i></button>
+                </form>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table></div>
+      {% else %}{% include "administration/_partials/empty_card.html" with icon="calendar-clock" title="Aucune demande de visite" cta_label="Nouvelle demande" cta_url="/visit-requests/new/" %}{% endif %}
+      {% include "administration/_partials/pagination.html" %}
+    </section>
+
+  {% elif tab == 'invitations' %}
+    <section class="card" style="padding:0">
+      {% if invitations %}
+      <div class="table-wrap"><table class="table">
+        <thead><tr><th>Demande</th><th>Email</th><th>Téléphone</th><th>Token</th><th>Envoyée</th><th>Utilisée</th><th></th></tr></thead>
+        <tbody>
+          {% for inv in invitations %}
+          <tr>
+            <td>{% if inv.visit_request %}{{ inv.visit_request.visitor.first_name }} {{ inv.visit_request.visitor.last_name }}{% else %}—{% endif %}</td>
+            <td>{{ inv.sent_to_email|default:"—" }}</td>
+            <td class="mono" style="font-size:11px">{{ inv.sent_to_phone|default:"—" }}</td>
+            <td class="mono" style="font-size:10px">{{ inv.token|slice:":12" }}…</td>
+            <td>{{ inv.sent_at|date:"d/m H:i"|default:"—" }}</td>
+            <td>{% if inv.used_at %}<span class="pill pill-success">Oui</span>{% else %}<span class="pill pill-muted">Non</span>{% endif %}</td>
+            <td><a class="icon-btn" href="{% url 'admin-visitorinvitation-detail' inv.pk %}"><i data-lucide="eye"></i></a></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table></div>
+      {% else %}{% include "administration/_partials/empty_card.html" with icon="send" title="Aucune invitation envoyée" cta_label="Nouvelle invitation" cta_url="/visit-invitations/new/" %}{% endif %}
+      {% include "administration/_partials/pagination.html" %}
+    </section>
+
+  {% elif tab == 'passes' %}
+    <section class="card" style="padding:0">
+      {% if passes %}
+      <div class="table-wrap"><table class="table">
+        <thead><tr><th>Visiteur</th><th>Type</th><th>Numéro série</th><th>Valable du</th><th>Au</th><th>Statut</th></tr></thead>
+        <tbody>
+          {% for p in passes %}
+          <tr>
+            <td>{% if p.visit_request %}{{ p.visit_request.visitor.first_name }} {{ p.visit_request.visitor.last_name }}{% else %}—{% endif %}</td>
+            <td><span class="pill pill-info">{{ p.get_type_display }}</span></td>
+            <td class="mono" style="font-size:11px">{{ p.serial_number|default:"—" }}</td>
+            <td class="mono" style="font-size:11px">{{ p.valid_from|date:"d/m H:i" }}</td>
+            <td class="mono" style="font-size:11px">{{ p.valid_until|date:"d/m H:i" }}</td>
+            <td>{% if p.revoked_at %}<span class="pill pill-danger">Révoqué</span>{% else %}<span class="pill pill-success">Actif</span>{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table></div>
+      {% else %}{% include "administration/_partials/empty_card.html" with icon="ticket" title="Aucun pass émis" %}{% endif %}
+      {% include "administration/_partials/pagination.html" %}
+    </section>
+
+  {% elif tab == 'watchlist' %}
+    <section class="card" style="padding:0">
+      {% if watchlist %}
+      <div class="table-wrap"><table class="table">
+        <thead><tr><th>Personne</th><th>CNI</th><th>Site</th><th>Motif</th><th>Statut</th><th>Expire</th><th></th></tr></thead>
+        <tbody>
+          {% for w in watchlist %}
+          <tr>
+            <td><strong>{{ w.full_name }}</strong></td>
+            <td class="mono" style="font-size:11px">{{ w.id_number|default:"—" }}</td>
+            <td>{{ w.site.name|default:"Tous sites" }}</td>
+            <td>{{ w.reason|truncatechars:40 }}</td>
+            <td>{% if w.is_active %}<span class="pill pill-danger">Active</span>{% else %}<span class="pill pill-muted">Levée</span>{% endif %}</td>
+            <td class="mono" style="font-size:11px">{{ w.expires_at|date:"d/m/Y"|default:"—" }}</td>
+            <td><div class="row gap-2">
+              <a class="icon-btn" href="{% url 'admin-watchlist-update' w.pk %}"><i data-lucide="pencil"></i></a>
+              <a class="icon-btn" href="{% url 'admin-watchlist-delete' w.pk %}" style="color:var(--danger)"><i data-lucide="trash-2"></i></a>
+            </div></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table></div>
+      {% else %}{% include "administration/_partials/empty_card.html" with icon="shield-x" title="Aucun visiteur en liste rouge" cta_label="Ajouter" cta_url="/watchlists/new/" %}{% endif %}
+      {% include "administration/_partials/pagination.html" %}
+    </section>
+
+  {% elif tab == 'purposes' %}
+    <section class="card" style="padding:0">
+      {% if purposes %}
+      <div class="table-wrap"><table class="table">
+        <thead><tr><th>Code</th><th>Libellé</th><th>Approbation requise</th><th>Statut</th><th></th></tr></thead>
+        <tbody>
+          {% for p in purposes %}
+          <tr>
+            <td class="mono">{{ p.code }}</td>
+            <td>{{ p.label }}</td>
+            <td>{% if p.requires_approval %}<span class="pill pill-warning">Oui</span>{% else %}<span class="pill pill-muted">Non</span>{% endif %}</td>
+            <td>{% if p.is_active %}<span class="pill pill-success">Actif</span>{% else %}<span class="pill pill-muted">Inactif</span>{% endif %}</td>
+            <td><div class="row gap-2">
+              <a class="icon-btn" href="{% url 'admin-visitpurpose-update' p.pk %}"><i data-lucide="pencil"></i></a>
+              <a class="icon-btn" href="{% url 'admin-visitpurpose-delete' p.pk %}" style="color:var(--danger)"><i data-lucide="trash-2"></i></a>
+            </div></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table></div>
+      {% else %}{% include "administration/_partials/empty_card.html" with icon="target" title="Aucun motif configuré" cta_label="Créer" cta_url="/visit-purposes/new/" %}{% endif %}
+      {% include "administration/_partials/pagination.html" %}
+    </section>
+  {% endif %}
 {% endblock %}

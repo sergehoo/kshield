@@ -39,7 +39,11 @@ class InjectKaydanTenantMixin:
 # Mixin commun
 # ---------------------------------------------------------------------------
 class AdminContextMixin:
-    """Pose les variables consommées par templates/layout/base.html."""
+    """Pose les variables consommées par templates/layout/base.html.
+
+    Force aussi l'authentification — toutes les vues CRUD du back-office
+    nécessitent un user connecté.
+    """
 
     active_nav: str = ""
     page_title: str = ""
@@ -47,6 +51,13 @@ class AdminContextMixin:
     list_url_name: str = ""
     entity_label: str = "Élément"
     entity_label_plural: str = "Éléments"
+
+    def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            from urllib.parse import urlencode
+            from django.shortcuts import redirect
+            return redirect(f"/auth/login/?{urlencode({'next': request.get_full_path()})}")
+        return super().dispatch(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
@@ -59,6 +70,11 @@ class AdminContextMixin:
             "entity_label_plural": self.entity_label_plural,
             "open_alerts_count": self._safe_count("antifraud", "FraudAlert", status="open"),
         })
+        try:
+            from accounts.rbac import user_permissions
+            ctx["user_perms"] = user_permissions(self.request.user)
+        except Exception:
+            ctx["user_perms"] = set()
         return ctx
 
     @staticmethod
@@ -611,20 +627,26 @@ def _holder_movement_extras(holder_kind: str):
 # Lazy-load des modèles
 # ---------------------------------------------------------------------------
 def _build_all():
+    from access_control.models import AccessRule
     from ai_assistant.models import AIPromptTemplate
-    from antifraud.models import FraudRule
-    from attendance.models import LeaveRequest, OvertimeRule
+    from antifraud.models import FraudInvestigation, FraudRule
+    from attendance.models import (AttendanceCorrection, LeaveRequest,
+                                      OvertimeCalculation, OvertimeRule, Roster)
     from audit.models import (ConformityRegister, DataExportRequest,
                                 LegalRetentionPolicy)
     from core.models import Company, FeatureFlag, SiteGateway, Tenant
-    from devices.models import Badge, Device, DeviceModel as DM, Helmet
+    from devices.models import (Badge, Device, DeviceMaintenance,
+                                   DeviceModel as DM, FirmwareVersion,
+                                   Helmet, OTAUpdate)
     from employees.models import Employee
     from mobile_sync.models import MobileDevice
     from notifications.models import NotificationTemplate
-    from ouvriers.models import Subcontractor, Worker
-    from reports.models import Report, ReportSchedule
+    from ouvriers.models import (Crew, Subcontractor, Worker,
+                                    WorkerAssignment, WorkerCertification)
+    from reports.models import Dashboard, DashboardWidget, Report, ReportSchedule
     from sites.models import Site, Zone
-    from visitors.models import Visitor, VisitRequest
+    from visitors.models import (Visitor, VisitorInvitation, VisitorPass,
+                                   VisitPurpose, VisitRequest, Watchlist)
 
     def C(key, **kwargs):
         kwargs.setdefault("url_key", key)
@@ -658,7 +680,8 @@ def _build_all():
         # Terrain
         C("site", model=Site, form_class=kforms.SiteForm,
           active_nav="sites", list_url_name="admin-sites",
-          url_prefix="sites", entity_label="Site", entity_label_plural="Sites"),
+          url_prefix="sites", entity_label="Site", entity_label_plural="Sites",
+          detail_template="administration/site_detail.html"),
         C("zone", model=Zone, form_class=kforms.ZoneForm,
           active_nav="sites", list_url_name="admin-sites",
           url_prefix="zones", entity_label="Zone", entity_label_plural="Zones"),
@@ -755,6 +778,97 @@ def _build_all():
           active_nav="ai", list_url_name="admin-ai",
           url_prefix="ai-templates", entity_label="Prompt IA",
           entity_label_plural="Prompts IA"),
+
+        # ===================== Workflow visiteurs (P0) =====================
+        C("visitpurpose", model=VisitPurpose, form_class=kforms.VisitPurposeForm,
+          active_nav="visitors", list_url_name="admin-visitors",
+          url_prefix="visit-purposes", entity_label="Motif de visite",
+          entity_label_plural="Motifs de visite"),
+        C("visitorpass", model=VisitorPass, form_class=kforms.VisitorPassForm,
+          active_nav="visitors", list_url_name="admin-visitors",
+          url_prefix="visitor-passes", entity_label="Pass visiteur",
+          entity_label_plural="Pass visiteurs"),
+        C("watchlist", model=Watchlist, form_class=kforms.WatchlistForm,
+          active_nav="visitors", list_url_name="admin-visitors",
+          url_prefix="watchlists", entity_label="Liste rouge",
+          entity_label_plural="Liste rouge"),
+        C("visitorinvitation", model=VisitorInvitation,
+          form_class=kforms.VisitorInvitationForm,
+          active_nav="visitors", list_url_name="admin-visitors",
+          url_prefix="visit-invitations", entity_label="Invitation",
+          entity_label_plural="Invitations"),
+
+        # ===================== Fraude (P0 #2) =====================
+        C("fraudinvestigation", model=FraudInvestigation,
+          form_class=kforms.FraudInvestigationForm,
+          active_nav="antifraud", list_url_name="admin-antifraud",
+          url_prefix="fraud-investigations", entity_label="Enquête anti-fraude",
+          entity_label_plural="Enquêtes anti-fraude"),
+
+        # ===================== AccessRule (P0 #3) =====================
+        C("accessrule", model=AccessRule, form_class=kforms.AccessRuleForm,
+          active_nav="access", list_url_name="admin-access-rules",
+          url_prefix="access-rules", entity_label="Règle d'accès",
+          entity_label_plural="Règles d'accès"),
+
+        # ===================== Dashboards configurables (P3) =====================
+        C("dashboard", model=Dashboard, form_class=kforms.DashboardForm,
+          active_nav="reports", list_url_name="admin-reports",
+          url_prefix="dashboards", entity_label="Dashboard",
+          entity_label_plural="Dashboards"),
+        C("dashwidget", model=DashboardWidget,
+          form_class=kforms.DashboardWidgetForm,
+          active_nav="reports", list_url_name="admin-reports",
+          url_prefix="dashboard-widgets", entity_label="Widget",
+          entity_label_plural="Widgets"),
+
+        # ===================== Devices monitoring — P1 #4 =====================
+        C("devicemaint", model=DeviceMaintenance,
+          form_class=kforms.DeviceMaintenanceForm,
+          active_nav="devices", list_url_name="admin-devices",
+          url_prefix="device-maintenances", entity_label="Maintenance device",
+          entity_label_plural="Maintenances devices"),
+        C("firmware", model=FirmwareVersion,
+          form_class=kforms.FirmwareVersionForm,
+          active_nav="devices", list_url_name="admin-devices",
+          url_prefix="firmwares", entity_label="Firmware",
+          entity_label_plural="Firmwares"),
+        C("ota", model=OTAUpdate, form_class=kforms.OTAUpdateForm,
+          active_nav="devices", list_url_name="admin-devices",
+          url_prefix="ota-updates", entity_label="Update OTA",
+          entity_label_plural="Updates OTA"),
+
+        # ===================== Pointage RH — P1 #2 =====================
+        C("attendancecorrection", model=AttendanceCorrection,
+          form_class=kforms.AttendanceCorrectionForm,
+          active_nav="attendance", list_url_name="admin-attendance",
+          url_prefix="attendance-corrections", entity_label="Correction pointage",
+          entity_label_plural="Corrections pointage"),
+        C("roster", model=Roster, form_class=kforms.RosterForm,
+          active_nav="attendance", list_url_name="admin-attendance",
+          url_prefix="rosters", entity_label="Planning",
+          entity_label_plural="Plannings"),
+        C("overtimecalc", model=OvertimeCalculation,
+          form_class=kforms.OvertimeCalculationForm,
+          active_nav="attendance", list_url_name="admin-attendance",
+          url_prefix="overtime-calcs", entity_label="Calcul HS",
+          entity_label_plural="Calculs HS"),
+
+        # ===================== Workers — P1 #1 =====================
+        C("workercert", model=WorkerCertification,
+          form_class=kforms.WorkerCertificationForm,
+          active_nav="workers", list_url_name="admin-workers",
+          url_prefix="worker-certifications", entity_label="Certification ouvrier",
+          entity_label_plural="Certifications ouvriers"),
+        C("crew", model=Crew, form_class=kforms.CrewForm,
+          active_nav="workers", list_url_name="admin-workers",
+          url_prefix="crews", entity_label="Équipe chantier",
+          entity_label_plural="Équipes chantier"),
+        C("workerassignment", model=WorkerAssignment,
+          form_class=kforms.WorkerAssignmentForm,
+          active_nav="workers", list_url_name="admin-workers",
+          url_prefix="worker-assignments", entity_label="Affectation ouvrier",
+          entity_label_plural="Affectations ouvriers"),
     ]
     return dict(pairs)
 

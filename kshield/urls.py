@@ -31,8 +31,18 @@ api_v1 = [
 
 from devices.views import BadgePDFDownloadView, BadgeThumbnailView
 
+# Django admin réservé aux superusers — caché en prod (uniquement accessible
+# si DEBUG=True ou si l'utilisateur appelle directement /django-admin/).
+# Toutes les actions métier doivent passer par le back-office custom KAYDAN
+# (templates/administration/*.html).
+admin.site.site_header = "KAYDAN SHIELD — Admin technique"
+admin.site.site_title = "KAYDAN admin"
+admin.site.index_title = "Administration interne (superuser uniquement)"
+
 urlpatterns = [
-    path("admin/", admin.site.urls),
+    # On déplace l'admin Django vers /django-admin/ (path obscur réservé aux DBA).
+    # /admin/ sera capturé par administration.urls et redirigera vers la home.
+    path("django-admin/", admin.site.urls),
     # Endpoints directs badges (servis hors API)
     path("badges/<int:pk>/pdf/",       BadgePDFDownloadView.as_view(), name="badge-pdf"),
     path("badges/<int:pk>/thumbnail/", BadgeThumbnailView.as_view(),   name="badge-thumbnail"),

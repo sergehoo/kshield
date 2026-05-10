@@ -27,12 +27,70 @@
 
 {% if assignments %}
 <section class="card mt-2">
-  <h3>Rôles attribués</h3>
+  <h3 style="margin-top:0;font-size:14px"><i data-lucide="shield" style="width:14px;height:14px;vertical-align:-2px;color:var(--ks-orange-400)"></i> Rôles attribués</h3>
   <div class="row gap-2" style="flex-wrap:wrap">
     {% for a in assignments %}
-      <span class="pill" style="background:rgba(242,107,31,.12);color:var(--ks-orange-400)">{{ a.role.name }}</span>
+      <span class="pill" style="background:rgba(242,107,31,.12);color:var(--ks-orange-400)">
+        {{ a.role.name }}{% if a.site %} · {{ a.site.name }}{% endif %}
+      </span>
     {% endfor %}
   </div>
+</section>
+{% endif %}
+
+{% if aggregated_permissions %}
+<section class="card mt-2">
+  <h3 style="margin-top:0;font-size:14px"><i data-lucide="key-square" style="width:14px;height:14px;vertical-align:-2px;color:var(--info)"></i> Permissions effectives ({{ aggregated_permissions|length }})</h3>
+  <div class="row gap-2" style="flex-wrap:wrap">
+    {% for code in aggregated_permissions %}
+      <code style="background:var(--surface-strong);padding:3px 8px;border-radius:6px;font-size:11px">{{ code }}</code>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+<section class="card mt-2" style="padding:0">
+  <header style="padding:14px 18px;border-bottom:1px solid var(--border)">
+    <h3 style="margin:0;font-size:14px"><i data-lucide="log-in" style="width:14px;height:14px;vertical-align:-2px;color:var(--text-muted)"></i> 10 dernières tentatives de connexion</h3>
+  </header>
+  {% if login_attempts %}
+  <div class="table-wrap"><table class="table">
+    <thead><tr><th>Date</th><th>IP</th><th>Statut</th><th>Motif</th><th>User-Agent</th></tr></thead>
+    <tbody>
+      {% for a in login_attempts %}
+      <tr>
+        <td class="mono" style="font-size:11px">{{ a.created_at|date:"d/m/Y H:i:s" }}</td>
+        <td class="mono" style="font-size:11px">{{ a.ip|default:"—" }}</td>
+        <td>{% if a.success %}<span class="pill pill-success">OK</span>{% else %}<span class="pill pill-danger">Échec</span>{% endif %}</td>
+        <td class="text-dim" style="font-size:11px">{{ a.reason|default:"—" }}</td>
+        <td class="text-dim" style="font-size:10.5px">{{ a.user_agent|truncatechars:40 }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}
+  <div style="padding:14px 18px;color:var(--text-dim);font-size:12px">Aucune tentative enregistrée.</div>
+  {% endif %}
+</section>
+
+{% if sessions %}
+<section class="card mt-2" style="padding:0">
+  <header style="padding:14px 18px;border-bottom:1px solid var(--border)">
+    <h3 style="margin:0;font-size:14px"><i data-lucide="monitor" style="width:14px;height:14px;vertical-align:-2px;color:var(--info)"></i> Sessions actives</h3>
+  </header>
+  <div class="table-wrap"><table class="table">
+    <thead><tr><th>Démarrée</th><th>Dernière activité</th><th>IP</th><th>Device</th></tr></thead>
+    <tbody>
+      {% for s in sessions %}
+      <tr>
+        <td class="mono" style="font-size:11px">{{ s.started_at|date:"d/m H:i"|default:"—" }}</td>
+        <td class="mono" style="font-size:11px">{{ s.last_activity_at|date:"d/m H:i"|default:"—" }}</td>
+        <td class="mono" style="font-size:11px">{{ s.ip|default:"—" }}</td>
+        <td class="text-dim" style="font-size:11px">{{ s.user_agent|truncatechars:40|default:"—" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
 </section>
 {% endif %}
 {% endblock %}

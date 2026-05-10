@@ -407,13 +407,22 @@ class UserPasswordForm(forms.Form):
 
 
 class RoleForm(StyledModelForm):
-    """Création / édition d'un rôle."""
+    """Création / édition d'un rôle avec cases à cocher par catégorie.
 
+    Le champ `permissions_codes` est une MultipleChoiceField alimentée par
+    `accounts.rbac.PERMISSION_CATALOG`. Les permissions custom (codes hors
+    catalogue) restent visibles dans `permissions_text` (textarea avancée).
+    """
+
+    permissions_codes = forms.MultipleChoiceField(
+        required=False, widget=forms.CheckboxSelectMultiple,
+        label="Permissions accordées",
+    )
     permissions_text = forms.CharField(
-        required=False, label="Permissions (codes, un par ligne)",
-        widget=forms.Textarea(attrs={"rows": 6, "placeholder":
-            "Ex:\nantifraud.acknowledge_alert\nbadges.issue_worker\nemployees.view"}),
-        help_text="Une permission par ligne (format module.action).",
+        required=False, label="Permissions custom (avancé — un code par ligne)",
+        widget=forms.Textarea(attrs={"rows": 4, "placeholder":
+            "Ex: integrations.export_hris\ncustom.tool"}),
+        help_text="Optionnel : codes non-listés dans le catalogue ci-dessus.",
     )
 
     class Meta:
@@ -426,22 +435,43 @@ class RoleForm(StyledModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        from accounts.rbac import PERMISSION_CATALOG, all_known_codes
+
+        choices = []
+        for category, items in PERMISSION_CATALOG:
+            for code, label in items:
+                choices.append((code, f"{label} · {code}"))
+        self.fields["permissions_codes"].choices = choices
+        # On expose aussi les catégories au template via attribut helper
+        self.permissions_catalog = PERMISSION_CATALOG
+
         if self.instance and self.instance.pk:
-            self.fields["permissions_text"].initial = "\n".join(
-                self.instance.permissions.values_list("code", flat=True).order_by("code")
-            )
+            existing = set(self.instance.permissions.values_list("code", flat=True))
+            known = set(all_known_codes())
+            self.fields["permissions_codes"].initial = sorted(existing & known)
+            custom = sorted(existing - known)
+            if custom:
+                self.fields["permissions_text"].initial = "\n".join(custom)
         _apply_widget_classes(self)
 
     def save(self, commit=True):
         role = super().save(commit=commit)
         if commit:
             self._sync_permissions(role)
+            # invalide le cache RBAC pour tous les users assignés à ce rôle
+            try:
+                from accounts.rbac import invalidate_user_perms
+                for uid in role.assignments.values_list("user_id", flat=True).distinct():
+                    invalidate_user_perms(uid)
+            except Exception:
+                pass
         return role
 
     def _sync_permissions(self, role):
         from accounts.models import RolePermission
+        codes = set(self.cleaned_data.get("permissions_codes") or [])
         raw = self.cleaned_data.get("permissions_text") or ""
-        codes = {ln.strip() for ln in raw.splitlines() if ln.strip()}
+        codes |= {ln.strip() for ln in raw.splitlines() if ln.strip()}
         existing = set(role.permissions.values_list("code", flat=True))
         for c in codes - existing:
             RolePermission.objects.get_or_create(role=role, code=c)
@@ -582,4 +612,219 @@ class AIPromptTemplateForm(StyledModelForm):
         widgets = {
             "system_prompt": forms.Textarea(attrs={"rows": 8,
                 "placeholder": "Tu es l'assistant KAYDAN SHIELD…"}),
+        }
+
+
+# ===========================================================================
+# Workflow visiteurs (P0)
+# ===========================================================================
+class VisitPurposeForm(StyledModelForm):
+    class Meta:
+        from visitors.models import VisitPurpose
+        model = VisitPurpose
+        fields = ["code", "label", "requires_approval", "is_active"]
+
+
+class VisitorPassForm(StyledModelForm):
+    class Meta:
+        from visitors.models import VisitorPass
+        model = VisitorPass
+        fields = ["visit_request", "type", "valid_from", "valid_until"]
+        widgets = {
+            "valid_from": forms.DateTimeInput(attrs={"type": "datetime-local"}),
+            "valid_until": forms.DateTimeInput(attrs={"type": "datetime-local"}),
+        }
+
+
+class WatchlistForm(StyledModelForm):
+    class Meta:
+        from visitors.models import Watchlist
+        model = Watchlist
+        fields = ["visitor", "full_name", "id_number", "site",
+                   "reason", "is_active", "expires_at"]
+        widgets = {
+            "expires_at": forms.DateTimeInput(attrs={"type": "datetime-local"}),
+            "reason": forms.Textarea(attrs={"rows": 3}),
+        }
+
+
+class VisitorInvitationForm(StyledModelForm):
+    class Meta:
+        from visitors.models import VisitorInvitation
+        model = VisitorInvitation
+        fields = ["visit_request", "sent_to_email", "sent_to_phone", "expires_at"]
+        widgets = {
+            "expires_at": forms.DateTimeInput(attrs={"type": "datetime-local"}),
+        }
+
+
+# ===========================================================================
+# FraudInvestigation (P0 #2)
+# ===========================================================================
+class FraudInvestigationForm(StyledModelForm):
+    class Meta:
+        from antifraud.models import FraudInvestigation
+        model = FraudInvestigation
+        exclude = ("tenant", "created_by", "updated_by")
+        widgets = {
+            "started_at": forms.DateTimeInput(attrs={"type": "datetime-local"}),
+            "closed_at": forms.DateTimeInput(attrs={"type": "datetime-local"}),
+        }
+
+
+# ===========================================================================
+# Dashboards configurables (P3)
+# ===========================================================================
+class DashboardForm(StyledModelForm):
+    class Meta:
+        from reports.models import Dashboard
+        model = Dashboard
+        fields = ["name", "code", "layout", "is_default"]
+        widgets = {
+            "layout": forms.Textarea(attrs={"rows": 3,
+                "placeholder": '{"columns": 3, "row_height": 200}'}),
+        }
+
+
+class DashboardWidgetForm(StyledModelForm):
+    class Meta:
+        from reports.models import DashboardWidget
+        model = DashboardWidget
+        fields = ["dashboard", "kind", "title", "query", "options", "position"]
+        widgets = {
+            "query": forms.Textarea(attrs={"rows": 4,
+                "placeholder": '{"select": "count(*)", "from": "access_event", "where": {"decision":"granted"}}'}),
+            "options": forms.Textarea(attrs={"rows": 3,
+                "placeholder": '{"color": "orange", "icon": "bar-chart-3"}'}),
+            "position": forms.Textarea(attrs={"rows": 2,
+                "placeholder": '{"x": 0, "y": 0, "w": 1, "h": 1}'}),
+        }
+
+
+# ===========================================================================
+# Devices monitoring (P1 #4) — Maintenance, Firmware, OTA
+# ===========================================================================
+class DeviceMaintenanceForm(StyledModelForm):
+    class Meta:
+        from devices.models import DeviceMaintenance
+        model = DeviceMaintenance
+        fields = ["device", "kind", "technician_name", "started_at",
+                   "ended_at", "description", "cost"]
+        widgets = {
+            "started_at": forms.DateTimeInput(attrs={"type": "datetime-local"}),
+            "ended_at": forms.DateTimeInput(attrs={"type": "datetime-local"}),
+            "description": forms.Textarea(attrs={"rows": 3}),
+        }
+
+
+class FirmwareVersionForm(StyledModelForm):
+    class Meta:
+        from devices.models import FirmwareVersion
+        model = FirmwareVersion
+        fields = ["device_model", "version", "release_notes", "file", "is_published"]
+        widgets = {
+            "release_notes": forms.Textarea(attrs={"rows": 3}),
+        }
+
+
+class OTAUpdateForm(StyledModelForm):
+    class Meta:
+        from devices.models import OTAUpdate
+        model = OTAUpdate
+        fields = ["device", "firmware", "status", "scheduled_for"]
+        widgets = {
+            "scheduled_for": forms.DateTimeInput(attrs={"type": "datetime-local"}),
+        }
+
+
+# ===========================================================================
+# Pointage RH (P1 #2) — Corrections, Overtime, Roster
+# ===========================================================================
+class AttendanceCorrectionForm(StyledModelForm):
+    class Meta:
+        from attendance.models import AttendanceCorrection
+        model = AttendanceCorrection
+        fields = ["attendance_day", "field_name", "previous_value",
+                   "new_value", "reason", "performed_by"]
+        widgets = {
+            "reason": forms.Textarea(attrs={"rows": 3}),
+        }
+
+
+class RosterForm(StyledModelForm):
+    class Meta:
+        from attendance.models import Roster
+        model = Roster
+        fields = ["site", "holder_kind", "holder_object_id", "date",
+                   "expected_start", "expected_end", "is_present_expected"]
+        widgets = {
+            "date": forms.DateInput(attrs={"type": "date"}),
+            "expected_start": forms.TimeInput(attrs={"type": "time"}),
+            "expected_end": forms.TimeInput(attrs={"type": "time"}),
+        }
+
+
+class OvertimeCalculationForm(StyledModelForm):
+    class Meta:
+        from attendance.models import OvertimeCalculation
+        model = OvertimeCalculation
+        fields = ["employee", "worker", "week_start", "base_minutes",
+                   "overtime_125_minutes", "overtime_150_minutes",
+                   "night_minutes"]
+        widgets = {
+            "week_start": forms.DateInput(attrs={"type": "date"}),
+        }
+
+
+# ===========================================================================
+# Workers — Certifications, Crews, Assignments (P1 #1)
+# ===========================================================================
+class WorkerCertificationForm(StyledModelForm):
+    class Meta:
+        from ouvriers.models import WorkerCertification
+        model = WorkerCertification
+        fields = ["worker", "code", "label", "issued_at",
+                   "valid_until", "document", "notes"]
+        widgets = {
+            "issued_at": forms.DateInput(attrs={"type": "date"}),
+            "valid_until": forms.DateInput(attrs={"type": "date"}),
+            "notes": forms.Textarea(attrs={"rows": 3}),
+        }
+
+
+class CrewForm(StyledModelForm):
+    class Meta:
+        from ouvriers.models import Crew
+        model = Crew
+        fields = ["site", "name", "foreman", "is_active"]
+
+
+class WorkerAssignmentForm(StyledModelForm):
+    class Meta:
+        from ouvriers.models import WorkerAssignment
+        model = WorkerAssignment
+        fields = ["worker", "site", "crew", "started_at",
+                   "ended_at", "is_active", "notes"]
+        widgets = {
+            "started_at": forms.DateInput(attrs={"type": "date"}),
+            "ended_at": forms.DateInput(attrs={"type": "date"}),
+            "notes": forms.Textarea(attrs={"rows": 3}),
+        }
+
+
+# ===========================================================================
+# AccessRule (P0 #3)
+# ===========================================================================
+class AccessRuleForm(StyledModelForm):
+    class Meta:
+        from access_control.models import AccessRule
+        model = AccessRule
+        fields = ["site", "code", "name", "type", "severity",
+                   "is_active", "conditions", "actions", "description"]
+        widgets = {
+            "conditions": forms.Textarea(attrs={"rows": 5,
+                "placeholder": '{"start_time": "06:00", "end_time": "20:00", "days": [1,2,3,4,5]}'}),
+            "actions": forms.Textarea(attrs={"rows": 3,
+                "placeholder": '{"on_violation": "deny"}'}),
+            "description": forms.Textarea(attrs={"rows": 2}),
         }

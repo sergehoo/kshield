@@ -123,10 +123,10 @@ try:
     MIDDLEWARE = ["debug_toolbar.middleware.DebugToolbarMiddleware", *MIDDLEWARE]
     INTERNAL_IPS = ["127.0.0.1"]
 
-    # Sur Python 3.14, sys.setprofile interdit 2 profilers simultanés.
-    # Le ProfilingPanel de debug-toolbar utilise cProfile, ce qui plante toute
-    # vue où Django (ou un autre middleware) installe déjà un profiler.
-    # On désactive ce panel et on laisse les autres.
+    # ProfilingPanel : désactivé (incompatible Python 3.14 — cProfile.runcall
+    # rejette deux profilers simultanés).
+    # RedirectsPanel : désactivé (déprécié + intercepte les 302 sur upload/save
+    # ce qui interrompt la navigation normale après un POST).
     DEBUG_TOOLBAR_PANELS = [
         "debug_toolbar.panels.history.HistoryPanel",
         "debug_toolbar.panels.versions.VersionsPanel",
@@ -140,10 +140,15 @@ try:
         "debug_toolbar.panels.alerts.AlertsPanel",
         "debug_toolbar.panels.cache.CachePanel",
         "debug_toolbar.panels.signals.SignalsPanel",
-        "debug_toolbar.panels.redirects.RedirectsPanel",
-        # "debug_toolbar.panels.profiling.ProfilingPanel",  # ← désactivé pour Python 3.14
+        # "debug_toolbar.panels.redirects.RedirectsPanel",  # ← désactivé (intercepte 302)
+        # "debug_toolbar.panels.profiling.ProfilingPanel",  # ← désactivé (Python 3.14)
         "debug_toolbar.panels.logging.LoggingPanel",
     ]
+    # Belt-and-braces : même si le panel est listé, ce flag force Django à ne pas
+    # intercepter les redirections.
+    DEBUG_TOOLBAR_CONFIG = {
+        "INTERCEPT_REDIRECTS": False,
+    }
 except ImportError:
     pass
 

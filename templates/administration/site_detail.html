@@ -1,0 +1,113 @@
+{% extends "administration/_detail.html" %}
+{% load static %}
+
+{% block extra_head %}
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+  #site-mini-map { height: 380px; width: 100%; border-radius: 12px;
+    border: 1px solid var(--border); }
+  [data-theme="dark"] #site-mini-map { background: #0f1d34; }
+  [data-theme="light"] #site-mini-map { background: #f1f5f9; }
+  .site-stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 14px; }
+</style>
+{% endblock %}
+
+{% block content %}
+{# ─── Carte en haut + KPI rapides ─── #}
+<section class="card mb-2">
+  <div style="display:grid;grid-template-columns:1fr 280px;gap:18px">
+    <div>
+      <h3 style="margin:0 0 8px;font-size:14px">
+        <i data-lucide="map" style="width:16px;height:16px;vertical-align:-3px;color:var(--ks-orange-400)"></i>
+        Localisation
+      </h3>
+      <div id="site-mini-map"></div>
+    </div>
+    <div>
+      <h3 style="margin:0 0 12px;font-size:14px">
+        <i data-lucide="bar-chart-3" style="width:16px;height:16px;vertical-align:-3px;color:var(--info)"></i>
+        Aperçu
+      </h3>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div>
+          <div class="text-dim" style="font-size:11px;text-transform:uppercase">Type</div>
+          <div style="font-weight:600">{{ object.get_type_display }}</div>
+        </div>
+        <div>
+          <div class="text-dim" style="font-size:11px;text-transform:uppercase">Statut</div>
+          {% if object.status == 'active' %}<span class="pill pill-success">Actif</span>
+          {% elif object.status == 'maintenance' %}<span class="pill pill-warning">Maintenance</span>
+          {% else %}<span class="pill pill-muted">{{ object.get_status_display }}</span>{% endif %}
+        </div>
+        <div>
+          <div class="text-dim" style="font-size:11px;text-transform:uppercase">Filiale</div>
+          <div>{{ object.company.name|default:"—" }}</div>
+        </div>
+        <div>
+          <div class="text-dim" style="font-size:11px;text-transform:uppercase">Coordonnées</div>
+          <div class="mono" style="font-size:11.5px">
+            {% if object.latitude %}{{ object.latitude }}, {{ object.longitude }}{% else %}<span class="text-dim">Non géolocalisé</span>{% endif %}
+          </div>
+        </div>
+        <div>
+          <div class="text-dim" style="font-size:11px;text-transform:uppercase">Geofence</div>
+          <div>{% if object.geofence and object.geofence.type == "Polygon" %}<span class="pill pill-success">Configurée</span>{% else %}<span class="pill pill-muted">Aucune</span>{% endif %}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+{# ─── Section Informations standard du _detail.html ─── #}
+{{ block.super }}
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  if (typeof L === "undefined") return;
+  const div = document.getElementById("site-mini-map");
+  if (!div) return;
+
+  {% if object.latitude and object.longitude %}
+  const lat = {{ object.latitude|floatformat:6 }};
+  const lng = {{ object.longitude|floatformat:6 }};
+  {% else %}
+  const lat = 5.345317, lng = -4.024429;
+  {% endif %}
+
+  const map = L.map(div, {scrollWheelZoom: false}).setView([lat, lng], 15);
+  const isLight = document.documentElement.dataset.theme === "light";
+  const tileUrl = isLight
+    ? "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+    : "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
+  L.tileLayer(tileUrl, {
+    attribution: "© OpenStreetMap, © CARTO", subdomains: "abcd", maxZoom: 20,
+  }).addTo(map);
+
+  // Marker du site
+  L.circleMarker([lat, lng], {
+    radius: 10, color: "#F26B1F", fillColor: "#F26B1F",
+    fillOpacity: .85, weight: 2,
+  }).bindPopup(`<strong>{{ object.name|escapejs }}</strong><br>{{ object.get_type_display|escapejs }}`)
+    .addTo(map);
+
+  // Polygone geofence si configuré
+  {% if object.geofence and object.geofence.type == "Polygon" %}
+  try {
+    const geo = {{ object.geofence|safe }};
+    const ring = geo.coordinates[0].map(c => [c[1], c[0]]);
+    L.polygon(ring, {color: "#5eaaff", weight: 2, fillOpacity: .15})
+      .bindPopup("Zone du site").addTo(map);
+  } catch (e) { console.warn("Geofence invalide", e); }
+  {% endif %}
+
+  // Force le recalcul de la taille (Leaflet a besoin du DOM rendu)
+  setTimeout(() => map.invalidateSize(), 200);
+});
+</script>
+{% endblock %}

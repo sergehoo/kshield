@@ -58,13 +58,38 @@ def paginate(qs, request, per_page: int = 25, page_param: str = "page"):
 
 
 class BaseAdminView(TemplateView):
-    """Mixin de base pour toutes les pages admin."""
+    """Mixin de base pour toutes les pages admin.
+
+    Toutes les vues qui en héritent exigent une session authentifiée. Un sous-
+    type peut déclarer `permission_required = "module.action"` pour exiger une
+    permission RBAC en plus.
+    """
 
     active_nav: str = ""
     page_title: str = "KAYDAN SHIELD"
     page_subtitle: str = ""
     breadcrumb: str = ""
     template_name: str = "administration/page.html"
+    permission_required = None  # par défaut : juste login
+
+    def dispatch(self, request, *args, **kwargs):
+        # Login required — sauf si on autorise les anonymes explicitement
+        if not request.user.is_authenticated:
+            from django.shortcuts import redirect
+            from urllib.parse import urlencode
+            return redirect(f"/auth/login/?{urlencode({'next': request.get_full_path()})}")
+        # RBAC optionnel
+        codes = self.permission_required
+        if codes:
+            from accounts.rbac import user_has_any
+            if isinstance(codes, str):
+                codes = [codes]
+            if not user_has_any(request.user, codes):
+                dj_messages.error(request,
+                    "Permission refusée — contactez votre administrateur.")
+                from django.shortcuts import redirect
+                return redirect("admin-dashboard")
+        return super().dispatch(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
@@ -75,6 +100,13 @@ class BaseAdminView(TemplateView):
             "breadcrumb": self.breadcrumb or self.page_title,
             "open_alerts_count": self._safe_count("antifraud", "FraudAlert", status="open"),
         })
+        # Catalogue de permissions du user courant (utilisé par les templates
+        # pour conditionner l'affichage des boutons)
+        try:
+            from accounts.rbac import user_permissions
+            ctx["user_perms"] = user_permissions(self.request.user)
+        except Exception:
+            ctx["user_perms"] = set()
         return ctx
 
     @staticmethod
@@ -483,6 +515,59 @@ class WorkersView(BaseAdminView):
         q = (self.request.GET.get("q") or "").strip()
         chip = self.request.GET.get("f", "all")
         subcontractor_filter = self.request.GET.get("subcontractor", "")
+        tab = self.request.GET.get("tab", "workers")
+        ctx["tab"] = tab if tab in ("workers", "certifications", "crews",
+                                      "assignments", "subcontractors") else "workers"
+
+        # Onglets secondaires
+        try:
+            from django.utils import timezone
+
+            from ouvriers.models import (Crew, Subcontractor,
+                                          WorkerAssignment, WorkerCertification)
+
+            if ctx["tab"] == "certifications":
+                cqs = (WorkerCertification.objects
+                       .select_related("worker")
+                       .order_by("-issued_at"))
+                page_obj, page_qs = paginate(cqs, self.request, per_page=25)
+                ctx["page_obj"] = page_obj
+                ctx["certifications"] = page_qs
+                ctx["expiring_soon"] = WorkerCertification.objects.filter(
+                    valid_until__lte=timezone.now().date() + __import__("datetime").timedelta(days=30),
+                    valid_until__gte=timezone.now().date(),
+                ).count()
+            elif ctx["tab"] == "crews":
+                cqs = (Crew.objects.select_related("site", "foreman")
+                       .prefetch_related("workers")
+                       .order_by("-is_active", "site__name"))
+                page_obj, page_qs = paginate(cqs, self.request, per_page=25)
+                ctx["page_obj"] = page_obj
+                ctx["crews"] = page_qs
+            elif ctx["tab"] == "assignments":
+                aqs = (WorkerAssignment.objects
+                       .select_related("worker", "site", "crew")
+                       .order_by("-is_active", "-started_at"))
+                page_obj, page_qs = paginate(aqs, self.request, per_page=25)
+                ctx["page_obj"] = page_obj
+                ctx["assignments"] = page_qs
+            elif ctx["tab"] == "subcontractors":
+                sqs = Subcontractor.objects.order_by("-is_active", "name")
+                page_obj, page_qs = paginate(sqs, self.request, per_page=25)
+                ctx["page_obj"] = page_obj
+                ctx["subcontractors_list"] = page_qs
+
+            # Compteurs onglets
+            ctx["count_certs"] = WorkerCertification.objects.count()
+            ctx["count_crews"] = Crew.objects.filter(is_active=True).count()
+            ctx["count_assignments"] = WorkerAssignment.objects.filter(is_active=True).count()
+            ctx["count_subs"] = Subcontractor.objects.filter(is_active=True).count()
+        except Exception:
+            for k in ("certifications", "crews", "assignments", "subcontractors_list"):
+                ctx[k] = []
+            for k in ("count_certs", "count_crews", "count_assignments",
+                      "count_subs", "expiring_soon"):
+                ctx[k] = 0
         try:
             from devices.models import Badge
             from ouvriers.models import Subcontractor, Worker
@@ -563,19 +648,62 @@ class VisitorsView(BaseAdminView):
     template_name = "administration/visitors.html"
     active_nav = "visitors"
     page_title = "Visiteurs"
-    page_subtitle = "OCR pièce d'identité + QR self-service."
+    page_subtitle = "Pré-enregistrement, QR self-service, check-in et liste rouge."
     breadcrumb = "Visiteurs"
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
         q = (self.request.GET.get("q") or "").strip()
         chip = self.request.GET.get("f", "all")
+        tab = self.request.GET.get("tab", "visitors")
+        ctx["tab"] = tab if tab in ("visitors", "requests", "invitations",
+                                      "passes", "watchlist", "purposes") else "visitors"
         try:
             from datetime import timedelta
 
             from django.utils import timezone
 
-            from visitors.models import Visitor, VisitRequest
+            from visitors.models import (Visitor, VisitorInvitation,
+                                            VisitorPass, VisitPurpose,
+                                            VisitRequest, Watchlist)
+
+            # ── Onglets secondaires ─────────────────────────────────
+            if ctx["tab"] == "requests":
+                req_qs = (VisitRequest.objects
+                          .select_related("visitor", "site", "host_employee", "purpose")
+                          .order_by("-scheduled_at"))
+                status = self.request.GET.get("status", "")
+                if status:
+                    req_qs = req_qs.filter(status=status)
+                page_obj, page_qs = paginate(req_qs, self.request, per_page=20)
+                ctx["page_obj"] = page_obj
+                ctx["visit_requests"] = page_qs
+                ctx["req_status"] = status
+            elif ctx["tab"] == "invitations":
+                inv_qs = (VisitorInvitation.objects
+                          .select_related("visit_request", "visit_request__visitor")
+                          .order_by("-created_at"))
+                page_obj, page_qs = paginate(inv_qs, self.request, per_page=20)
+                ctx["page_obj"] = page_obj
+                ctx["invitations"] = page_qs
+            elif ctx["tab"] == "passes":
+                pass_qs = (VisitorPass.objects
+                           .select_related("visit_request", "visit_request__visitor")
+                           .order_by("-created_at"))
+                page_obj, page_qs = paginate(pass_qs, self.request, per_page=20)
+                ctx["page_obj"] = page_obj
+                ctx["passes"] = page_qs
+            elif ctx["tab"] == "watchlist":
+                wl_qs = (Watchlist.objects.select_related("visitor", "site")
+                         .order_by("-is_active", "-created_at"))
+                page_obj, page_qs = paginate(wl_qs, self.request, per_page=20)
+                ctx["page_obj"] = page_obj
+                ctx["watchlist"] = page_qs
+            elif ctx["tab"] == "purposes":
+                p_qs = VisitPurpose.objects.order_by("-is_active", "code")
+                page_obj, page_qs = paginate(p_qs, self.request, per_page=20)
+                ctx["page_obj"] = page_obj
+                ctx["purposes"] = page_qs
 
             qs = Visitor.objects.all()
             qs = apply_search(qs, q, ["first_name", "last_name", "email",
@@ -607,6 +735,15 @@ class VisitorsView(BaseAdminView):
             ).count()
             ctx["on_site_count"] = len(on_site_ids)
             ctx["watchlist_count"] = Visitor.objects.filter(pseudonymized_at__isnull=False).count()
+
+            # Compteurs onglets pour la barre de tabs
+            ctx["count_visitors"] = Visitor.objects.count()
+            ctx["count_requests"] = VisitRequest.objects.count()
+            ctx["count_pending"] = VisitRequest.objects.filter(status="pending").count()
+            ctx["count_invitations"] = VisitorInvitation.objects.count()
+            ctx["count_passes"] = VisitorPass.objects.filter(revoked_at__isnull=True).count()
+            ctx["count_watchlist"] = Watchlist.objects.filter(is_active=True).count()
+            ctx["count_purposes"] = VisitPurpose.objects.filter(is_active=True).count()
         except Exception:
             ctx["page_obj"] = None
             ctx["visitors"] = []
@@ -615,6 +752,12 @@ class VisitorsView(BaseAdminView):
             ctx["today_visits"] = 0
             ctx["on_site_count"] = 0
             ctx["watchlist_count"] = 0
+            for k in ("count_visitors", "count_requests", "count_pending",
+                      "count_invitations", "count_passes", "count_watchlist",
+                      "count_purposes"):
+                ctx[k] = 0
+            for k in ("visit_requests", "invitations", "passes", "watchlist", "purposes"):
+                ctx[k] = []
 
         ctx["q"] = q
         ctx["active_chip"] = chip
@@ -657,17 +800,77 @@ class DevicesView(BaseAdminView):
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        tab = self.request.GET.get("tab", "devices")
+        ctx["tab"] = tab if tab in ("devices", "models", "heartbeats",
+                                      "maintenance", "firmwares", "ota") else "devices"
         try:
-            from devices.models import Device, DeviceModel
-            qs = Device.objects.select_related("model", "site").order_by("serial_number")
-            page_obj, page_qs = paginate(qs, self.request, per_page=25)
-            ctx["page_obj"] = page_obj
-            ctx["devices"] = page_qs
+            from devices.models import (Device, DeviceHeartbeat,
+                                          DeviceMaintenance, DeviceModel,
+                                          FirmwareVersion, OTAUpdate)
+
+            if ctx["tab"] == "devices":
+                qs = Device.objects.select_related("model", "site").order_by("serial_number")
+                page_obj, page_qs = paginate(qs, self.request, per_page=25)
+                ctx["page_obj"] = page_obj
+                ctx["devices"] = page_qs
+            elif ctx["tab"] == "models":
+                mqs = DeviceModel.objects.order_by("brand", "model")
+                page_obj, page_qs = paginate(mqs, self.request, per_page=25)
+                ctx["page_obj"] = page_obj
+                ctx["models"] = page_qs
+            elif ctx["tab"] == "heartbeats":
+                hqs = (DeviceHeartbeat.objects.select_related("device")
+                       .order_by("-created_at"))
+                page_obj, page_qs = paginate(hqs, self.request, per_page=25)
+                ctx["page_obj"] = page_obj
+                ctx["heartbeats"] = page_qs
+            elif ctx["tab"] == "maintenance":
+                mqs = (DeviceMaintenance.objects.select_related("device")
+                       .order_by("-started_at"))
+                page_obj, page_qs = paginate(mqs, self.request, per_page=25)
+                ctx["page_obj"] = page_obj
+                ctx["maintenances"] = page_qs
+            elif ctx["tab"] == "firmwares":
+                fqs = (FirmwareVersion.objects.select_related("device_model")
+                       .order_by("-is_published", "-created_at"))
+                page_obj, page_qs = paginate(fqs, self.request, per_page=25)
+                ctx["page_obj"] = page_obj
+                ctx["firmwares"] = page_qs
+            elif ctx["tab"] == "ota":
+                oqs = (OTAUpdate.objects.select_related("device", "firmware")
+                       .order_by("-scheduled_for"))
+                page_obj, page_qs = paginate(oqs, self.request, per_page=25)
+                ctx["page_obj"] = page_obj
+                ctx["ota_updates"] = page_qs
+
+            # Compteurs onglets + devices hors-ligne (pas de heartbeat depuis 5 min)
+            now = timezone.now()
+            cutoff = now - timedelta(minutes=5)
             ctx["models_count"] = DeviceModel.objects.count()
+            ctx["count_devices"] = Device.objects.count()
+            ctx["count_heartbeats"] = DeviceHeartbeat.objects.count()
+            ctx["count_maintenance"] = DeviceMaintenance.objects.filter(
+                ended_at__isnull=True).count()
+            ctx["count_firmwares"] = FirmwareVersion.objects.count()
+            ctx["count_ota"] = OTAUpdate.objects.filter(
+                status__in=("pending", "in_progress")).count()
+            ctx["devices_offline"] = Device.objects.filter(
+                last_heartbeat_at__isnull=False, last_heartbeat_at__lt=cutoff,
+            ).count() + Device.objects.filter(last_heartbeat_at__isnull=True).count()
         except Exception:
-            ctx["page_obj"] = None
-            ctx["devices"] = []
-            ctx["models_count"] = 0
+            for k in ("devices", "models", "heartbeats", "maintenances",
+                      "firmwares", "ota_updates"):
+                ctx[k] = []
+            for k in ("page_obj",):
+                ctx[k] = None
+            for k in ("models_count", "count_devices", "count_heartbeats",
+                      "count_maintenance", "count_firmwares", "count_ota",
+                      "devices_offline"):
+                ctx[k] = 0
         return ctx
 
 
@@ -901,7 +1104,8 @@ class AttendanceView(BaseAdminView):
             week_ago = today - timedelta(days=7)
 
             tab = self.request.GET.get("tab", "punches")
-            ctx["tab"] = tab if tab in ("punches", "days", "leaves", "rules") else "punches"
+            ctx["tab"] = tab if tab in ("punches", "days", "leaves", "rules",
+                                          "corrections", "rosters", "overtime") else "punches"
 
             if ctx["tab"] == "punches":
                 qs = (Punch.objects.select_related("site")
@@ -921,12 +1125,34 @@ class AttendanceView(BaseAdminView):
                 page_obj, page_qs = paginate(qs, self.request, per_page=25)
                 ctx["page_obj"] = page_obj
                 ctx["leaves"] = page_qs
-            else:
+            elif ctx["tab"] == "rules":
                 qs = (OvertimeRule.objects.select_related("company")
                       .order_by("-is_active", "company__name"))
                 page_obj, page_qs = paginate(qs, self.request, per_page=25)
                 ctx["page_obj"] = page_obj
                 ctx["rules"] = page_qs
+            elif ctx["tab"] == "corrections":
+                from attendance.models import AttendanceCorrection
+                cqs = (AttendanceCorrection.objects
+                       .select_related("attendance_day", "performed_by")
+                       .order_by("-created_at"))
+                page_obj, page_qs = paginate(cqs, self.request, per_page=25)
+                ctx["page_obj"] = page_obj
+                ctx["corrections"] = page_qs
+            elif ctx["tab"] == "rosters":
+                from attendance.models import Roster
+                rqs = Roster.objects.select_related("site").order_by("-date")
+                page_obj, page_qs = paginate(rqs, self.request, per_page=25)
+                ctx["page_obj"] = page_obj
+                ctx["rosters"] = page_qs
+            elif ctx["tab"] == "overtime":
+                from attendance.models import OvertimeCalculation
+                oqs = (OvertimeCalculation.objects
+                       .select_related("employee", "worker")
+                       .order_by("-week_start"))
+                page_obj, page_qs = paginate(oqs, self.request, per_page=25)
+                ctx["page_obj"] = page_obj
+                ctx["overtime_calcs"] = page_qs
 
             ctx["punches_today"] = Punch.objects.filter(timestamp__date=today).count()
             ctx["punches_week"] = Punch.objects.filter(timestamp__date__gte=week_ago).count()
@@ -971,6 +1197,7 @@ class AuditView(BaseAdminView):
     page_title = "Audit & conformité"
     page_subtitle = "Journal d'audit, exports RGPD et politiques de rétention."
     breadcrumb = "Audit"
+    permission_required = "audit.view"
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
@@ -985,11 +1212,33 @@ class AuditView(BaseAdminView):
 
             if ctx["tab"] == "logs":
                 qs = AuditLog.objects.select_related("user").order_by("-timestamp")
+                user_filter = self.request.GET.get("user", "")
+                action_filter = self.request.GET.get("action", "")
+                target_filter = self.request.GET.get("target", "")
                 if q:
-                    qs = qs.filter(Q(action__icontains=q) | Q(target_model__icontains=q))
+                    qs = qs.filter(
+                        Q(action__icontains=q) | Q(target_model__icontains=q) |
+                        Q(target_id__icontains=q) | Q(user__email__icontains=q)
+                    )
+                if user_filter:
+                    qs = qs.filter(user__email__iexact=user_filter)
+                if action_filter:
+                    qs = qs.filter(action__iexact=action_filter)
+                if target_filter:
+                    qs = qs.filter(target_model__iexact=target_filter)
                 page_obj, page_qs = paginate(qs, self.request, per_page=25)
                 ctx["page_obj"] = page_obj
                 ctx["logs"] = page_qs
+                ctx["filter_user"] = user_filter
+                ctx["filter_action"] = action_filter
+                ctx["filter_target"] = target_filter
+                # Choix pour les selects
+                from django.db.models import Count as _Count
+                ctx["distinct_actions"] = list(AuditLog.objects.values_list(
+                    "action", flat=True).distinct().order_by("action")[:50])
+                ctx["distinct_targets"] = list(AuditLog.objects.exclude(
+                    target_model="").values_list(
+                    "target_model", flat=True).distinct().order_by("target_model")[:50])
             elif ctx["tab"] == "exports":
                 qs = (DataExportRequest.objects
                       .select_related("requested_by")
@@ -1290,6 +1539,7 @@ class AccountsView(BaseAdminView):
     active_nav = "accounts"
     page_title = "Utilisateurs & rôles"
     breadcrumb = "Utilisateurs"
+    permission_required = "accounts.view"
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
@@ -1870,6 +2120,40 @@ class UserToggleActiveView(_UserCRUDMixin, View):
         return redirect("admin-user-detail", pk=pk)
 
 
+class UserDeleteView(_UserCRUDMixin, View):
+    """GET → confirme · POST → désactive (soft delete) le user.
+
+    On ne supprime JAMAIS un User physiquement (RGPD + intégrité référentielle
+    sur AccessEvent, AuditLog…). On désactive et anonymise.
+    """
+    template_name = "administration/_confirm_delete.html"
+
+    def get(self, request, pk):
+        from django.contrib.auth import get_user_model
+        from django.shortcuts import render
+        u = get_object_or_404(get_user_model(), pk=pk)
+        return render(request, self.template_name, {
+            "object": u, "page_title": f"Désactiver · {u.email}",
+            "entity_label": "Utilisateur", "entity_label_plural": "Utilisateurs",
+            "list_url_name": "admin-accounts", "url_key": "user",
+            "active_nav": "accounts",
+            "delete_warning": ("Pour des raisons d'audit RGPD, le compte sera "
+                               "désactivé (is_active=False) plutôt que supprimé. "
+                               "L'historique d'accès et d'audit est préservé."),
+        })
+
+    def post(self, request, pk):
+        from django.contrib.auth import get_user_model
+        u = get_object_or_404(get_user_model(), pk=pk)
+        if u == request.user:
+            dj_messages.error(request, "Vous ne pouvez pas désactiver votre propre compte.")
+            return redirect("admin-user-detail", pk=pk)
+        u.is_active = False
+        u.save(update_fields=["is_active"])
+        dj_messages.success(request, f"Compte {u.email} désactivé.")
+        return redirect("admin-accounts")
+
+
 # Rôles
 class RoleListView(_UserCRUDMixin, BaseAdminView):
     template_name = "administration/roles.html"
@@ -1934,6 +2218,7 @@ class APIKeyListView(BaseAdminView):
     active_nav = "accounts"
     page_title = "Clés API IoT"
     breadcrumb = "Utilisateurs · Clés API"
+    permission_required = "apikeys.manage"
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
@@ -2011,6 +2296,15 @@ class APIKeyCreateView(BaseAdminView):
 
 class APIKeyRevokeView(View):
     """POST → révoque une APIKey (is_active=False + revoked_at=now)."""
+
+    def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return redirect("admin-login")
+        from accounts.rbac import user_has_permission
+        if not user_has_permission(request.user, "apikeys.manage"):
+            dj_messages.error(request, "Permission refusée.")
+            return redirect("admin-api-keys")
+        return super().dispatch(request, *args, **kwargs)
 
     def post(self, request, pk):
         from django.utils import timezone
@@ -2111,3 +2405,473 @@ class NotificationMarkAllReadView(View):
             return JsonResponse({"ok": True, "updated": updated})
         except Exception:
             return JsonResponse({"ok": False}, status=500)
+
+
+# ===========================================================================
+# Workflow visiteurs — actions métier sur VisitRequest
+# ===========================================================================
+class VisitRequestActionView(View):
+    """POST /visit-requests/<pk>/action/<verb>/ → transitions de statut.
+
+    Verbes : approve · reject · check_in · check_out · cancel
+    Crée automatiquement les VisitLog et VisitorPass associés.
+    """
+
+    VALID_VERBS = ("approve", "reject", "check_in", "check_out", "cancel")
+
+    def post(self, request, pk, verb):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from visitors.models import VisitLog, VisitorPass, VisitRequest
+
+        if verb not in self.VALID_VERBS:
+            return redirect("admin-visitors")
+
+        vr = get_object_or_404(VisitRequest, pk=pk)
+        now = timezone.now()
+
+        if verb == "approve" and vr.status in ("pending", "draft"):
+            vr.status = "approved"
+            vr.save(update_fields=["status"])
+            try:
+                from notifications.services import notify_visit_status_change
+                notify_visit_status_change(vr, "approved")
+            except Exception:
+                pass
+            dj_messages.success(request, f"Demande de {vr.visitor} approuvée.")
+
+        elif verb == "reject" and vr.status in ("pending", "draft"):
+            vr.status = "rejected"
+            vr.save(update_fields=["status"])
+            dj_messages.warning(request, f"Demande de {vr.visitor} rejetée.")
+
+        elif verb == "check_in" and vr.status in ("approved", "pending"):
+            vr.status = "checked_in"
+            vr.save(update_fields=["status"])
+            VisitLog.objects.create(
+                visit_request=vr, checked_in_at=now,
+                checkin_user=request.user if request.user.is_authenticated else None,
+            )
+            # Émet automatiquement un VisitorPass valable pour la durée prévue
+            VisitorPass.objects.get_or_create(
+                visit_request=vr,
+                defaults={
+                    "type": "walk_in_pvc" if vr.mode == "walk_in" else "self_service_qr",
+                    "valid_from": now,
+                    "valid_until": now + timedelta(
+                        minutes=vr.expected_duration_minutes or 60),
+                },
+            )
+            try:
+                from notifications.services import notify_visit_status_change
+                notify_visit_status_change(vr, "checked_in")
+            except Exception:
+                pass
+            dj_messages.success(request, f"{vr.visitor} a fait son check-in et reçu un pass.")
+
+        elif verb == "check_out" and vr.status == "checked_in":
+            log = vr.logs.filter(checked_out_at__isnull=True).first()
+            if log:
+                log.checked_out_at = now
+                log.save(update_fields=["checked_out_at"])
+            vr.status = "completed"
+            vr.save(update_fields=["status"])
+            # Révoque le pass associé (related_name="pass_card" sur VisitorPass)
+            try:
+                vp = getattr(vr, "pass_card", None)
+                if vp and not vp.revoked_at:
+                    vp.revoked_at = now
+                    vp.save(update_fields=["revoked_at"])
+            except Exception:
+                import logging
+                logging.getLogger(__name__).exception(
+                    "check_out: échec révocation pass pour vr=%s", vr.id)
+            dj_messages.success(request, f"{vr.visitor} a quitté le site.")
+
+        elif verb == "cancel":
+            vr.status = "cancelled"
+            vr.save(update_fields=["status"])
+            dj_messages.info(request, f"Demande {vr} annulée.")
+
+        else:
+            dj_messages.error(request,
+                f"Action « {verb} » impossible sur le statut « {vr.status} ».")
+
+        return redirect("admin-visitrequest-detail", pk=vr.pk)
+
+
+class VisitCalendarICSView(View):
+    """GET /visit-requests/<pk>/calendar.ics → fichier iCalendar."""
+
+    def get(self, request, pk):
+        from visitors.calendar_ics import visit_to_ics
+        from visitors.models import VisitRequest
+        vr = get_object_or_404(VisitRequest, pk=pk)
+        ics = visit_to_ics(vr)
+        response = HttpResponse(ics, content_type="text/calendar; charset=utf-8")
+        response["Content-Disposition"] = (
+            f'attachment; filename="visite-VR{vr.id}.ics"'
+        )
+        return response
+
+
+class VisitorAddToWatchlistView(View):
+    """POST /visitors/<pk>/watchlist/ → ajoute un visiteur à la liste rouge."""
+
+    def post(self, request, pk):
+        from visitors.models import Visitor, Watchlist
+        v = get_object_or_404(Visitor, pk=pk)
+        reason = request.POST.get("reason", "Ajout manuel")
+        Watchlist.objects.create(
+            tenant=v.tenant, visitor=v,
+            full_name=f"{v.first_name} {v.last_name}",
+            id_number=v.id_number, reason=reason, is_active=True,
+        )
+        dj_messages.warning(request, f"{v} ajouté à la liste rouge.")
+        return redirect("admin-visitor-detail", pk=v.pk)
+
+
+# ===========================================================================
+# FraudAlert — actions métier (acquit, faux-positif, escalader, résoudre)
+# ===========================================================================
+class KshieldLoginView(View):
+    """GET /auth/login/ → page login custom. POST → authentifie + redirige."""
+    template_name = "administration/login.html"
+
+    def get(self, request):
+        from django.shortcuts import render
+        if request.user.is_authenticated:
+            from django.shortcuts import redirect
+            return redirect(request.GET.get("next") or "admin-dashboard")
+        return render(request, self.template_name, {
+            "next": request.GET.get("next", ""),
+        })
+
+    def post(self, request):
+        from django.contrib.auth import authenticate, login
+        from django.shortcuts import redirect, render
+
+        from accounts.models import LoginAttempt
+        email = (request.POST.get("email") or "").strip()
+        password = request.POST.get("password") or ""
+        next_url = request.POST.get("next") or "admin-dashboard"
+
+        user = authenticate(request, username=email, password=password)
+        success = user is not None and user.is_active
+        try:
+            LoginAttempt.objects.create(
+                email=email,
+                ip=request.META.get("REMOTE_ADDR"),
+                user_agent=(request.META.get("HTTP_USER_AGENT", "") or "")[:500],
+                success=success,
+                reason="" if success else "Identifiants invalides ou compte désactivé",
+            )
+        except Exception:
+            pass
+
+        if success:
+            login(request, user)
+            dj_messages.success(request, f"Bienvenue {user.get_full_name() or user.email}.")
+            from accounts.rbac import invalidate_user_perms
+            invalidate_user_perms(user.pk)
+            try:
+                return redirect(next_url)
+            except Exception:
+                return redirect("admin-dashboard")
+
+        return render(request, self.template_name, {
+            "error": "Email ou mot de passe invalide.",
+            "email": email, "next": next_url,
+        })
+
+
+class KshieldLogoutView(View):
+    """GET ou POST /auth/logout/ → déconnecte + redirige login."""
+    def post(self, request):
+        from django.contrib.auth import logout
+        from django.shortcuts import redirect
+        logout(request)
+        dj_messages.info(request, "Vous avez été déconnecté.")
+        return redirect("admin-login")
+    get = post
+
+
+class CSVImportView(BaseAdminView):
+    """Import CSV en masse pour Employee ou Worker.
+
+    GET → page d'upload + format attendu.
+    POST → parse le CSV, valide, crée les enregistrements en bulk.
+    """
+    template_name = "administration/csv_import.html"
+
+    KIND_MAP = {
+        "employees": {
+            "label": "Employés",
+            "active_nav": "employees",
+            "fields": ["matricule", "first_name", "last_name", "email",
+                       "phone", "contract_type", "status", "work_location"],
+            "required": ["matricule", "first_name", "last_name"],
+            "back_url": "admin-employees",
+        },
+        "workers": {
+            "label": "Ouvriers",
+            "active_nav": "workers",
+            "fields": ["matricule", "first_name", "last_name", "phone",
+                       "trade_code", "subcontractor_code", "status"],
+            "required": ["matricule", "first_name", "last_name"],
+            "back_url": "admin-workers",
+        },
+    }
+
+    def get_kind(self):
+        kind = self.kwargs.get("kind", "employees")
+        return kind if kind in self.KIND_MAP else "employees"
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        kind = self.get_kind()
+        meta = self.KIND_MAP[kind]
+        ctx["kind"] = kind
+        ctx["meta"] = meta
+        ctx["page_title"] = f"Import CSV — {meta['label']}"
+        ctx["active_nav"] = meta["active_nav"]
+        ctx["breadcrumb"] = f"{meta['label']} · Import CSV"
+        ctx["template_csv"] = ",".join(meta["fields"])
+        return ctx
+
+    def post(self, request, kind):
+        import csv
+        import io
+        meta = self.KIND_MAP.get(kind)
+        if not meta:
+            dj_messages.error(request, "Type d'import invalide.")
+            return redirect("admin-dashboard")
+
+        f = request.FILES.get("file")
+        if not f:
+            dj_messages.error(request, "Aucun fichier reçu.")
+            return redirect("admin-csv-import", kind=kind)
+
+        try:
+            text = f.read().decode("utf-8-sig")
+        except UnicodeDecodeError:
+            dj_messages.error(request,
+                "Fichier non UTF-8. Convertissez et réessayez.")
+            return redirect("admin-csv-import", kind=kind)
+
+        reader = csv.DictReader(io.StringIO(text))
+        if not reader.fieldnames:
+            dj_messages.error(request, "Fichier vide ou sans en-têtes.")
+            return redirect("admin-csv-import", kind=kind)
+
+        # Vérifie les colonnes requises
+        missing = set(meta["required"]) - set(reader.fieldnames)
+        if missing:
+            dj_messages.error(request,
+                f"Colonnes manquantes : {', '.join(missing)}")
+            return redirect("admin-csv-import", kind=kind)
+
+        from core.services import get_kaydan_tenant
+        tenant = get_kaydan_tenant()
+
+        created, skipped, errors = 0, 0, []
+        rows = list(reader)
+        for i, row in enumerate(rows, start=2):  # ligne 2 = première data
+            try:
+                if kind == "employees":
+                    n = self._create_employee(row, tenant)
+                else:
+                    n = self._create_worker(row, tenant)
+                if n:
+                    created += 1
+                else:
+                    skipped += 1
+            except Exception as exc:
+                errors.append(f"Ligne {i} : {exc}")
+                if len(errors) >= 20:
+                    errors.append(f"… (autres erreurs tronquées, total {len(rows)} lignes)")
+                    break
+
+        msg = f"Import {meta['label']} : {created} créé(s), {skipped} ignoré(s) (doublons)"
+        if errors:
+            msg += f", {len(errors)} erreur(s)"
+            for e in errors[:5]:
+                dj_messages.warning(request, e)
+        dj_messages.success(request, msg)
+        return redirect(meta["back_url"])
+
+    def _create_employee(self, row, tenant):
+        from employees.models import Employee
+        matricule = (row.get("matricule") or "").strip()
+        if not matricule:
+            return False
+        if Employee.objects.filter(tenant=tenant, matricule=matricule).exists():
+            return False
+        Employee.objects.create(
+            tenant=tenant,
+            matricule=matricule,
+            first_name=(row.get("first_name") or "").strip(),
+            last_name=(row.get("last_name") or "").strip(),
+            email=(row.get("email") or "").strip(),
+            phone=(row.get("phone") or "").strip(),
+            contract_type=(row.get("contract_type") or "cdi").strip().lower(),
+            status=(row.get("status") or "active").strip().lower(),
+            work_location=(row.get("work_location") or "office").strip().lower(),
+        )
+        return True
+
+    def _create_worker(self, row, tenant):
+        from ouvriers.models import Subcontractor, Trade, Worker
+        matricule = (row.get("matricule") or "").strip()
+        if not matricule:
+            return False
+        if Worker.objects.filter(tenant=tenant, matricule=matricule).exists():
+            return False
+        trade_code = (row.get("trade_code") or "").strip().lower()
+        trade = Trade.objects.filter(code=trade_code).first() if trade_code else None
+        sub_code = (row.get("subcontractor_code") or "").strip().lower()
+        sub = Subcontractor.objects.filter(
+            tenant=tenant, code=sub_code).first() if sub_code else None
+        Worker.objects.create(
+            tenant=tenant, matricule=matricule,
+            first_name=(row.get("first_name") or "").strip(),
+            last_name=(row.get("last_name") or "").strip(),
+            phone=(row.get("phone") or "").strip(),
+            trade=trade, subcontractor=sub,
+            status=(row.get("status") or "active").strip().lower(),
+        )
+        return True
+
+
+class MyProfileRedirectView(View):
+    """GET /me/<verb>/ → redirige vers la vue user_detail/update/password du user courant."""
+
+    def get(self, request, verb="detail"):
+        if not request.user.is_authenticated:
+            return redirect("/auth/login/?next=/me/")
+        pk = request.user.pk
+        if verb == "detail":
+            return redirect("admin-user-detail", pk=pk)
+        if verb == "update":
+            return redirect("admin-user-update", pk=pk)
+        if verb == "password":
+            return redirect("admin-user-password", pk=pk)
+        return redirect("admin-user-detail", pk=pk)
+
+
+class DataExportGenerateView(View):
+    """POST /data-exports/<pk>/generate/ → produit le ZIP RGPD."""
+
+    def post(self, request, pk):
+        from audit.models import DataExportRequest
+        from audit.services import generate_export_zip
+        req = get_object_or_404(DataExportRequest, pk=pk)
+        ok = generate_export_zip(req)
+        if ok:
+            try:
+                from notifications.services import notify_export_ready
+                notify_export_ready(req)
+            except Exception:
+                pass
+            dj_messages.success(request, f"Export RGPD généré ({req.file.name}).")
+        else:
+            dj_messages.error(request, "Échec de la génération — vérifiez les logs.")
+        return redirect("admin-audit")
+
+
+class FraudAlertActionView(View):
+    """POST /antifraud-alerts/<pk>/action/<verb>/ → transitions de statut."""
+
+    VALID_VERBS = ("acknowledge", "dismiss", "escalate", "resolve")
+
+    def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return redirect("admin-login")
+        from accounts.rbac import user_has_permission
+        if not user_has_permission(request.user, "antifraud.acknowledge_alert"):
+            dj_messages.error(request, "Permission refusée.")
+            return redirect("admin-antifraud")
+        return super().dispatch(request, *args, **kwargs)
+
+    def post(self, request, pk, verb):
+        from django.utils import timezone
+
+        from antifraud.models import FraudAlert, FraudInvestigation
+        if verb not in self.VALID_VERBS:
+            return redirect("admin-antifraud")
+        alert = get_object_or_404(FraudAlert, pk=pk)
+        now = timezone.now()
+
+        if verb == "acknowledge" and alert.status == "open":
+            alert.status = "acknowledged"
+            alert.assigned_to = request.user if request.user.is_authenticated else None
+            alert.save(update_fields=["status", "assigned_to"])
+            dj_messages.success(request, "Alerte acquittée.")
+
+        elif verb == "dismiss" and alert.status in ("open", "acknowledged"):
+            alert.status = "dismissed"
+            alert.resolution_comment = request.POST.get("comment", "Faux positif")
+            alert.resolved_at = now
+            alert.resolved_by = request.user if request.user.is_authenticated else None
+            alert.save(update_fields=["status", "resolution_comment",
+                                       "resolved_at", "resolved_by"])
+            dj_messages.info(request, "Alerte marquée comme faux-positif.")
+
+        elif verb == "escalate":
+            # Crée une FraudInvestigation pour cette alerte
+            FraudInvestigation.objects.create(
+                tenant=alert.tenant,
+                started_at=now,
+                started_by=request.user if request.user.is_authenticated else None,
+            ) if hasattr(FraudInvestigation, "started_by") else FraudInvestigation.objects.create(
+                tenant=alert.tenant,
+            )
+            alert.status = "escalated"
+            alert.save(update_fields=["status"])
+            dj_messages.warning(request, "Alerte escaladée → enquête créée.")
+
+        elif verb == "resolve":
+            alert.status = "confirmed"
+            alert.resolution_comment = request.POST.get("comment", "")
+            alert.resolved_at = now
+            alert.resolved_by = request.user if request.user.is_authenticated else None
+            alert.save(update_fields=["status", "resolution_comment",
+                                       "resolved_at", "resolved_by"])
+            dj_messages.success(request, "Alerte confirmée et résolue.")
+
+        return redirect("admin-antifraud")
+
+
+# ===========================================================================
+# AccessRule — vue liste dédiée (au-delà du CRUD)
+# ===========================================================================
+class AccessRulesView(BaseAdminView):
+    template_name = "administration/access_rules.html"
+    active_nav = "access"
+    page_title = "Règles d'accès"
+    page_subtitle = ("Configurez les règles appliquées par le moteur de décision : "
+                      "horaires, zones réservées, certifications requises, etc.")
+    breadcrumb = "Règles d'accès"
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        try:
+            from django.db.models import Count
+
+            from access_control.models import AccessRule
+            qs = (AccessRule.objects.select_related("site")
+                  .annotate(events_count=Count("decisions"))
+                  .order_by("-is_active", "site__name", "type"))
+            page_obj, page_qs = paginate(qs, self.request, per_page=25)
+            ctx["page_obj"] = page_obj
+            ctx["rules"] = page_qs
+            ctx["total"] = AccessRule.objects.count()
+            ctx["active_count"] = AccessRule.objects.filter(is_active=True).count()
+        except Exception:
+            ctx["rules"] = []
+            ctx["page_obj"] = None
+            ctx["total"] = 0
+            ctx["active_count"] = 0
+        return ctx

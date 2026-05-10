@@ -98,12 +98,79 @@ urlpatterns = [
     # AI
     *crud_paths("ai-templates",         "aitemplate"),
 
+    # Workflow visiteurs (P0)
+    *crud_paths("visit-purposes",       "visitpurpose"),
+    *crud_paths("visitor-passes",       "visitorpass"),
+    *crud_paths("watchlists",           "watchlist"),
+    *crud_paths("visit-invitations",    "visitorinvitation"),
+
+    # Fraude — investigations (P0)
+    *crud_paths("fraud-investigations", "fraudinvestigation"),
+
+    # Access rules (P0)
+    *crud_paths("access-rules",         "accessrule"),
+    path("access-rules/",
+         views.AccessRulesView.as_view(), name="admin-access-rules"),
+
+    # ───── Actions métier visiteurs (P0) ─────
+    path("visit-requests/<int:pk>/action/<str:verb>/",
+         views.VisitRequestActionView.as_view(), name="admin-visitrequest-action"),
+    path("visitors-mng/<int:pk>/watchlist/",
+         views.VisitorAddToWatchlistView.as_view(), name="admin-visitor-watchlist-add"),
+
+    # ───── P3 — Calendrier ICS visite ─────
+    path("visit-requests/<int:pk>/calendar.ics",
+         views.VisitCalendarICSView.as_view(), name="admin-visit-ics"),
+
+    # ───── Actions métier fraude (P0) ─────
+    path("antifraud-alerts/<int:pk>/action/<str:verb>/",
+         views.FraudAlertActionView.as_view(), name="admin-fraudalert-action"),
+
+    # ───── P1 #1 — Workers complets ─────
+    *crud_paths("worker-certifications", "workercert"),
+    *crud_paths("crews",                 "crew"),
+    *crud_paths("worker-assignments",    "workerassignment"),
+
+    # ───── P1 #2 — Pointage RH ─────
+    *crud_paths("attendance-corrections", "attendancecorrection"),
+    *crud_paths("rosters",                "roster"),
+    *crud_paths("overtime-calcs",         "overtimecalc"),
+
+    # ───── P1 #3 — RGPD : génération ZIP export ─────
+    path("data-exports/<int:pk>/generate/",
+         views.DataExportGenerateView.as_view(), name="admin-dataexport-generate"),
+
+    # ───── P1 #4 — Devices monitoring ─────
+    *crud_paths("device-maintenances", "devicemaint"),
+    *crud_paths("firmwares",           "firmware"),
+    *crud_paths("ota-updates",         "ota"),
+
+    # ───── P3 — Dashboards configurables ─────
+    *crud_paths("dashboards",          "dashboard"),
+    *crud_paths("dashboard-widgets",   "dashwidget"),
+
+    # ───── Auth (login/logout custom) ─────
+    path("auth/login/",  views.KshieldLoginView.as_view(),  name="admin-login"),
+    path("auth/logout/", views.KshieldLogoutView.as_view(), name="admin-logout"),
+
+    # ───── P2 — Imports CSV en masse ─────
+    path("import/<str:kind>/", views.CSVImportView.as_view(), name="admin-csv-import"),
+
+    # ───── Profil utilisateur courant (sidebar dropdown) ─────
+    path("me/",          views.MyProfileRedirectView.as_view(),
+         {"verb": "detail"}, name="admin-me"),
+    path("me/edit/",     views.MyProfileRedirectView.as_view(),
+         {"verb": "update"}, name="admin-me-edit"),
+    path("me/password/", views.MyProfileRedirectView.as_view(),
+         {"verb": "password"}, name="admin-me-password"),
+
     # ───── Gestion utilisateurs (vues natives KAYDAN) ─────
     path("accounts/new/",                 views.UserCreateView.as_view(),    name="admin-user-create"),
     path("accounts/<int:pk>/",            views.UserDetailView.as_view(),    name="admin-user-detail"),
     path("accounts/<int:pk>/edit/",       views.UserUpdateView.as_view(),    name="admin-user-update"),
     path("accounts/<int:pk>/password/",   views.UserPasswordView.as_view(),  name="admin-user-password"),
     path("accounts/<int:pk>/toggle/",     views.UserToggleActiveView.as_view(), name="admin-user-toggle"),
+    path("accounts/<int:pk>/delete/",     views.UserDeleteView.as_view(),    name="admin-user-delete"),
 
     # Rôles
     path("roles/",                  views.RoleListView.as_view(),    name="admin-roles"),

@@ -83,6 +83,50 @@ def device(db, kaydan_tenant, site_chantier):
     )
 
 
+@pytest.fixture(autouse=True)
+def _clear_caches(request):
+    """Invalide les caches Django (notamment RBAC) entre tests."""
+    from django.core.cache import cache
+    cache.clear()
+    yield
+    cache.clear()
+
+
+@pytest.fixture(autouse=True)
+def _autologin_admin(db, request):
+    """Log automatiquement le `client` Django en superuser sur tous les tests admin.
+
+    Permet aux tests existants de continuer à passer après l'ajout du
+    LoginRequired sur BaseAdminView. Désactivable en demandant la fixture
+    `client_anon` (créée à la demande).
+    """
+    if "client_anon" in request.fixturenames:
+        return
+    from django.contrib.auth import get_user_model
+    from django.test import Client
+    User = get_user_model()
+    u, _ = User.objects.get_or_create(
+        email="autotest@kaydan.test",
+        defaults={"is_staff": True, "is_superuser": True, "is_active": True},
+    )
+    u.set_password("autotestpw")
+    u.is_staff = True
+    u.is_superuser = True
+    u.is_active = True
+    u.save()
+    # Si le test a demandé `client`, on le pré-login
+    if "client" in request.fixturenames:
+        c = request.getfixturevalue("client")
+        c.force_login(u)
+
+
+@pytest.fixture
+def client_anon(client):
+    """Client Django anonyme (override du autologin pour tester l'auth)."""
+    client.logout()
+    return client
+
+
 @pytest.fixture
 def api_client():
     from rest_framework.test import APIClient

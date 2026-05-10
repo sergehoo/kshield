@@ -3,48 +3,183 @@
 
 {% block title %}Équipements · KAYDAN SHIELD{% endblock %}
 {% block page_title %}Équipements{% endblock %}
-{% block page_subtitle %}Lecteurs NFC/UHF, caméras, tablettes terrain.{% endblock %}
+{% block page_subtitle %}Lecteurs NFC/UHF, caméras, tablettes terrain — supervision et OTA.{% endblock %}
 {% block breadcrumb %}Équipements{% endblock %}
 
 {% block page_actions %}
-  <a class="btn btn-ghost" href="{% url 'admin-devicemodel-create' %}"><i data-lucide="layers" style="width:16px;height:16px"></i> Nouveau modèle</a>
-  <a class="btn btn-primary" href="{% url 'admin-device-create' %}"><i data-lucide="plus" style="width:16px;height:16px"></i> Nouvel équipement</a>
+  {% if tab == 'maintenance' %}
+    <a class="btn btn-primary" href="{% url 'admin-devicemaint-create' %}"><i data-lucide="wrench"></i> Nouveau ticket</a>
+  {% elif tab == 'firmwares' %}
+    <a class="btn btn-primary" href="{% url 'admin-firmware-create' %}"><i data-lucide="upload"></i> Publier firmware</a>
+  {% elif tab == 'ota' %}
+    <a class="btn btn-primary" href="{% url 'admin-ota-create' %}"><i data-lucide="download-cloud"></i> Planifier OTA</a>
+  {% elif tab == 'models' %}
+    <a class="btn btn-primary" href="{% url 'admin-devicemodel-create' %}"><i data-lucide="layers"></i> Nouveau modèle</a>
+  {% else %}
+    <a class="btn btn-ghost" href="{% url 'admin-devicemodel-create' %}"><i data-lucide="layers"></i> Nouveau modèle</a>
+    <a class="btn btn-primary" href="{% url 'admin-device-create' %}"><i data-lucide="plus"></i> Nouvel équipement</a>
+  {% endif %}
 {% endblock %}
 
 {% block content %}
   <section class="statstrip mb-2">
-    <div><div class="label">Équipements totaux</div><div class="value">{{ page_obj.paginator.count|default:0 }}</div></div>
-    <div><div class="label">Modèles d'équipement</div><div class="value">{{ models_count }}</div></div>
+    <div><div class="label">Équipements</div><div class="value">{{ count_devices }}</div></div>
+    <div><div class="label">Hors-ligne (>5 min)</div><div class="value text-danger">{{ devices_offline }}</div></div>
+    <div><div class="label">En maintenance</div><div class="value text-warning">{{ count_maintenance }}</div></div>
+    <div><div class="label">OTA en cours</div><div class="value">{{ count_ota }}</div></div>
+    <div><div class="label">Modèles</div><div class="value">{{ models_count }}</div></div>
   </section>
 
+  {% if devices_offline %}
+  <section class="card mb-2" style="padding:10px 16px;border-left:3px solid var(--danger);background:rgba(248,113,113,.05);font-size:12.5px">
+    <i data-lucide="alert-triangle" style="width:14px;height:14px;color:var(--danger);vertical-align:-2px"></i>
+    <strong>{{ devices_offline }}</strong> équipement{{ devices_offline|pluralize }} sans heartbeat depuis 5 min — vérifier la connectivité.
+  </section>
+  {% endif %}
+
+  <nav class="tabs mb-2">
+    <a class="tab {% if tab == 'devices' %}is-active{% endif %}" href="?tab=devices">
+      Équipements <span class="text-dim" style="font-size:10px">({{ count_devices }})</span>
+    </a>
+    <a class="tab {% if tab == 'models' %}is-active{% endif %}" href="?tab=models">
+      Modèles <span class="text-dim" style="font-size:10px">({{ models_count }})</span>
+    </a>
+    <a class="tab {% if tab == 'heartbeats' %}is-active{% endif %}" href="?tab=heartbeats">
+      Heartbeats <span class="text-dim" style="font-size:10px">({{ count_heartbeats }})</span>
+    </a>
+    <a class="tab {% if tab == 'maintenance' %}is-active{% endif %}" href="?tab=maintenance">
+      Maintenance <span class="text-dim" style="font-size:10px">({{ count_maintenance }})</span>
+    </a>
+    <a class="tab {% if tab == 'firmwares' %}is-active{% endif %}" href="?tab=firmwares">
+      Firmwares <span class="text-dim" style="font-size:10px">({{ count_firmwares }})</span>
+    </a>
+    <a class="tab {% if tab == 'ota' %}is-active{% endif %}" href="?tab=ota">
+      OTA <span class="text-dim" style="font-size:10px">({{ count_ota }})</span>
+    </a>
+  </nav>
+
   <section class="card" style="padding:0">
-    {% if devices %}
+    {% if tab == 'devices' %}
+      {% if devices %}
       <div class="table-wrap"><table class="table">
-        <thead><tr>
-          <th>N° série</th><th>Modèle</th><th>Type</th><th>Site</th>
-          <th>Zone</th><th>API key</th><th>Statut</th><th></th>
-        </tr></thead>
+        <thead><tr><th>N° série</th><th>Modèle</th><th>Site</th><th>Zone</th><th>Dernier heartbeat</th><th>Batterie</th><th>Statut</th><th></th></tr></thead>
         <tbody>
           {% for d in devices %}
           <tr>
             <td class="mono">{{ d.serial_number }}</td>
             <td>{{ d.model.brand }} {{ d.model.model }}</td>
-            <td><span class="pill pill-info">{{ d.model.get_type_display|default:d.model.type }}</span></td>
             <td>{{ d.site.name|default:"—" }}</td>
             <td>{{ d.zone.name|default:"—" }}</td>
-            <td class="mono" style="font-size:11px">{% if d.api_key %}{{ d.api_key.public_id|slice:":12" }}…{% else %}—{% endif %}</td>
+            <td class="mono" style="font-size:11px">{{ d.last_heartbeat_at|date:"d/m H:i:s"|default:"jamais" }}</td>
+            <td>{% if d.battery_level %}{{ d.battery_level }} %{% else %}—{% endif %}</td>
             <td>{% if d.status == 'active' %}<span class="pill pill-success">Actif</span>{% elif d.status == 'maintenance' %}<span class="pill pill-warning">Maintenance</span>{% elif d.status == 'offline' %}<span class="pill pill-danger">Offline</span>{% else %}<span class="pill pill-muted">{{ d.get_status_display }}</span>{% endif %}</td>
             <td><div class="row gap-2">
               <a class="icon-btn" href="{% url 'admin-device-detail' d.pk %}"><i data-lucide="eye"></i></a>
               <a class="icon-btn" href="{% url 'admin-device-update' d.pk %}"><i data-lucide="pencil"></i></a>
-              <a class="icon-btn" href="{% url 'admin-device-delete' d.pk %}" style="color:var(--danger)"><i data-lucide="trash-2"></i></a>
             </div></td>
           </tr>
           {% endfor %}
-        </tbody>
-      </table></div>
-    {% else %}
-      {% include "administration/_partials/empty_card.html" with icon="cpu" title="Aucun équipement" cta_label="Enregistrer un équipement" cta_url="/devices-mng/new/" %}
+        </tbody></table></div>
+      {% else %}{% include "administration/_partials/empty_card.html" with icon="cpu" title="Aucun équipement" cta_label="Enregistrer" cta_url="/devices-mng/new/" %}{% endif %}
+
+    {% elif tab == 'models' %}
+      {% if models %}
+      <div class="table-wrap"><table class="table">
+        <thead><tr><th>Marque</th><th>Modèle</th><th>Type</th><th>Statut</th><th></th></tr></thead>
+        <tbody>
+          {% for m in models %}
+          <tr>
+            <td><strong>{{ m.brand }}</strong></td>
+            <td>{{ m.model }}</td>
+            <td><span class="pill pill-info">{{ m.get_type_display|default:m.type }}</span></td>
+            <td>{% if m.is_active %}<span class="pill pill-success">Actif</span>{% else %}<span class="pill pill-muted">Inactif</span>{% endif %}</td>
+            <td><div class="row gap-2">
+              <a class="icon-btn" href="{% url 'admin-devicemodel-update' m.pk %}"><i data-lucide="pencil"></i></a>
+              <a class="icon-btn" href="{% url 'admin-devicemodel-delete' m.pk %}" style="color:var(--danger)"><i data-lucide="trash-2"></i></a>
+            </div></td>
+          </tr>
+          {% endfor %}
+        </tbody></table></div>
+      {% else %}{% include "administration/_partials/empty_card.html" with icon="layers" title="Aucun modèle" cta_label="Créer" cta_url="/device-models/new/" %}{% endif %}
+
+    {% elif tab == 'heartbeats' %}
+      {% if heartbeats %}
+      <div class="table-wrap"><table class="table">
+        <thead><tr><th>Reçu le</th><th>Device</th><th>En ligne</th><th>Batterie</th><th>Signal</th></tr></thead>
+        <tbody>
+          {% for h in heartbeats %}
+          <tr>
+            <td class="mono" style="font-size:11px">{{ h.created_at|date:"d/m H:i:s" }}</td>
+            <td class="mono">{{ h.device.serial_number }}</td>
+            <td>{% if h.is_online %}<span class="pill pill-success">Oui</span>{% else %}<span class="pill pill-danger">Non</span>{% endif %}</td>
+            <td>{{ h.battery_level|default:"—" }} %</td>
+            <td>{{ h.signal_strength|default:"—" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody></table></div>
+      {% else %}{% include "administration/_partials/empty_card.html" with icon="radio" title="Aucun heartbeat reçu" %}{% endif %}
+
+    {% elif tab == 'maintenance' %}
+      {% if maintenances %}
+      <div class="table-wrap"><table class="table">
+        <thead><tr><th>Device</th><th>Type</th><th>Technicien</th><th>Démarré</th><th>Terminé</th><th>Coût</th><th></th></tr></thead>
+        <tbody>
+          {% for m in maintenances %}
+          <tr>
+            <td class="mono">{{ m.device.serial_number }}</td>
+            <td><span class="pill pill-info">{{ m.kind }}</span></td>
+            <td>{{ m.technician_name|default:"—" }}</td>
+            <td class="mono" style="font-size:11px">{{ m.started_at|date:"d/m H:i" }}</td>
+            <td class="mono" style="font-size:11px">{{ m.ended_at|date:"d/m H:i"|default:"En cours" }}</td>
+            <td>{{ m.cost|default:"—" }}</td>
+            <td><div class="row gap-2">
+              <a class="icon-btn" href="{% url 'admin-devicemaint-update' m.pk %}"><i data-lucide="pencil"></i></a>
+              <a class="icon-btn" href="{% url 'admin-devicemaint-delete' m.pk %}" style="color:var(--danger)"><i data-lucide="trash-2"></i></a>
+            </div></td>
+          </tr>
+          {% endfor %}
+        </tbody></table></div>
+      {% else %}{% include "administration/_partials/empty_card.html" with icon="wrench" title="Aucun ticket maintenance" cta_label="Nouveau ticket" cta_url="/device-maintenances/new/" %}{% endif %}
+
+    {% elif tab == 'firmwares' %}
+      {% if firmwares %}
+      <div class="table-wrap"><table class="table">
+        <thead><tr><th>Modèle</th><th>Version</th><th>Publié</th><th>Notes</th><th>Fichier</th><th></th></tr></thead>
+        <tbody>
+          {% for f in firmwares %}
+          <tr>
+            <td>{{ f.device_model.brand }} {{ f.device_model.model }}</td>
+            <td class="mono">{{ f.version }}</td>
+            <td>{% if f.is_published %}<span class="pill pill-success">Oui</span>{% else %}<span class="pill pill-muted">Brouillon</span>{% endif %}</td>
+            <td>{{ f.release_notes|truncatechars:50 }}</td>
+            <td>{% if f.file %}<a href="{{ f.file.url }}" class="icon-btn"><i data-lucide="download"></i></a>{% else %}—{% endif %}</td>
+            <td><div class="row gap-2">
+              <a class="icon-btn" href="{% url 'admin-firmware-update' f.pk %}"><i data-lucide="pencil"></i></a>
+              <a class="icon-btn" href="{% url 'admin-firmware-delete' f.pk %}" style="color:var(--danger)"><i data-lucide="trash-2"></i></a>
+            </div></td>
+          </tr>
+          {% endfor %}
+        </tbody></table></div>
+      {% else %}{% include "administration/_partials/empty_card.html" with icon="upload" title="Aucun firmware publié" cta_label="Publier" cta_url="/firmwares/new/" %}{% endif %}
+
+    {% elif tab == 'ota' %}
+      {% if ota_updates %}
+      <div class="table-wrap"><table class="table">
+        <thead><tr><th>Device</th><th>Firmware</th><th>Programmé</th><th>Démarré</th><th>Fini</th><th>Statut</th><th>Erreur</th></tr></thead>
+        <tbody>
+          {% for o in ota_updates %}
+          <tr>
+            <td class="mono">{{ o.device.serial_number }}</td>
+            <td class="mono">{{ o.firmware.version }}</td>
+            <td class="mono" style="font-size:11px">{{ o.scheduled_for|date:"d/m H:i" }}</td>
+            <td class="mono" style="font-size:11px">{{ o.started_at|date:"d/m H:i"|default:"—" }}</td>
+            <td class="mono" style="font-size:11px">{{ o.finished_at|date:"d/m H:i"|default:"—" }}</td>
+            <td>{% if o.status == 'completed' %}<span class="pill pill-success">{{ o.get_status_display }}</span>{% elif o.status == 'failed' %}<span class="pill pill-danger">{{ o.get_status_display }}</span>{% elif o.status == 'in_progress' %}<span class="pill pill-info">{{ o.get_status_display }}</span>{% else %}<span class="pill pill-warning">{{ o.get_status_display }}</span>{% endif %}</td>
+            <td class="text-dim" style="font-size:11px">{{ o.error_message|truncatechars:30|default:"—" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody></table></div>
+      {% else %}{% include "administration/_partials/empty_card.html" with icon="download-cloud" title="Aucune OTA planifiée" cta_label="Planifier" cta_url="/ota-updates/new/" %}{% endif %}
     {% endif %}
     {% include "administration/_partials/pagination.html" %}
   </section>

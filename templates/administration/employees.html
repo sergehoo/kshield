@@ -8,7 +8,10 @@
 
 {% block page_actions %}
   <a class="btn btn-ghost" href="{% url 'admin-face-test' %}">
-    <i data-lucide="scan-face" style="width:16px;height:16px"></i> Test reconnaissance faciale
+    <i data-lucide="scan-face" style="width:16px;height:16px"></i> Test reco. faciale
+  </a>
+  <a class="btn btn-ghost" href="{% url 'admin-csv-import' 'employees' %}">
+    <i data-lucide="upload" style="width:16px;height:16px"></i> Import CSV
   </a>
   <a class="btn btn-primary" href="{% url 'admin-employee-create' %}">
     <i data-lucide="user-plus" style="width:16px;height:16px"></i> Nouvel employé

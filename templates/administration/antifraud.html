@@ -36,8 +36,37 @@
             </td>
             <td>{{ a.site.name|default:"—" }}</td>
             <td>{{ a.primary_holder_kind|default:"—" }} #{{ a.primary_holder_id|default:"—" }}</td>
-            <td>{% if a.status == "open" %}<span class="pill pill-warning">Ouverte</span>{% elif a.status == "acknowledged" %}<span class="pill pill-info">Acquittée</span>{% elif a.status == "confirmed" %}<span class="pill pill-danger">Confirmée</span>{% elif a.status == "dismissed" %}<span class="pill pill-muted">Rejetée</span>{% else %}{{ a.status }}{% endif %}</td>
-            <td><a class="icon-btn" href="#" title="Voir l'événement"><i data-lucide="eye"></i></a></td>
+            <td>
+              {% if a.status == "open" %}<span class="pill pill-warning">Ouverte</span>
+              {% elif a.status == "acknowledged" %}<span class="pill pill-info">Acquittée</span>
+              {% elif a.status == "escalated" %}<span class="pill pill-danger">Escaladée</span>
+              {% elif a.status == "confirmed" %}<span class="pill pill-danger">Confirmée</span>
+              {% elif a.status == "dismissed" %}<span class="pill pill-muted">Faux positif</span>
+              {% else %}{{ a.status }}{% endif %}
+            </td>
+            <td>
+              <div class="row gap-2" style="flex-wrap:wrap">
+                {% if a.related_event_id %}
+                <a class="icon-btn" href="{% url 'admin-realtime' %}?individual={{ a.related_event.badge_uid }}" title="Voir l'événement"><i data-lucide="eye"></i></a>
+                {% endif %}
+                {% if a.status == "open" %}
+                <form method="post" action="{% url 'admin-fraudalert-action' a.pk 'acknowledge' %}" style="display:inline">{% csrf_token %}
+                  <button class="icon-btn" type="submit" title="Acquitter" style="color:var(--info)"><i data-lucide="check"></i></button>
+                </form>
+                {% endif %}
+                {% if a.status == "open" or a.status == "acknowledged" %}
+                <form method="post" action="{% url 'admin-fraudalert-action' a.pk 'dismiss' %}" style="display:inline" onsubmit="return confirm('Marquer comme faux positif ?')">{% csrf_token %}
+                  <button class="icon-btn" type="submit" title="Faux positif" style="color:var(--text-muted)"><i data-lucide="x-circle"></i></button>
+                </form>
+                <form method="post" action="{% url 'admin-fraudalert-action' a.pk 'escalate' %}" style="display:inline">{% csrf_token %}
+                  <button class="icon-btn" type="submit" title="Escalader → enquête" style="color:#fb923c"><i data-lucide="alert-triangle"></i></button>
+                </form>
+                <form method="post" action="{% url 'admin-fraudalert-action' a.pk 'resolve' %}" style="display:inline" onsubmit="return confirm('Confirmer la fraude et clôturer ?')">{% csrf_token %}
+                  <button class="icon-btn" type="submit" title="Confirmer fraude" style="color:var(--danger)"><i data-lucide="shield-check"></i></button>
+                </form>
+                {% endif %}
+              </div>
+            </td>
           </tr>
           {% endfor %}
         </tbody>

@@ -26,7 +26,10 @@
   <nav class="tabs mb-2">
     <a class="tab {% if tab == 'punches' %}is-active{% endif %}" href="?tab=punches">Punches</a>
     <a class="tab {% if tab == 'days' %}is-active{% endif %}" href="?tab=days">Journées</a>
+    <a class="tab {% if tab == 'corrections' %}is-active{% endif %}" href="?tab=corrections">Corrections</a>
+    <a class="tab {% if tab == 'rosters' %}is-active{% endif %}" href="?tab=rosters">Plannings</a>
     <a class="tab {% if tab == 'leaves' %}is-active{% endif %}" href="?tab=leaves">Congés</a>
+    <a class="tab {% if tab == 'overtime' %}is-active{% endif %}" href="?tab=overtime">Heures sup.</a>
     <a class="tab {% if tab == 'rules' %}is-active{% endif %}" href="?tab=rules">Règles HS</a>
   </nav>
 
@@ -90,7 +93,7 @@
         </tbody></table></div>
       {% else %}{% include "administration/_partials/empty_card.html" with icon="palmtree" title="Aucune demande de congé" cta_label="Nouvelle demande" cta_url="/leave-requests/new/" %}{% endif %}
 
-    {% else %}
+    {% elif tab == "rules" %}
       {% if rules %}
       <div class="table-wrap"><table class="table">
         <thead><tr><th>Filiale</th><th>Nom</th><th>Seuil hebdo</th><th>×1.25</th><th>×1.50</th><th>Nuit</th><th>Statut</th><th></th></tr></thead>
@@ -112,6 +115,66 @@
           {% endfor %}
         </tbody></table></div>
       {% else %}{% include "administration/_partials/empty_card.html" with icon="settings" title="Aucune règle d'heures supplémentaires" cta_label="Nouvelle règle" cta_url="/overtime-rules/new/" %}{% endif %}
+
+    {% elif tab == "corrections" %}
+      {% if corrections %}
+      <div class="table-wrap"><table class="table">
+        <thead><tr><th>Date</th><th>Journée</th><th>Champ</th><th>Avant</th><th>Après</th><th>Motif</th><th>Par</th></tr></thead>
+        <tbody>
+          {% for c in corrections %}
+          <tr>
+            <td class="mono">{{ c.created_at|date:"d/m/Y H:i" }}</td>
+            <td>{{ c.attendance_day }}</td>
+            <td><span class="pill pill-info">{{ c.field_name }}</span></td>
+            <td class="mono" style="font-size:11px">{{ c.previous_value|truncatechars:30 }}</td>
+            <td class="mono" style="font-size:11px">{{ c.new_value|truncatechars:30 }}</td>
+            <td>{{ c.reason|truncatechars:50 }}</td>
+            <td>{{ c.performed_by.email|default:"—" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody></table></div>
+      {% else %}{% include "administration/_partials/empty_card.html" with icon="edit-3" title="Aucune correction de pointage" cta_label="Saisir" cta_url="/attendance-corrections/new/" %}{% endif %}
+
+    {% elif tab == "rosters" %}
+      {% if rosters %}
+      <div class="table-wrap"><table class="table">
+        <thead><tr><th>Date</th><th>Site</th><th>Holder</th><th>Début</th><th>Fin</th><th>Présence prévue</th><th></th></tr></thead>
+        <tbody>
+          {% for r in rosters %}
+          <tr>
+            <td class="mono">{{ r.date|date:"d/m/Y" }}</td>
+            <td>{{ r.site.name }}</td>
+            <td>{{ r.holder_kind }} #{{ r.holder_object_id }}</td>
+            <td class="mono">{{ r.expected_start|time:"H:i" }}</td>
+            <td class="mono">{{ r.expected_end|time:"H:i" }}</td>
+            <td>{% if r.is_present_expected %}<span class="pill pill-success">Oui</span>{% else %}<span class="pill pill-muted">Non</span>{% endif %}</td>
+            <td><div class="row gap-2">
+              <a class="icon-btn" href="{% url 'admin-roster-update' r.pk %}"><i data-lucide="pencil"></i></a>
+              <a class="icon-btn" href="{% url 'admin-roster-delete' r.pk %}" style="color:var(--danger)"><i data-lucide="trash-2"></i></a>
+            </div></td>
+          </tr>
+          {% endfor %}
+        </tbody></table></div>
+      {% else %}{% include "administration/_partials/empty_card.html" with icon="calendar-days" title="Aucun planning" cta_label="Créer" cta_url="/rosters/new/" %}{% endif %}
+
+    {% elif tab == "overtime" %}
+      {% if overtime_calcs %}
+      <div class="table-wrap"><table class="table">
+        <thead><tr><th>Semaine</th><th>Personne</th><th>Base</th><th>×1.25</th><th>×1.50</th><th>Nuit</th><th>Total</th></tr></thead>
+        <tbody>
+          {% for o in overtime_calcs %}
+          <tr>
+            <td class="mono">{{ o.week_start|date:"d/m/Y" }}</td>
+            <td>{% if o.employee %}{{ o.employee.first_name }} {{ o.employee.last_name }}{% elif o.worker %}{{ o.worker.first_name }} {{ o.worker.last_name }}{% endif %}</td>
+            <td class="mono">{{ o.base_minutes|floatformat:0 }} min</td>
+            <td class="mono text-warning">{{ o.overtime_125_minutes }} min</td>
+            <td class="mono text-warning">{{ o.overtime_150_minutes }} min</td>
+            <td class="mono">{{ o.night_minutes }} min</td>
+            <td><strong>{{ o.base_minutes|add:o.overtime_125_minutes|add:o.overtime_150_minutes }} min</strong></td>
+          </tr>
+          {% endfor %}
+        </tbody></table></div>
+      {% else %}{% include "administration/_partials/empty_card.html" with icon="timer" title="Aucun calcul d'heures sup." description="Les calculs sont consolidés chaque semaine. Vous pouvez en saisir manuellement." cta_label="Saisir" cta_url="/overtime-calcs/new/" %}{% endif %}
     {% endif %}
     {% include "administration/_partials/pagination.html" %}
   </section>

@@ -206,14 +206,22 @@
       transition: background .18s, color .18s, transform .18s;
     }
     .nav-item:hover { background: var(--surface); color: var(--text); }
+    /* Active : couleur orange KAYDAN sur les 2 thèmes (lisible partout) */
     .nav-item.active {
-      background: linear-gradient(135deg, rgba(242,107,31,.14), rgba(242,107,31,.04));
-      color: #fff;
-      border: 1px solid rgba(242,107,31,.25);
+      background: linear-gradient(135deg, rgba(242,107,31,.18), rgba(242,107,31,.06));
+      color: var(--ks-orange-400);
+      border: 1px solid rgba(242,107,31,.30);
+      font-weight: 600;
     }
+    [data-theme="light"] .nav-item.active {
+      background: linear-gradient(135deg, rgba(242,107,31,.12), rgba(242,107,31,.04));
+      color: #c2410c;       /* orange foncé pour contraste sur fond clair */
+      border-color: rgba(194,65,12,.25);
+    }
+    .nav-item.active .icon { color: inherit; }
     .nav-item.active::before {
       content: ""; position: absolute; left: -14px; top: 8px; bottom: 8px;
-      width: 3px; border-radius: 4px; background: var(--grad-brand);
+      width: 3px; border-radius: 4px; background: var(--grad-brand, var(--ks-orange-400));
     }
     .nav-item .icon { width: 18px; height: 18px; flex: 0 0 18px; }
     .nav-item .label { flex: 1; font-size: 13.5px; }
@@ -937,6 +945,9 @@
       <a class="nav-item {% if active_nav == 'attendance' %}active{% endif %}" href="{% url 'admin-attendance' %}">
         <i data-lucide="clock" class="icon"></i><span class="label">Pointage</span>
       </a>
+      <a class="nav-item {% if active_nav == 'access' %}active{% endif %}" href="{% url 'admin-access-rules' %}">
+        <i data-lucide="shield" class="icon"></i><span class="label">Règles d'accès</span>
+      </a>
       <a class="nav-item {% if active_nav == 'antifraud' %}active{% endif %}" href="{% url 'admin-antifraud' %}">
         <i data-lucide="shield-alert" class="icon"></i><span class="label">Anti-fraude</span>
         {% if open_alerts_count %}<span class="badge">{{ open_alerts_count }}</span>{% endif %}
@@ -972,18 +983,99 @@
         <i data-lucide="settings" class="icon"></i><span class="label">Paramètres</span>
       </a>
 
-      <div class="sidebar-footer">
-        <div class="user-card">
+      <div class="sidebar-footer" x-data="userMenuPanel()" @click.outside="close()">
+        <button class="user-card" type="button" x-ref="userBtn" @click="toggle()"
+                :aria-expanded="open" aria-haspopup="menu"
+                style="background:none;border:0;width:100%;text-align:left;cursor:pointer;
+                       padding:8px;border-radius:10px;display:flex;align-items:center;gap:10px;
+                       transition:background .15s">
           <div class="avatar">
-            {% if user.is_authenticated %}{{ user.first_name|default:user.email|slice:":1"|upper }}{% else %}K{% endif %}
+            {% if user.is_authenticated %}
+              {% if user.photo %}<img src="{{ user.photo.url }}" style="width:100%;height:100%;border-radius:50%;object-fit:cover">
+              {% else %}{{ user.first_name|default:user.email|slice:":1"|upper }}{% endif %}
+            {% else %}K{% endif %}
           </div>
-          <div class="meta">
-            <div class="name">{% if user.is_authenticated %}{{ user.get_full_name|default:user.email }}{% else %}Opérateur{% endif %}</div>
-            <div class="role">{% block user_role %}Administrateur{% endblock %}</div>
+          <div class="meta" style="flex:1;min-width:0">
+            <div class="name" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+              {% if user.is_authenticated %}{{ user.get_full_name|default:user.email }}{% else %}Opérateur{% endif %}
+            </div>
+            <div class="role">
+              {% if user.is_authenticated %}
+                {% if user.is_superuser %}Super Admin
+                {% elif user.is_staff %}Staff
+                {% else %}Utilisateur
+                {% endif %}
+              {% else %}{% block user_role %}Non connecté{% endblock %}{% endif %}
+            </div>
           </div>
+          <i data-lucide="chevron-up" style="width:14px;height:14px;color:var(--text-dim);
+              transition:transform .15s" :style="open ? 'transform:rotate(180deg)' : ''"></i>
+        </button>
+
+        <div class="user-menu-panel" x-show="open" x-transition.opacity x-cloak role="menu" x-ref="menu"
+             :style="`position:fixed; bottom:${bottom}px; left:${left}px; width:${width}px;`">
+          {% if user.is_authenticated %}
+          <a href="{% url 'admin-me' %}" class="user-menu-item" role="menuitem"
+             style="display:flex;align-items:center;gap:10px;padding:8px 10px;
+                    border-radius:6px;color:var(--text);text-decoration:none;font-size:12.5px">
+            <i data-lucide="user" style="width:14px;height:14px;color:var(--text-muted)"></i>
+            Mon profil
+          </a>
+          <a href="{% url 'admin-me-edit' %}" class="user-menu-item" role="menuitem"
+             style="display:flex;align-items:center;gap:10px;padding:8px 10px;
+                    border-radius:6px;color:var(--text);text-decoration:none;font-size:12.5px">
+            <i data-lucide="pencil" style="width:14px;height:14px;color:var(--text-muted)"></i>
+            Modifier mon profil
+          </a>
+          <a href="{% url 'admin-me-password' %}" class="user-menu-item" role="menuitem"
+             style="display:flex;align-items:center;gap:10px;padding:8px 10px;
+                    border-radius:6px;color:var(--text);text-decoration:none;font-size:12.5px">
+            <i data-lucide="key" style="width:14px;height:14px;color:var(--text-muted)"></i>
+            Changer mon mot de passe
+          </a>
+          <div style="height:1px;background:var(--border);margin:4px 0"></div>
+          <form method="post" action="{% url 'admin-logout' %}" style="margin:0">{% csrf_token %}
+            <button type="submit" class="user-menu-item" role="menuitem"
+                    style="background:none;border:0;width:100%;text-align:left;cursor:pointer;
+                           display:flex;align-items:center;gap:10px;padding:8px 10px;
+                           border-radius:6px;color:var(--danger);font-size:12.5px">
+              <i data-lucide="log-out" style="width:14px;height:14px"></i>
+              Se déconnecter
+            </button>
+          </form>
+          {% else %}
+          <a href="{% url 'admin-login' %}?next={{ request.path }}" class="user-menu-item" role="menuitem"
+             style="display:flex;align-items:center;gap:10px;padding:8px 10px;
+                    border-radius:6px;color:var(--ks-orange-400);text-decoration:none;font-size:12.5px">
+            <i data-lucide="log-in" style="width:14px;height:14px"></i>
+            Se connecter
+          </a>
+          {% endif %}
         </div>
       </div>
     </aside>
+
+    <style>
+      .user-card:hover { background: var(--surface-strong) !important; }
+      .user-menu-item:hover { background: var(--surface-strong) !important; }
+      .sidebar-footer { position: relative; }
+
+      /* Dropdown user-menu : couleur OPAQUE adaptée au thème pour masquer
+         le texte de la sidebar par-dessus (var(--surface) est translucide). */
+      .user-menu-panel {
+        padding: 6px;
+        border-radius: 12px;
+        background: #14283f;                           /* dark fallback */
+        border: 1px solid rgba(255,255,255,.10);
+        box-shadow: 0 18px 50px rgba(0,0,0,.55);
+        z-index: 9999;
+      }
+      [data-theme="light"] .user-menu-panel {
+        background: #ffffff;
+        border-color: rgba(15,29,52,.12);
+        box-shadow: 0 18px 50px rgba(15,29,52,.18);
+      }
+    </style>
 
     {# ====================== TOPBAR ====================== #}
     <header class="topbar">
@@ -1223,6 +1315,28 @@
 
   {# ====================== Scripts ====================== #}
   <script>
+    // Dropdown user-menu sur la sidebar (positionné en `fixed` pour ne pas
+    // être tronqué par overflow:auto de la sidebar).
+    function userMenuPanel() {
+      return {
+        open: false,
+        bottom: 16, left: 14, width: 240,
+        toggle() {
+          this.open = !this.open;
+          if (this.open) this.$nextTick(() => this._reposition());
+        },
+        close() { this.open = false; },
+        _reposition() {
+          const btn = this.$refs.userBtn;
+          if (!btn) return;
+          const r = btn.getBoundingClientRect();
+          this.bottom = window.innerHeight - r.top + 6;
+          this.left = r.left;
+          this.width = Math.max(r.width, 220);
+        },
+      };
+    }
+
     // Composant notifications (dropdown topbar)
     function kaydanNotifs() {
       return {

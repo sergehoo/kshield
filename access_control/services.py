@@ -84,6 +84,91 @@ class AccessGatewayService:
             return "denied", f"BADGE_{badge.status.upper()}"
         if isinstance(holder, Worker) and not helmet:
             return "review", "CASQUE_MANQUANT"
+
+        # Évalue les AccessRule configurables (P0 #3)
+        try:
+            decision, reason = AccessGatewayService._eval_access_rules(
+                badge, helmet, site, holder)
+            if decision != "granted":
+                return decision, reason
+        except Exception:
+            logger.exception("AccessRule evaluation failed")
+
+        return "granted", ""
+
+    @staticmethod
+    def _eval_access_rules(badge, helmet, site, holder) -> tuple[str, str]:
+        """Applique les règles AccessRule actives. La 1re règle violée gagne."""
+        from datetime import datetime
+        from django.utils import timezone
+
+        from access_control.models import AccessRule
+        if not site:
+            return "granted", ""
+
+        rules = AccessRule.objects.filter(is_active=True).filter(
+            # Règle attachée au site OU règle globale (site=None)
+        ).order_by("-severity")
+        rules = list(rules.filter(site=site)) + list(rules.filter(site__isnull=True))
+
+        now = timezone.localtime()
+        holder_kind = "employee" if isinstance(holder, Employee) else (
+            "worker" if isinstance(holder, Worker) else (
+                "visitor" if isinstance(holder, Visitor) else "unknown"))
+
+        for rule in rules:
+            cond = rule.conditions or {}
+            try:
+                if rule.type == "time_restriction":
+                    start = cond.get("start_time")
+                    end = cond.get("end_time")
+                    days = cond.get("days")  # liste 1-7 (lundi-dimanche), optionnel
+                    if start and end:
+                        s = datetime.strptime(start, "%H:%M").time()
+                        e = datetime.strptime(end, "%H:%M").time()
+                        cur = now.time()
+                        if not (s <= cur <= e):
+                            return "denied", f"OUT_OF_HOURS_{rule.code}"
+                    if days and now.isoweekday() not in days:
+                        return "denied", f"OUT_OF_DAYS_{rule.code}"
+
+                elif rule.type == "zone_restriction":
+                    blocked = cond.get("blocked_holder_kinds", [])
+                    if holder_kind in blocked:
+                        return "denied", f"ZONE_RESTRICTED_{rule.code}"
+
+                elif rule.type == "blacklist":
+                    if cond.get("badge_uids") and badge.uid in cond["badge_uids"]:
+                        return "denied", f"BLACKLISTED_{rule.code}"
+
+                elif rule.type == "certification_required":
+                    if isinstance(holder, Worker):
+                        required = set(cond.get("codes", []))
+                        try:
+                            owned = set(holder.certifications.filter(
+                                expires_at__gte=timezone.now()
+                            ).values_list("code", flat=True))
+                        except Exception:
+                            owned = set()
+                        if required and not (required & owned):
+                            return "denied", f"CERTIFICATION_MISSING_{rule.code}"
+
+                elif rule.type == "capacity_limit":
+                    max_inside = cond.get("max", 0)
+                    if max_inside:
+                        from access_control.models import AccessEvent
+                        from datetime import timedelta
+                        since = timezone.now() - timedelta(hours=12)
+                        count_in = AccessEvent.objects.filter(
+                            site=site, direction="in", decision="granted",
+                            timestamp__gte=since,
+                        ).count()
+                        if count_in >= max_inside:
+                            return "review", f"CAPACITY_REACHED_{rule.code}"
+            except Exception:
+                logger.exception("AccessRule %s eval failed", rule.code)
+                continue
+
         return "granted", ""
 
     @staticmethod

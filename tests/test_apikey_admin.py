@@ -11,11 +11,11 @@ def test_apikey_list_page_renders(db, client):
 
 
 @pytest.mark.integration
-def test_apikey_create_displays_secret_once(db, kaydan_tenant):
+def test_apikey_create_displays_secret_once(db, kaydan_tenant, client):
     """Après POST /api-keys/new/, le redirect /api-keys/ affiche le secret
     UNE seule fois puis disparaît au reload suivant."""
     from accounts.models import APIKey
-    c = Client()
+    c = client  # injecté via fixture autouse + déjà loggé en superuser
 
     res = c.post("/api-keys/new/", {
         "name": "Gateway Site A",
@@ -33,10 +33,10 @@ def test_apikey_create_displays_secret_once(db, kaydan_tenant):
 
 
 @pytest.mark.integration
-def test_apikey_secret_only_hash_stored(db, kaydan_tenant):
+def test_apikey_secret_only_hash_stored(db, kaydan_tenant, client):
     """Le secret brut n'est JAMAIS stocké en base — seul le hash."""
     from accounts.models import APIKey
-    c = Client()
+    c = client  # injecté via fixture autouse + déjà loggé en superuser
     c.post("/api-keys/new/", {
         "name": "Test Hash",
         "scope": "device_terminal",
@@ -49,14 +49,14 @@ def test_apikey_secret_only_hash_stored(db, kaydan_tenant):
 
 
 @pytest.mark.integration
-def test_apikey_revoke_marks_inactive(db, kaydan_tenant):
+def test_apikey_revoke_marks_inactive(db, kaydan_tenant, client):
     from accounts.models import APIKey
     k = APIKey.objects.create(
         tenant=kaydan_tenant, name="Test Revoke",
         scope="device_terminal", public_id="testpub123",
         secret_hash="0" * 64, is_active=True,
     )
-    c = Client()
+    c = client  # injecté via fixture autouse + déjà loggé en superuser
     res = c.post(f"/api-keys/{k.pk}/revoke/")
     assert res.status_code in (302, 303)
     k.refresh_from_db()

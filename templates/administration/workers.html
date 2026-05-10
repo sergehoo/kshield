@@ -6,18 +6,158 @@
 {% block breadcrumb %}Ouvriers{% endblock %}
 
 {% block page_actions %}
-  <a class="btn btn-ghost" href="{% url 'admin-badges' %}?tab=worker"><i data-lucide="id-card"></i> Émettre badges</a>
-  <a class="btn btn-primary" href="{% url 'admin-worker-create' %}"><i data-lucide="user-plus"></i> Enrôler un ouvrier</a>
+  {% if tab == 'certifications' %}
+    <a class="btn btn-primary" href="{% url 'admin-workercert-create' %}"><i data-lucide="award"></i> Nouvelle certification</a>
+  {% elif tab == 'crews' %}
+    <a class="btn btn-primary" href="{% url 'admin-crew-create' %}"><i data-lucide="users"></i> Nouvelle équipe</a>
+  {% elif tab == 'assignments' %}
+    <a class="btn btn-primary" href="{% url 'admin-workerassignment-create' %}"><i data-lucide="user-check"></i> Nouvelle affectation</a>
+  {% elif tab == 'subcontractors' %}
+    <a class="btn btn-primary" href="{% url 'admin-subcontractor-create' %}"><i data-lucide="briefcase"></i> Nouveau sous-traitant</a>
+  {% else %}
+    <a class="btn btn-ghost" href="{% url 'admin-badges' %}?tab=worker"><i data-lucide="id-card"></i> Émettre badges</a>
+    <a class="btn btn-ghost" href="{% url 'admin-csv-import' 'workers' %}"><i data-lucide="upload"></i> Import CSV</a>
+    <a class="btn btn-primary" href="{% url 'admin-worker-create' %}"><i data-lucide="user-plus"></i> Enrôler un ouvrier</a>
+  {% endif %}
 {% endblock %}
 
 {% block content %}
   <section class="statstrip mb-2">
-    <div><div class="label">Total</div><div class="value">{{ total }}</div></div>
+    <div><div class="label">Ouvriers</div><div class="value">{{ total }}</div></div>
     <div><div class="label">Avec badge</div><div class="value text-success">{{ with_badge }}</div></div>
-    <div><div class="label">Avec casque</div><div class="value text-warning">{{ with_helmet }}</div></div>
-    <div><div class="label">Sans badge</div><div class="value text-danger">{{ without_badge }}</div></div>
+    <div><div class="label">Certifications</div><div class="value">{{ count_certs }}</div></div>
+    <div><div class="label">Équipes actives</div><div class="value">{{ count_crews }}</div></div>
+    <div><div class="label">Affectations</div><div class="value">{{ count_assignments }}</div></div>
   </section>
 
+  <nav class="tabs mb-2">
+    <a class="tab {% if tab == 'workers' %}is-active{% endif %}" href="?tab=workers">
+      Ouvriers <span class="text-dim" style="font-size:10px">({{ total }})</span>
+    </a>
+    <a class="tab {% if tab == 'certifications' %}is-active{% endif %}" href="?tab=certifications">
+      Certifications <span class="text-dim" style="font-size:10px">({{ count_certs }})</span>
+    </a>
+    <a class="tab {% if tab == 'crews' %}is-active{% endif %}" href="?tab=crews">
+      Équipes <span class="text-dim" style="font-size:10px">({{ count_crews }})</span>
+    </a>
+    <a class="tab {% if tab == 'assignments' %}is-active{% endif %}" href="?tab=assignments">
+      Affectations <span class="text-dim" style="font-size:10px">({{ count_assignments }})</span>
+    </a>
+    <a class="tab {% if tab == 'subcontractors' %}is-active{% endif %}" href="?tab=subcontractors">
+      Sous-traitants <span class="text-dim" style="font-size:10px">({{ count_subs }})</span>
+    </a>
+  </nav>
+
+  {% if tab == 'certifications' %}
+    {% if expiring_soon %}
+    <section class="card mb-2" style="padding:10px 16px;border-left:3px solid #fb923c;background:rgba(251,146,60,.05);font-size:12.5px">
+      <i data-lucide="alert-triangle" style="width:14px;height:14px;color:#fb923c;vertical-align:-2px"></i>
+      <strong>{{ expiring_soon }}</strong> certification{{ expiring_soon|pluralize }} expire{{ expiring_soon|pluralize:"nt" }} dans les 30 jours.
+    </section>
+    {% endif %}
+    <section class="card" style="padding:0">
+      {% if certifications %}
+      <div class="table-wrap"><table class="table">
+        <thead><tr><th>Ouvrier</th><th>Code</th><th>Libellé</th><th>Émise le</th><th>Expire</th><th>Doc</th><th></th></tr></thead>
+        <tbody>
+          {% for c in certifications %}
+          <tr>
+            <td><strong>{{ c.worker.first_name }} {{ c.worker.last_name }}</strong><div class="text-dim" style="font-size:11px">{{ c.worker.matricule }}</div></td>
+            <td class="mono">{{ c.code }}</td>
+            <td>{{ c.label }}</td>
+            <td class="mono" style="font-size:11px">{{ c.issued_at|date:"d/m/Y"|default:"—" }}</td>
+            <td class="mono" style="font-size:11px">{{ c.valid_until|date:"d/m/Y"|default:"—" }}</td>
+            <td>{% if c.document %}<a href="{{ c.document.url }}" target="_blank" class="icon-btn"><i data-lucide="file-down"></i></a>{% else %}—{% endif %}</td>
+            <td><div class="row gap-2">
+              <a class="icon-btn" href="{% url 'admin-workercert-update' c.pk %}"><i data-lucide="pencil"></i></a>
+              <a class="icon-btn" href="{% url 'admin-workercert-delete' c.pk %}" style="color:var(--danger)"><i data-lucide="trash-2"></i></a>
+            </div></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table></div>
+      {% else %}{% include "administration/_partials/empty_card.html" with icon="award" title="Aucune certification" cta_label="Ajouter" cta_url="/worker-certifications/new/" %}{% endif %}
+      {% include "administration/_partials/pagination.html" %}
+    </section>
+
+  {% elif tab == 'crews' %}
+    <section class="card" style="padding:0">
+      {% if crews %}
+      <div class="table-wrap"><table class="table">
+        <thead><tr><th>Équipe</th><th>Site</th><th>Chef</th><th>Membres</th><th>Statut</th><th></th></tr></thead>
+        <tbody>
+          {% for crew in crews %}
+          <tr>
+            <td><strong>{{ crew.name }}</strong></td>
+            <td>{{ crew.site.name|default:"—" }}</td>
+            <td>{% if crew.foreman %}{{ crew.foreman.first_name }} {{ crew.foreman.last_name }}{% else %}—{% endif %}</td>
+            <td>{{ crew.workers.count }}</td>
+            <td>{% if crew.is_active %}<span class="pill pill-success">Active</span>{% else %}<span class="pill pill-muted">Inactive</span>{% endif %}</td>
+            <td><div class="row gap-2">
+              <a class="icon-btn" href="{% url 'admin-crew-update' crew.pk %}"><i data-lucide="pencil"></i></a>
+              <a class="icon-btn" href="{% url 'admin-crew-delete' crew.pk %}" style="color:var(--danger)"><i data-lucide="trash-2"></i></a>
+            </div></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table></div>
+      {% else %}{% include "administration/_partials/empty_card.html" with icon="users" title="Aucune équipe" cta_label="Créer une équipe" cta_url="/crews/new/" %}{% endif %}
+      {% include "administration/_partials/pagination.html" %}
+    </section>
+
+  {% elif tab == 'assignments' %}
+    <section class="card" style="padding:0">
+      {% if assignments %}
+      <div class="table-wrap"><table class="table">
+        <thead><tr><th>Ouvrier</th><th>Site</th><th>Équipe</th><th>Du</th><th>Au</th><th>Statut</th><th></th></tr></thead>
+        <tbody>
+          {% for a in assignments %}
+          <tr>
+            <td><strong>{{ a.worker.first_name }} {{ a.worker.last_name }}</strong><div class="text-dim" style="font-size:11px">{{ a.worker.matricule }}</div></td>
+            <td>{{ a.site.name }}</td>
+            <td>{{ a.crew.name|default:"—" }}</td>
+            <td class="mono" style="font-size:11px">{{ a.started_at|date:"d/m/Y" }}</td>
+            <td class="mono" style="font-size:11px">{{ a.ended_at|date:"d/m/Y"|default:"En cours" }}</td>
+            <td>{% if a.is_active %}<span class="pill pill-success">Active</span>{% else %}<span class="pill pill-muted">Terminée</span>{% endif %}</td>
+            <td><div class="row gap-2">
+              <a class="icon-btn" href="{% url 'admin-workerassignment-update' a.pk %}"><i data-lucide="pencil"></i></a>
+              <a class="icon-btn" href="{% url 'admin-workerassignment-delete' a.pk %}" style="color:var(--danger)"><i data-lucide="trash-2"></i></a>
+            </div></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table></div>
+      {% else %}{% include "administration/_partials/empty_card.html" with icon="user-check" title="Aucune affectation" cta_label="Affecter" cta_url="/worker-assignments/new/" %}{% endif %}
+      {% include "administration/_partials/pagination.html" %}
+    </section>
+
+  {% elif tab == 'subcontractors' %}
+    <section class="card" style="padding:0">
+      {% if subcontractors_list %}
+      <div class="table-wrap"><table class="table">
+        <thead><tr><th>Nom</th><th>Code</th><th>Contact</th><th>Contrat</th><th>Statut</th><th></th></tr></thead>
+        <tbody>
+          {% for s in subcontractors_list %}
+          <tr>
+            <td><strong>{{ s.name }}</strong>{% if s.legal_name %}<div class="text-dim" style="font-size:11px">{{ s.legal_name }}</div>{% endif %}</td>
+            <td class="mono">{{ s.code }}</td>
+            <td>{{ s.contact_name|default:"—" }}<div class="text-dim" style="font-size:11px">{{ s.contact_phone|default:"" }}</div></td>
+            <td class="mono" style="font-size:11px">{{ s.contract_start|date:"d/m/Y"|default:"—" }} → {{ s.contract_end|date:"d/m/Y"|default:"—" }}</td>
+            <td>{% if s.is_active %}<span class="pill pill-success">Actif</span>{% else %}<span class="pill pill-muted">Inactif</span>{% endif %}</td>
+            <td><div class="row gap-2">
+              <a class="icon-btn" href="{% url 'admin-subcontractor-update' s.pk %}"><i data-lucide="pencil"></i></a>
+              <a class="icon-btn" href="{% url 'admin-subcontractor-delete' s.pk %}" style="color:var(--danger)"><i data-lucide="trash-2"></i></a>
+            </div></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table></div>
+      {% else %}{% include "administration/_partials/empty_card.html" with icon="briefcase" title="Aucun sous-traitant" cta_label="Ajouter" cta_url="/subcontractors/new/" %}{% endif %}
+      {% include "administration/_partials/pagination.html" %}
+    </section>
+
+  {% else %}
+  {# Onglet par défaut : ouvriers #}
   {% include "administration/_partials/filterbar.html" with chips=chips active_chip=active_chip q=q search_placeholder="Matricule, nom, téléphone…" filtered_count=filtered_count total=total %}
 
   <form method="get" class="row gap-2 mb-2" style="align-items:center">
@@ -91,6 +231,7 @@
     {% endif %}
     {% include "administration/_partials/pagination.html" %}
   </section>
+  {% endif %}{# fin du tab == 'workers' #}
 
 <style>
 .badge-tip { position: relative; display: inline-block; }

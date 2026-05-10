@@ -33,10 +33,22 @@
 
   <section class="card" style="padding:0">
     {% if tab == "logs" %}
-      <form method="get" class="row gap-2" style="padding:12px 16px;border-bottom:1px solid var(--border)">
+      <form method="get" class="row gap-2" style="padding:12px 16px;border-bottom:1px solid var(--border);flex-wrap:wrap">
         <input type="hidden" name="tab" value="logs">
-        <input class="form-input" name="q" value="{{ q }}" placeholder="Action, modèle…" style="max-width:320px">
-        <button class="btn btn-ghost" type="submit">Filtrer</button>
+        <input class="form-input" name="q" value="{{ q }}" placeholder="Recherche libre (action, user, target_id…)" style="flex:1;min-width:240px">
+        <select name="action" class="form-select" style="max-width:180px">
+          <option value="">Toutes actions</option>
+          {% for a in distinct_actions %}<option value="{{ a }}" {% if filter_action == a %}selected{% endif %}>{{ a }}</option>{% endfor %}
+        </select>
+        <select name="target" class="form-select" style="max-width:180px">
+          <option value="">Tous modèles</option>
+          {% for t in distinct_targets %}<option value="{{ t }}" {% if filter_target == t %}selected{% endif %}>{{ t }}</option>{% endfor %}
+        </select>
+        <input class="form-input" name="user" value="{{ filter_user }}" placeholder="Email user" style="max-width:200px">
+        <button class="btn btn-ghost" type="submit"><i data-lucide="filter" style="width:13px;height:13px"></i> Filtrer</button>
+        {% if q or filter_action or filter_target or filter_user %}
+        <a class="btn btn-ghost" href="?tab=logs" style="font-size:11px"><i data-lucide="x" style="width:12px;height:12px"></i> Reset</a>
+        {% endif %}
       </form>
       {% if logs %}
       <div class="table-wrap"><table class="table">
@@ -70,7 +82,14 @@
             <td><span class="pill {% if e.status == 'completed' %}pill-success{% elif e.status == 'failed' %}pill-danger{% else %}pill-warning{% endif %}">{{ e.get_status_display }}</span></td>
             <td>{{ e.expires_at|date:"d/m/Y"|default:"—" }}</td>
             <td><div class="row gap-2">
-              <a class="icon-btn" href="{% url 'admin-dataexport-detail' e.pk %}"><i data-lucide="eye"></i></a>
+              <a class="icon-btn" href="{% url 'admin-dataexport-detail' e.pk %}" title="Détail"><i data-lucide="eye"></i></a>
+              {% if not e.file %}
+              <form method="post" action="{% url 'admin-dataexport-generate' e.pk %}" style="display:inline">{% csrf_token %}
+                <button class="icon-btn" type="submit" title="Générer le ZIP" style="color:var(--ks-orange-400)"><i data-lucide="archive"></i></button>
+              </form>
+              {% else %}
+              <a class="icon-btn" href="{{ e.file.url }}" title="Télécharger le ZIP" style="color:var(--success)"><i data-lucide="download"></i></a>
+              {% endif %}
               <a class="icon-btn" href="{% url 'admin-dataexport-update' e.pk %}"><i data-lucide="pencil"></i></a>
             </div></td>
           </tr>

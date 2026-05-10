@@ -1,0 +1,73 @@
+{% extends "layout/base.html" %}
+{% load admin_filters %}
+
+{% block title %}Règles d'accès · KAYDAN SHIELD{% endblock %}
+{% block page_title %}Règles d'accès{% endblock %}
+{% block page_subtitle %}Configurez les règles appliquées par le moteur de décision (horaires, zones, certifications).{% endblock %}
+{% block breadcrumb %}Règles d'accès{% endblock %}
+
+{% block page_actions %}
+  <a class="btn btn-primary" href="{% url 'admin-accessrule-create' %}">
+    <i data-lucide="plus" style="width:14px;height:14px"></i> Nouvelle règle
+  </a>
+{% endblock %}
+
+{% block content %}
+  <section class="statstrip mb-2">
+    <div><div class="label">Règles totales</div><div class="value">{{ total }}</div></div>
+    <div><div class="label">Actives</div><div class="value text-success">{{ active_count }}</div></div>
+    <div><div class="label">Inactives</div><div class="value text-warning">{{ total|add:"-"|add:active_count }}</div></div>
+  </section>
+
+  <section class="card mb-2" style="padding:14px 18px;border-left:3px solid var(--info)">
+    <div style="display:flex;align-items:flex-start;gap:12px">
+      <i data-lucide="info" style="width:18px;height:18px;color:var(--info);flex-shrink:0;margin-top:2px"></i>
+      <div style="font-size:12.5px;line-height:1.5">
+        <strong>Types de règles supportés :</strong>
+        <code>time_restriction</code> (plage horaire),
+        <code>zone_restriction</code> (zones interdites par holder_kind),
+        <code>certification_required</code> (habilitation HSE pour zone à risque),
+        <code>blacklist</code>, <code>geofence</code>, <code>capacity_limit</code>.
+        Les conditions JSON dépendent du type — exemple :
+        <code style="background:var(--surface-strong);padding:2px 6px;border-radius:4px">{"start_time":"06:00","end_time":"20:00","days":[1,2,3,4,5]}</code>
+      </div>
+    </div>
+  </section>
+
+  <section class="card" style="padding:0">
+    {% if rules %}
+      <div class="table-wrap"><table class="table">
+        <thead><tr>
+          <th>Code</th><th>Nom</th><th>Site</th><th>Type</th>
+          <th>Sévérité</th><th>Décisions appliquées</th><th>Statut</th><th></th>
+        </tr></thead>
+        <tbody>
+          {% for r in rules %}
+          <tr>
+            <td class="mono">{{ r.code }}</td>
+            <td><strong>{{ r.name }}</strong>{% if r.description %}<div class="text-dim" style="font-size:11px">{{ r.description|truncatechars:60 }}</div>{% endif %}</td>
+            <td>{{ r.site.name|default:"Toutes" }}</td>
+            <td><span class="pill pill-info">{{ r.get_type_display }}</span></td>
+            <td>
+              {% if r.severity == "critical" %}<span class="pill pill-danger">Critique</span>
+              {% elif r.severity == "high" %}<span class="pill pill-warning">Élevée</span>
+              {% elif r.severity == "medium" %}<span class="pill pill-info">Moyenne</span>
+              {% else %}<span class="pill pill-muted">{{ r.severity }}</span>{% endif %}
+            </td>
+            <td><strong>{{ r.events_count|default:0 }}</strong></td>
+            <td>{% if r.is_active %}<span class="pill pill-success">Active</span>{% else %}<span class="pill pill-muted">Inactive</span>{% endif %}</td>
+            <td><div class="row gap-2">
+              <a class="icon-btn" href="{% url 'admin-accessrule-detail' r.pk %}"><i data-lucide="eye"></i></a>
+              <a class="icon-btn" href="{% url 'admin-accessrule-update' r.pk %}"><i data-lucide="pencil"></i></a>
+              <a class="icon-btn" href="{% url 'admin-accessrule-delete' r.pk %}" style="color:var(--danger)"><i data-lucide="trash-2"></i></a>
+            </div></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table></div>
+    {% else %}
+      {% include "administration/_partials/empty_card.html" with icon="shield" title="Aucune règle configurée" description="Le moteur d'accès laisse passer toutes les requêtes tant qu'aucune règle n'est définie." cta_label="Créer une règle" cta_url="/access-rules/new/" %}
+    {% endif %}
+    {% include "administration/_partials/pagination.html" %}
+  </section>
+{% endblock %}

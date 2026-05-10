@@ -49,7 +49,7 @@ THIRD_PARTY_APPS = [
 ]
 
 LOCAL_APPS = [
-    "core",
+    "core.apps.CoreConfig",
     "accounts",
     "sites",
     "employees",
@@ -119,6 +119,11 @@ DATABASES = {
 # Auth
 # ---------------------------------------------------------------------------
 AUTH_USER_MODEL = "accounts.User"
+
+# URL de redirection si non authentifié (utilisée par BaseAdminView et @login_required)
+LOGIN_URL = "/auth/login/"
+LOGIN_REDIRECT_URL = "/"
+LOGOUT_REDIRECT_URL = "/auth/login/"
 
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
