@@ -1,6 +1,7 @@
 from datetime import timedelta
 
 from django.utils import timezone
+from drf_spectacular.utils import extend_schema, extend_schema_view
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -16,12 +17,31 @@ from .serializers import (
 )
 
 
+@extend_schema_view(
+    list=extend_schema(tags=["Visiteurs"], summary="Catalogue des motifs de visite"),
+    create=extend_schema(tags=["Visiteurs"]),
+    retrieve=extend_schema(tags=["Visiteurs"]),
+    update=extend_schema(tags=["Visiteurs"]),
+    partial_update=extend_schema(tags=["Visiteurs"]),
+    destroy=extend_schema(tags=["Visiteurs"]),
+)
 class VisitPurposeViewSet(viewsets.ModelViewSet):
     queryset = VisitPurpose.objects.all(); serializer_class = VisitPurposeSerializer
     filterset_fields = ("is_active",)
 
 
+@extend_schema_view(
+    list=extend_schema(tags=["Visiteurs"], summary="Liste des visiteurs",
+        description="Filtre par tenant et type de pièce d'identité. "
+                    "Recherche sur nom/numéro CNI/email/phone."),
+    create=extend_schema(tags=["Visiteurs"], summary="Créer un visiteur"),
+    retrieve=extend_schema(tags=["Visiteurs"]),
+    update=extend_schema(tags=["Visiteurs"]),
+    partial_update=extend_schema(tags=["Visiteurs"]),
+    destroy=extend_schema(tags=["Visiteurs"]),
+)
 class VisitorViewSet(viewsets.ModelViewSet):
+    """OCR pièce d'identité + QR self-service / walk-in à l'accueil."""
     queryset = Visitor.objects.all(); serializer_class = VisitorSerializer
     search_fields = ("first_name", "last_name", "id_number", "phone", "email")
     filterset_fields = ("tenant", "id_type")

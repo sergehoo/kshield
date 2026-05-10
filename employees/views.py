@@ -1,3 +1,4 @@
+from drf_spectacular.utils import extend_schema, extend_schema_view
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -23,7 +24,18 @@ class JobPositionViewSet(viewsets.ModelViewSet):
     filterset_fields = ("company",)
 
 
+@extend_schema_view(
+    list=extend_schema(tags=["Employes"], summary="Liste des employés KAYDAN",
+        description="Filtrer par filiale, département, statut, type de contrat. "
+                    "Recherche sur matricule / nom / email / téléphone."),
+    create=extend_schema(tags=["Employes"], summary="Créer un employé"),
+    retrieve=extend_schema(tags=["Employes"], summary="Détail employé"),
+    update=extend_schema(tags=["Employes"]),
+    partial_update=extend_schema(tags=["Employes"]),
+    destroy=extend_schema(tags=["Employes"]),
+)
 class EmployeeViewSet(viewsets.ModelViewSet):
+    """Annuaire RH des collaborateurs KAYDAN porteurs de badge NFC."""
     queryset = Employee.objects.select_related(
         "tenant", "company", "department", "position", "manager",
     ).prefetch_related("authorized_sites").all()

@@ -1,8 +1,352 @@
 {% extends "layout/base.html" %}
+{% load admin_filters %}
+
+{% block title %}Rapports · KAYDAN SHIELD{% endblock %}
+{% block page_title %}Rapports & KPI{% endblock %}
+{% block page_subtitle %}Rapports configurables, exécutions et planifications.{% endblock %}
+{% block breadcrumb %}Rapports{% endblock %}
+
+{% block page_actions %}
+  {% if tab == "reports" %}
+    <a class="btn btn-primary" href="{% url 'admin-report-create' %}"><i data-lucide="plus" style="width:16px;height:16px"></i> Nouveau rapport</a>
+  {% elif tab == "schedules" %}
+    <a class="btn btn-primary" href="{% url 'admin-reportschedule-create' %}"><i data-lucide="plus" style="width:16px;height:16px"></i> Nouvelle planification</a>
+  {% endif %}
+{% endblock %}
+
+{% block extra_css %}
+<style>
+  .insight-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 14px; }
+  .insight-card { padding: 16px; border-radius: 14px;
+    background: var(--surface); border: 1px solid var(--border);
+    display: flex; flex-direction: column; gap: 6px; position: relative; }
+  .insight-card.tone-positive { border-left: 3px solid var(--success, #2dd4bf); }
+  .insight-card.tone-warning { border-left: 3px solid #fb923c; }
+  .insight-card.tone-critical { border-left: 3px solid var(--danger, #f87171); }
+  .insight-card.tone-neutral { border-left: 3px solid var(--info, #60a5fa); }
+  .insight-card .head { display: flex; align-items: center; gap: 10px; }
+  .insight-card .icon { width: 32px; height: 32px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .insight-card.tone-positive .icon { background: rgba(45,212,191,.12); color: var(--success); }
+  .insight-card.tone-warning .icon { background: rgba(251,146,60,.12); color: #fb923c; }
+  .insight-card.tone-critical .icon { background: rgba(248,113,113,.12); color: var(--danger); }
+  .insight-card.tone-neutral .icon { background: rgba(96,165,250,.12); color: var(--info); }
+  .insight-card .value { font-size: 22px; font-weight: 700; color: var(--text); }
+  .insight-card .title { font-size: 12.5px; line-height: 1.4; color: var(--text); font-weight: 500; }
+  .insight-card .sub { font-size: 11px; color: var(--text-dim); }
+  .insight-card .reco {
+    margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border);
+    font-size: 11.5px; color: var(--text-muted);
+    display: flex; align-items: center; gap: 6px;
+  }
+  .ai-badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    background: linear-gradient(135deg, var(--ks-orange-400), #d946ef);
+    color: white; font-size: 10px; font-weight: 700;
+    padding: 2px 8px; border-radius: 999px; text-transform: uppercase;
+    letter-spacing: .04em;
+  }
+  .summary-card {
+    padding: 18px 20px; border-radius: 14px;
+    background: linear-gradient(135deg, rgba(242,107,31,.08), rgba(217,70,239,.04));
+    border: 1px solid var(--border);
+    display: flex; gap: 14px; align-items: flex-start;
+  }
+  .summary-card .ai-icon {
+    width: 40px; height: 40px; border-radius: 10px;
+    background: linear-gradient(135deg, var(--ks-orange-400), #d946ef);
+    color: white; display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+</style>
+{% endblock %}
+
 {% block content %}
-<section class="card" style="padding:48px 24px;text-align:center">
-  <h2>{{ page_title }}</h2>
-  <p class="text-muted">{{ page_subtitle }}</p>
-  <p class="text-dim mt-2">Module en développement.</p>
-</section>
+  {# ─── Filtre période ─── #}
+  <section class="card mb-2" style="padding:12px 16px">
+    <form method="get" class="row gap-2" style="flex-wrap:wrap;align-items:center">
+      <strong style="font-size:13px;margin-right:8px">
+        <i data-lucide="calendar" style="width:14px;height:14px;vertical-align:-3px;color:var(--ks-orange-400)"></i>
+        Période d'analyse
+      </strong>
+      {% if tab %}<input type="hidden" name="tab" value="{{ tab }}">{% endif %}
+      <div class="tabs" style="padding:3px;background:var(--surface-strong)">
+        <a class="tab {% if period == 'day' %}is-active{% endif %}" href="?period=day{% if tab %}&tab={{ tab }}{% endif %}">Jour</a>
+        <a class="tab {% if period == 'week' %}is-active{% endif %}" href="?period=week{% if tab %}&tab={{ tab }}{% endif %}">7 jours</a>
+        <a class="tab {% if period == 'month' %}is-active{% endif %}" href="?period=month{% if tab %}&tab={{ tab }}{% endif %}">30 jours</a>
+        <a class="tab {% if period == 'quarter' %}is-active{% endif %}" href="?period=quarter{% if tab %}&tab={{ tab }}{% endif %}">90 jours</a>
+        <a class="tab {% if period == 'year' %}is-active{% endif %}" href="?period=year{% if tab %}&tab={{ tab }}{% endif %}">1 an</a>
+      </div>
+
+      <span class="text-dim" style="font-size:12px;margin:0 6px">|</span>
+      <span class="text-dim" style="font-size:12px">Custom :</span>
+      <input type="date" name="start" value="{{ period_start }}"
+             onchange="this.form.period.value='custom';this.form.submit()"
+             class="form-input" style="width:140px;font-size:12px">
+      <input type="date" name="end" value="{{ period_end }}"
+             onchange="this.form.period.value='custom';this.form.submit()"
+             class="form-input" style="width:140px;font-size:12px">
+      <input type="hidden" name="period" value="{% if period == 'custom' %}custom{% else %}{{ period }}{% endif %}">
+
+      <span class="text-dim" style="margin-left:auto;font-size:12px">
+        <i data-lucide="info" style="width:12px;height:12px"></i>
+        Données : {{ period_label }}
+      </span>
+    </form>
+  </section>
+
+  {# ─── Insights IA ─── #}
+  {% if insights %}
+  <section class="card mb-2 summary-card">
+    <div class="ai-icon">
+      <i data-lucide="sparkles" style="width:20px;height:20px"></i>
+    </div>
+    <div style="flex:1">
+      <div class="row" style="gap:8px;align-items:center;margin-bottom:6px">
+        <strong style="font-size:13px">Résumé exécutif</strong>
+        <span class="ai-badge"><i data-lucide="brain" style="width:11px;height:11px"></i> IA</span>
+      </div>
+      <p style="margin:0;font-size:13.5px;line-height:1.5;color:var(--text)">{{ executive_summary }}</p>
+      <div class="text-dim" style="font-size:11px;margin-top:8px">
+        Analyse calculée à partir des 7 derniers jours d'activité —
+        <a href="{% url 'admin-realtime' %}" style="color:var(--ks-orange-400)">voir le flux</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="insight-grid mb-2">
+    {% for ins in insights %}
+    <article class="insight-card tone-{{ ins.tone }}">
+      <div class="head">
+        <div class="icon"><i data-lucide="{{ ins.icon }}" style="width:16px;height:16px"></i></div>
+        <div>
+          <div class="value">{{ ins.value }}</div>
+          <div class="sub">{{ ins.sub }}</div>
+        </div>
+      </div>
+      <div class="title">{{ ins.title }}</div>
+      <div class="reco">
+        <i data-lucide="lightbulb" style="width:13px;height:13px;color:var(--ks-orange-400)"></i>
+        {{ ins.recommendation }}
+      </div>
+    </article>
+    {% endfor %}
+  </section>
+  {% else %}
+  <section class="card mb-2" style="border-left:3px solid var(--ks-orange-400);background:rgba(242,107,31,.04)">
+    <div style="display:flex;align-items:center;gap:14px">
+      <div style="width:40px;height:40px;border-radius:50%;background:rgba(242,107,31,.12);
+                  display:flex;align-items:center;justify-content:center">
+        <i data-lucide="sparkles" style="width:20px;height:20px;color:var(--ks-orange-400)"></i>
+      </div>
+      <div>
+        <strong>Insights IA indisponibles</strong>
+        <p class="text-dim" style="margin:4px 0 0;font-size:12.5px">
+          Lance <code>seed_demo_data --scans 1000 --issue-badges</code> pour générer
+          un historique exploitable par l'analyse.
+        </p>
+      </div>
+    </div>
+  </section>
+  {% endif %}
+
+  {# ─── Présence par filiale ─── #}
+  {% if attendance.by_company %}
+  <section class="card mb-2" style="padding:0">
+    <header style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
+      <h3 style="margin:0;font-size:14px">
+        <i data-lucide="building-2" style="width:16px;height:16px;vertical-align:-3px;color:var(--info)"></i>
+        Présence par filiale — {{ attendance.label }}
+      </h3>
+      <span class="text-dim" style="font-size:11px">Confirmée vs effectif attendu</span>
+    </header>
+    <div class="table-wrap"><table class="table">
+      <thead><tr>
+        <th>Filiale</th>
+        <th>Employés</th>
+        <th>Ouvriers</th>
+        <th>Total présents</th>
+        <th>Taux global</th>
+      </tr></thead>
+      <tbody>
+        {% for c in attendance.by_company %}
+        <tr>
+          <td>
+            <div class="row" style="gap:10px;align-items:center">
+              {% if c.logo %}<img src="{{ c.logo }}" style="width:32px;height:32px;object-fit:contain;background:#fff;border-radius:6px;padding:3px">
+              {% else %}<div class="avatar" style="width:32px;height:32px;border-radius:6px;font-size:11px">{{ c.name|slice:":2"|upper }}</div>{% endif %}
+              <div>
+                <a href="/companies-mng/{{ c.id }}/" style="font-weight:600;color:var(--text)">{{ c.name }}</a>
+                <div class="text-dim" style="font-size:11px">{{ c.code }}</div>
+              </div>
+            </div>
+          </td>
+          <td>
+            <div style="font-weight:600">{{ c.present_emp }} <span class="text-dim">/ {{ c.expected_emp }}</span></div>
+            <div class="text-dim" style="font-size:11px">{{ c.rate_emp }} %</div>
+          </td>
+          <td>
+            <div style="font-weight:600">{{ c.present_wrk }} <span class="text-dim">/ {{ c.expected_wrk }}</span></div>
+            <div class="text-dim" style="font-size:11px">{{ c.rate_wrk }} %</div>
+          </td>
+          <td>
+            <strong>{{ c.total_present }}</strong> <span class="text-dim">/ {{ c.total_expected }}</span>
+          </td>
+          <td style="min-width:160px">
+            <div style="display:flex;align-items:center;gap:8px">
+              <div style="flex:1;height:6px;background:var(--surface-strong);border-radius:3px;overflow:hidden">
+                <div style="height:100%;width:{{ c.rate_total }}%;
+                            background:{% if c.rate_total >= 80 %}var(--success){% elif c.rate_total >= 60 %}#fb923c{% else %}var(--danger){% endif %};
+                            transition:width .4s"></div>
+              </div>
+              <strong style="font-size:12px;color:{% if c.rate_total >= 80 %}var(--success){% elif c.rate_total >= 60 %}#fb923c{% else %}var(--danger){% endif %}">
+                {{ c.rate_total }} %
+              </strong>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+  </section>
+  {% endif %}
+
+  {# ─── Présence par site ─── #}
+  {% if attendance.by_site %}
+  <section class="card mb-2" style="padding:0">
+    <header style="padding:14px 18px;border-bottom:1px solid var(--border)">
+      <h3 style="margin:0;font-size:14px">
+        <i data-lucide="map-pin" style="width:16px;height:16px;vertical-align:-3px;color:var(--ks-orange-400)"></i>
+        Présence par site — {{ attendance.label }}
+      </h3>
+    </header>
+    <div class="table-wrap"><table class="table">
+      <thead><tr>
+        <th>Site</th><th>Filiale</th><th>Employés</th><th>Ouvriers</th><th>Total</th><th>Taux</th>
+      </tr></thead>
+      <tbody>
+        {% for s in attendance.by_site %}
+        <tr>
+          <td>
+            <a href="/sites-mng/{{ s.id }}/" style="font-weight:600;color:var(--text)">{{ s.name }}</a>
+            <div class="text-dim" style="font-size:11px">{{ s.type }}</div>
+          </td>
+          <td>{{ s.company }}</td>
+          <td>{{ s.present_emp }} <span class="text-dim">/ {{ s.expected_emp }}</span></td>
+          <td>{{ s.present_wrk }} <span class="text-dim">/ {{ s.expected_wrk }}</span></td>
+          <td><strong>{{ s.total_present }}</strong> <span class="text-dim">/ {{ s.total_expected }}</span></td>
+          <td style="min-width:140px">
+            <div style="display:flex;align-items:center;gap:8px">
+              <div style="flex:1;height:5px;background:var(--surface-strong);border-radius:3px;overflow:hidden">
+                <div style="height:100%;width:{{ s.rate }}%;
+                            background:{% if s.rate >= 80 %}var(--success){% elif s.rate >= 60 %}#fb923c{% else %}var(--danger){% endif %}"></div>
+              </div>
+              <span style="font-size:11.5px;font-weight:600">{{ s.rate }} %</span>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+  </section>
+  {% endif %}
+
+  <section class="statstrip mb-2">
+    <div><div class="label">Rapports configurés</div><div class="value">{{ reports_total }}</div></div>
+    <div><div class="label">Actifs</div><div class="value text-success">{{ reports_active }}</div></div>
+    <div><div class="label">Runs en attente</div><div class="value text-warning">{{ runs_pending }}</div></div>
+    <div><div class="label">Planifications actives</div><div class="value">{{ schedules_active }}</div></div>
+  </section>
+
+  <nav class="tabs mb-2">
+    <a class="tab {% if tab == 'reports' %}is-active{% endif %}" href="?tab=reports">Rapports</a>
+    <a class="tab {% if tab == 'runs' %}is-active{% endif %}" href="?tab=runs">Exécutions</a>
+    <a class="tab {% if tab == 'schedules' %}is-active{% endif %}" href="?tab=schedules">Planifications</a>
+    <a class="tab {% if tab == 'kpis' %}is-active{% endif %}" href="?tab=kpis">KPI snapshots</a>
+  </nav>
+
+  <section class="card" style="padding:0">
+    {% if tab == "reports" %}
+      {% if reports %}
+      <div class="table-wrap"><table class="table">
+        <thead><tr><th>Code</th><th>Nom</th><th>Type</th><th>Scope</th><th>Statut</th><th></th></tr></thead>
+        <tbody>
+          {% for r in reports %}
+          <tr>
+            <td class="mono">{{ r.code }}</td>
+            <td>{{ r.name }}</td>
+            <td><span class="pill pill-info">{{ r.get_type_display }}</span></td>
+            <td>{{ r.get_scope_display }}</td>
+            <td>{% if r.is_active %}<span class="pill pill-success">Actif</span>{% else %}<span class="pill pill-muted">Inactif</span>{% endif %}</td>
+            <td><div class="row gap-2">
+              <a class="icon-btn" href="{% url 'admin-report-detail' r.pk %}"><i data-lucide="eye"></i></a>
+              <a class="icon-btn" href="{% url 'admin-report-update' r.pk %}"><i data-lucide="pencil"></i></a>
+              <a class="icon-btn" href="{% url 'admin-report-delete' r.pk %}" style="color:var(--danger)"><i data-lucide="trash-2"></i></a>
+            </div></td>
+          </tr>
+          {% endfor %}
+        </tbody></table></div>
+      {% else %}{% include "administration/_partials/empty_card.html" with icon="file-bar-chart" title="Aucun rapport configuré" cta_label="Nouveau rapport" cta_url="/reports-mng/new/" %}{% endif %}
+
+    {% elif tab == "runs" %}
+      {% if runs %}
+      <div class="table-wrap"><table class="table">
+        <thead><tr><th>Démarré</th><th>Rapport</th><th>Demandé par</th><th>Format</th><th>Statut</th><th>Erreur</th></tr></thead>
+        <tbody>
+          {% for r in runs %}
+          <tr>
+            <td class="mono">{{ r.created_at|date:"d/m H:i" }}</td>
+            <td>{{ r.report.name }}</td>
+            <td>{{ r.requested_by.email|default:"—" }}</td>
+            <td>{{ r.format }}</td>
+            <td><span class="pill {% if r.status == 'completed' %}pill-success{% elif r.status == 'failed' %}pill-danger{% else %}pill-warning{% endif %}">{{ r.get_status_display }}</span></td>
+            <td>{{ r.error_message|truncatechars:40|default:"—" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody></table></div>
+      {% else %}{% include "administration/_partials/empty_card.html" with icon="play-circle" title="Aucune exécution" %}{% endif %}
+
+    {% elif tab == "schedules" %}
+      {% if schedules %}
+      <div class="table-wrap"><table class="table">
+        <thead><tr><th>Rapport</th><th>Fréquence</th><th>Cron</th><th>Dernière exécution</th><th>Statut</th><th></th></tr></thead>
+        <tbody>
+          {% for s in schedules %}
+          <tr>
+            <td>{{ s.report.name }}</td>
+            <td>{{ s.get_frequency_display }}</td>
+            <td class="mono">{{ s.cron_expression|default:"—" }}</td>
+            <td>{{ s.last_run_at|date:"d/m H:i"|default:"—" }}</td>
+            <td>{% if s.is_active %}<span class="pill pill-success">Actif</span>{% else %}<span class="pill pill-muted">Inactif</span>{% endif %}</td>
+            <td><div class="row gap-2">
+              <a class="icon-btn" href="{% url 'admin-reportschedule-update' s.pk %}"><i data-lucide="pencil"></i></a>
+              <a class="icon-btn" href="{% url 'admin-reportschedule-delete' s.pk %}" style="color:var(--danger)"><i data-lucide="trash-2"></i></a>
+            </div></td>
+          </tr>
+          {% endfor %}
+        </tbody></table></div>
+      {% else %}{% include "administration/_partials/empty_card.html" with icon="calendar-clock" title="Aucune planification" cta_label="Nouvelle planification" cta_url="/report-schedules/new/" %}{% endif %}
+
+    {% else %}
+      {% if kpis %}
+      <div class="table-wrap"><table class="table">
+        <thead><tr><th>Date</th><th>Site</th><th>Présence</th><th>Retard moy.</th><th>Punches</th><th>Alertes</th><th>Fraudes</th></tr></thead>
+        <tbody>
+          {% for k in kpis %}
+          <tr>
+            <td>{{ k.date|date:"d/m/Y" }}</td>
+            <td>{{ k.site.name|default:"Tous sites" }}</td>
+            <td class="mono">{{ k.presence_rate|floatformat:1 }} %</td>
+            <td class="mono">{{ k.avg_delay_minutes|floatformat:1 }} min</td>
+            <td>{{ k.total_punches }}</td>
+            <td>{{ k.open_alerts }}</td>
+            <td class="text-warning">{{ k.confirmed_frauds }}</td>
+          </tr>
+          {% endfor %}
+        </tbody></table></div>
+      {% else %}{% include "administration/_partials/empty_card.html" with icon="bar-chart-3" title="Aucun KPI snapshot" %}{% endif %}
+    {% endif %}
+    {% include "administration/_partials/pagination.html" %}
+  </section>
 {% endblock %}

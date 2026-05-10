@@ -1,6 +1,7 @@
 from django.http import Http404, HttpResponse
 from django.utils import timezone
 from django.views import View
+from drf_spectacular.utils import extend_schema, extend_schema_view
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny
@@ -18,12 +19,29 @@ from .serializers import (
 )
 
 
+@extend_schema_view(
+    list=extend_schema(tags=["Equipements"], summary="Modèles d'équipement (catalogue)"),
+    create=extend_schema(tags=["Equipements"], summary="Créer un modèle"),
+    retrieve=extend_schema(tags=["Equipements"]),
+    update=extend_schema(tags=["Equipements"]),
+    partial_update=extend_schema(tags=["Equipements"]),
+    destroy=extend_schema(tags=["Equipements"]),
+)
 class DeviceModelViewSet(viewsets.ModelViewSet):
     queryset = DeviceModel.objects.all(); serializer_class = DeviceModelSerializer
     search_fields = ("brand", "model"); filterset_fields = ("type", "is_active")
 
 
+@extend_schema_view(
+    list=extend_schema(tags=["Equipements"], summary="Liste des équipements installés"),
+    create=extend_schema(tags=["Equipements"], summary="Enregistrer un équipement"),
+    retrieve=extend_schema(tags=["Equipements"], summary="Détail équipement"),
+    update=extend_schema(tags=["Equipements"]),
+    partial_update=extend_schema(tags=["Equipements"]),
+    destroy=extend_schema(tags=["Equipements"]),
+)
 class DeviceViewSet(viewsets.ModelViewSet):
+    """Lecteurs NFC/UHF, caméras, tablettes terrain — un par checkpoint."""
     queryset = Device.objects.select_related("tenant", "model", "site", "zone", "checkpoint").all()
     serializer_class = DeviceSerializer
     search_fields = ("serial_number",)
@@ -45,7 +63,24 @@ class DeviceViewSet(viewsets.ModelViewSet):
         return Response({"status": "ok"})
 
 
+@extend_schema_view(
+    list=extend_schema(
+        tags=["Badges"],
+        summary="Liste des badges",
+        description=(
+            "Retourne tous les badges (visiteur QR, employé NFC, ouvrier UHF). "
+            "Filtres: `category`, `status`, `holder_kind`. Recherche sur l'UID."
+        ),
+    ),
+    create=extend_schema(tags=["Badges"], summary="Créer un badge brut",
+        description="Préférer les workflows /api/v1/devices/badges/issue-* pour une émission métier complète."),
+    retrieve=extend_schema(tags=["Badges"], summary="Détail badge"),
+    update=extend_schema(tags=["Badges"]),
+    partial_update=extend_schema(tags=["Badges"]),
+    destroy=extend_schema(tags=["Badges"]),
+)
 class BadgeViewSet(viewsets.ModelViewSet):
+    """Badges visiteurs (QR), employés (NFC) et ouvriers (UHF + casque)."""
     queryset = Badge.objects.all(); serializer_class = BadgeSerializer
     search_fields = ("uid",)
     filterset_fields = ("tenant", "type", "status", "holder_kind")

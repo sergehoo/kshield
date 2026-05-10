@@ -1,8 +1,50 @@
 {% extends "layout/base.html" %}
+{% load admin_filters %}
+
+{% block title %}Anti-fraude · KAYDAN SHIELD{% endblock %}
+{% block page_title %}Anti-fraude{% endblock %}
+{% block page_subtitle %}Alertes générées par les règles anti-fraude (badge prêté, doublon, hors-zone, etc.).{% endblock %}
+{% block breadcrumb %}Anti-fraude{% endblock %}
+
+{% block page_actions %}
+  <a class="btn btn-primary" href="{% url 'admin-fraudrule-create' %}"><i data-lucide="plus" style="width:16px;height:16px"></i> Nouvelle règle</a>
+{% endblock %}
+
 {% block content %}
-<section class="card" style="padding:48px 24px;text-align:center">
-  <h2>{{ page_title }}</h2>
-  <p class="text-muted">{{ page_subtitle }}</p>
-  <p class="text-dim mt-2">Module en développement.</p>
-</section>
+  <section class="statstrip mb-2">
+    <div><div class="label">Alertes ouvertes</div><div class="value text-warning">{{ open_alerts_count }}</div></div>
+    <div><div class="label">Règles actives</div><div class="value text-success">{{ rules_active }}</div></div>
+  </section>
+
+  <section class="card" style="padding:0">
+    {% if alerts %}
+      <div class="table-wrap"><table class="table">
+        <thead><tr>
+          <th>Date</th><th>Règle</th><th>Sévérité</th><th>Site</th>
+          <th>Porteur principal</th><th>Statut</th><th></th>
+        </tr></thead>
+        <tbody>
+          {% for a in alerts %}
+          <tr>
+            <td class="mono">{{ a.raised_at|date:"d/m H:i" }}</td>
+            <td><span style="font-weight:600">{{ a.rule.name|default:"—" }}</span><br><span class="mono text-dim" style="font-size:11px">{{ a.rule.code|default:"" }}</span></td>
+            <td>
+              {% if a.rule.severity == "critical" %}<span class="pill pill-danger">Critique</span>
+              {% elif a.rule.severity == "high" %}<span class="pill pill-warning">Élevée</span>
+              {% elif a.rule.severity == "medium" %}<span class="pill pill-info">Moyenne</span>
+              {% else %}<span class="pill pill-muted">{{ a.rule.severity|default:"—" }}</span>{% endif %}
+            </td>
+            <td>{{ a.site.name|default:"—" }}</td>
+            <td>{{ a.primary_holder_kind|default:"—" }} #{{ a.primary_holder_id|default:"—" }}</td>
+            <td>{% if a.status == "open" %}<span class="pill pill-warning">Ouverte</span>{% elif a.status == "acknowledged" %}<span class="pill pill-info">Acquittée</span>{% elif a.status == "confirmed" %}<span class="pill pill-danger">Confirmée</span>{% elif a.status == "dismissed" %}<span class="pill pill-muted">Rejetée</span>{% else %}{{ a.status }}{% endif %}</td>
+            <td><a class="icon-btn" href="#" title="Voir l'événement"><i data-lucide="eye"></i></a></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table></div>
+    {% else %}
+      {% include "administration/_partials/empty_card.html" with icon="shield-alert" title="Aucune alerte" description="Le moteur anti-fraude n'a remonté aucun incident pour le moment." %}
+    {% endif %}
+    {% include "administration/_partials/pagination.html" %}
+  </section>
 {% endblock %}

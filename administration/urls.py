@@ -79,6 +79,25 @@ urlpatterns = [
     *crud_paths("companies-mng",        "company"),
     *crud_paths("feature-flags",        "featureflag"),
 
+    # Pointage
+    *crud_paths("leave-requests",       "leaverequest"),
+    *crud_paths("overtime-rules",       "overtimerule"),
+
+    # Audit
+    *crud_paths("retention-policies",   "retentionpolicy"),
+    *crud_paths("data-exports",         "dataexport"),
+    *crud_paths("conformity-registers", "conformity"),
+
+    # Reporting
+    *crud_paths("reports-mng",          "report"),
+    *crud_paths("report-schedules",     "reportschedule"),
+
+    # Mobile
+    *crud_paths("mobile-devices",       "mobiledevice"),
+
+    # AI
+    *crud_paths("ai-templates",         "aitemplate"),
+
     # ───── Gestion utilisateurs (vues natives KAYDAN) ─────
     path("accounts/new/",                 views.UserCreateView.as_view(),    name="admin-user-create"),
     path("accounts/<int:pk>/",            views.UserDetailView.as_view(),    name="admin-user-detail"),
@@ -90,6 +109,19 @@ urlpatterns = [
     path("roles/",                  views.RoleListView.as_view(),    name="admin-roles"),
     path("roles/new/",              views.RoleCreateView.as_view(),  name="admin-role-create"),
     path("roles/<int:pk>/edit/",    views.RoleUpdateView.as_view(),  name="admin-role-update"),
+
+    # ───── Clés API IoT ─────
+    path("api-keys/",               views.APIKeyListView.as_view(),    name="admin-api-keys"),
+    path("api-keys/new/",           views.APIKeyCreateView.as_view(),  name="admin-api-key-create"),
+    path("api-keys/<int:pk>/revoke/", views.APIKeyRevokeView.as_view(), name="admin-api-key-revoke"),
+
+    # ───── Mini-API notifications (consommée par la topbar) ─────
+    path("api/notifications/unread/",
+         views.NotificationUnreadCountView.as_view(), name="admin-notif-unread"),
+    path("api/notifications/recent/",
+         views.NotificationRecentView.as_view(), name="admin-notif-recent"),
+    path("api/notifications/mark-all-read/",
+         views.NotificationMarkAllReadView.as_view(), name="admin-notif-mark-all-read"),
 ]
 
 # ===== Singleton tenant KAYDAN — édition seule =====

@@ -1,8 +1,97 @@
 {% extends "layout/base.html" %}
+{% load admin_filters %}
+
+{% block title %}Notifications · KAYDAN SHIELD{% endblock %}
+{% block page_title %}Notifications{% endblock %}
+{% block page_subtitle %}Notifications envoyées, templates et préférences utilisateurs.{% endblock %}
+{% block breadcrumb %}Notifications{% endblock %}
+
+{% block page_actions %}
+  {% if tab == "templates" %}
+    <a class="btn btn-primary" href="{% url 'admin-notiftemplate-create' %}"><i data-lucide="plus" style="width:16px;height:16px"></i> Nouveau template</a>
+  {% endif %}
+{% endblock %}
+
 {% block content %}
-<section class="card" style="padding:48px 24px;text-align:center">
-  <h2>{{ page_title }}</h2>
-  <p class="text-muted">{{ page_subtitle }}</p>
-  <p class="text-dim mt-2">Module en développement.</p>
-</section>
+  <section class="statstrip mb-2">
+    <div><div class="label">Notifications envoyées</div><div class="value">{{ sent_total }}</div></div>
+    <div><div class="label">Aujourd'hui</div><div class="value">{{ sent_today }}</div></div>
+    <div><div class="label">En échec</div><div class="value text-danger">{{ sent_failed }}</div></div>
+    <div><div class="label">Templates</div><div class="value">{{ templates_total }}</div></div>
+  </section>
+
+  <nav class="tabs mb-2">
+    <a class="tab {% if tab == 'sent' %}is-active{% endif %}" href="?tab=sent">Envoyées</a>
+    <a class="tab {% if tab == 'templates' %}is-active{% endif %}" href="?tab=templates">Templates</a>
+    <a class="tab {% if tab == 'preferences' %}is-active{% endif %}" href="?tab=preferences">Préférences</a>
+  </nav>
+
+  <section class="card" style="padding:0">
+    {% if tab == "sent" %}
+      <form method="get" class="row gap-2" style="padding:12px 16px;border-bottom:1px solid var(--border)">
+        <input type="hidden" name="tab" value="sent">
+        <select name="status" class="form-select" style="max-width:200px" onchange="this.form.submit()">
+          <option value="">Tous les statuts</option>
+          {% for s in "queued,sent,delivered,read,failed"|cut:" "|slice:":" %}{% endfor %}
+          <option value="queued" {% if status == "queued" %}selected{% endif %}>En file</option>
+          <option value="sent" {% if status == "sent" %}selected{% endif %}>Envoyée</option>
+          <option value="delivered" {% if status == "delivered" %}selected{% endif %}>Délivrée</option>
+          <option value="read" {% if status == "read" %}selected{% endif %}>Lue</option>
+          <option value="failed" {% if status == "failed" %}selected{% endif %}>Échec</option>
+        </select>
+      </form>
+      {% if notifications %}
+      <div class="table-wrap"><table class="table">
+        <thead><tr><th>Créée le</th><th>Destinataire</th><th>Canal</th><th>Sujet</th><th>Statut</th><th>Envoyée</th></tr></thead>
+        <tbody>
+          {% for n in notifications %}
+          <tr>
+            <td class="mono">{{ n.created_at|date:"d/m/Y H:i" }}</td>
+            <td>{{ n.recipient.email|default:"—" }}</td>
+            <td><span class="pill pill-info">{{ n.get_channel_display }}</span></td>
+            <td>{{ n.subject|truncatechars:50|default:"—" }}</td>
+            <td><span class="pill {% if n.status == 'delivered' or n.status == 'read' %}pill-success{% elif n.status == 'failed' %}pill-danger{% else %}pill-warning{% endif %}">{{ n.get_status_display }}</span></td>
+            <td>{{ n.sent_at|date:"H:i"|default:"—" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody></table></div>
+      {% else %}{% include "administration/_partials/empty_card.html" with icon="bell" title="Aucune notification" %}{% endif %}
+
+    {% elif tab == "templates" %}
+      {% if templates %}
+      <div class="table-wrap"><table class="table">
+        <thead><tr><th>Code</th><th>Canal</th><th>Sujet</th><th></th></tr></thead>
+        <tbody>
+          {% for t in templates %}
+          <tr>
+            <td class="mono">{{ t.code }}</td>
+            <td><span class="pill pill-info">{{ t.get_channel_display }}</span></td>
+            <td>{{ t.subject|default:"—" }}</td>
+            <td><div class="row gap-2">
+              <a class="icon-btn" href="{% url 'admin-notiftemplate-detail' t.pk %}"><i data-lucide="eye"></i></a>
+              <a class="icon-btn" href="{% url 'admin-notiftemplate-update' t.pk %}"><i data-lucide="pencil"></i></a>
+              <a class="icon-btn" href="{% url 'admin-notiftemplate-delete' t.pk %}" style="color:var(--danger)"><i data-lucide="trash-2"></i></a>
+            </div></td>
+          </tr>
+          {% endfor %}
+        </tbody></table></div>
+      {% else %}{% include "administration/_partials/empty_card.html" with icon="layout-template" title="Aucun template" cta_label="Nouveau template" cta_url="/notification-templates/new/" %}{% endif %}
+
+    {% else %}
+      {% if preferences %}
+      <div class="table-wrap"><table class="table">
+        <thead><tr><th>Utilisateur</th><th>Canal</th><th>Activé</th></tr></thead>
+        <tbody>
+          {% for p in preferences %}
+          <tr>
+            <td>{{ p.user.email }}</td>
+            <td>{{ p.channel }}</td>
+            <td>{% if p.is_enabled %}<span class="pill pill-success">Oui</span>{% else %}<span class="pill pill-muted">Non</span>{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody></table></div>
+      {% else %}{% include "administration/_partials/empty_card.html" with icon="settings-2" title="Aucune préférence enregistrée" %}{% endif %}
+    {% endif %}
+    {% include "administration/_partials/pagination.html" %}
+  </section>
 {% endblock %}

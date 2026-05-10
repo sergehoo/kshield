@@ -73,6 +73,107 @@ class AdminContextMixin:
 # ---------------------------------------------------------------------------
 # Factory CRUD
 # ---------------------------------------------------------------------------
+# ─── Module-level constants pour _build_fields() ─────────────────────
+# (sortis de make_crud() pour qu'ils soient résolvables depuis les méthodes
+#  de classe inner — sinon Python lève NameError sur le scope de classe.)
+
+_HIDDEN_FIELDS = {
+    "id", "uuid", "tenant", "created_by", "updated_by",
+    "secret_hash", "password", "deleted_by",
+}
+
+_CATEGORY_BY_FIELD = {
+    "first_name": "identity", "last_name": "identity",
+    "name": "identity", "title": "identity", "full_name": "identity",
+    "matricule": "identity", "code": "identity",
+    "serial_number": "identity", "uid": "identity",
+    "license_plate": "identity",
+    "id_number": "identity", "id_type": "identity",
+    "nationality": "identity", "date_of_birth": "identity",
+    "email": "contact", "phone": "contact", "address": "contact",
+    "contact_email": "contact", "contact_phone": "contact",
+    "contact_name": "contact",
+    "emergency_contact_name": "contact", "emergency_contact_phone": "contact",
+    "company": "links", "department": "links", "position": "links",
+    "manager": "links", "subcontractor": "links", "trade": "links",
+    "site": "links", "zone": "links", "checkpoint": "links",
+    "model": "links", "host_employee": "links",
+    "current_worker": "links", "paired_helmet": "links",
+    "rule": "links", "report": "links", "device": "links",
+    "user": "links", "recipient": "links", "template": "links",
+    "purpose": "links", "visit_request": "links",
+    "approved_by": "links",
+    "status": "status", "is_active": "status",
+    "contract_type": "status", "work_location": "status",
+    "severity": "status", "scope": "status", "type": "status",
+    "kind": "status", "category": "status", "method": "status",
+    "decision": "status", "direction": "status",
+    "hired_at": "status", "ended_at": "status",
+    "created_at": "status", "updated_at": "status",
+    "issued_at": "status", "expires_at": "status",
+    "valid_from": "status", "valid_until": "status",
+    "scheduled_at": "status", "raised_at": "status",
+    "description": "notes", "notes": "notes", "reason": "notes",
+    "denial_reason": "notes", "purpose_other": "notes",
+    "result": "notes", "legal_basis": "notes",
+}
+
+_ICON_BY_FIELD = {
+    "first_name": "user", "last_name": "user", "name": "type",
+    "title": "type", "matricule": "hash", "code": "hash",
+    "serial_number": "barcode", "uid": "fingerprint",
+    "id_number": "scan-line", "id_type": "id-card",
+    "email": "mail", "phone": "phone", "address": "map-pin",
+    "contact_email": "mail", "contact_phone": "phone",
+    "contact_name": "user-round",
+    "emergency_contact_name": "siren",
+    "emergency_contact_phone": "siren",
+    "company": "building-2", "department": "users",
+    "position": "briefcase", "manager": "user-cog",
+    "subcontractor": "users-round", "trade": "wrench",
+    "site": "map-pin", "zone": "shapes", "checkpoint": "scan-line",
+    "model": "cpu", "host_employee": "user-check",
+    "current_worker": "hard-hat", "paired_helmet": "hard-hat",
+    "rule": "shield-alert", "device": "cpu",
+    "user": "user", "recipient": "send",
+    "template": "layout-template", "purpose": "target",
+    "approved_by": "user-check",
+    "status": "activity", "is_active": "toggle-right",
+    "contract_type": "file-signature",
+    "work_location": "map-pinned",
+    "severity": "alert-triangle", "scope": "globe",
+    "type": "tag", "kind": "tag", "category": "tag",
+    "method": "scan", "decision": "gavel", "direction": "log-in",
+    "hired_at": "calendar-plus", "ended_at": "calendar-x",
+    "created_at": "clock", "updated_at": "refresh-cw",
+    "issued_at": "calendar-check", "expires_at": "calendar-clock",
+    "valid_from": "calendar-arrow-up", "valid_until": "calendar-arrow-down",
+    "scheduled_at": "calendar", "raised_at": "alarm-clock",
+    "description": "file-text", "notes": "sticky-note",
+    "reason": "message-square", "denial_reason": "ban",
+    "purpose_other": "info", "result": "check-square",
+    "legal_basis": "scale", "nationality": "flag",
+    "date_of_birth": "cake", "photo": "image",
+    "id_document": "file-image", "logo": "image",
+    "latitude": "map", "longitude": "map",
+    "geofence": "shapes", "polygon": "shapes",
+    "weekly_threshold_hours": "timer",
+    "rate_125": "percent", "rate_150": "percent",
+    "night_rate": "moon",
+    "retention_days": "archive",
+    "uhf_tag_uid": "radio-tower", "ble_beacon_uid": "bluetooth",
+}
+
+_CATEGORY_META = (
+    ("identity", "Identité", "id-card"),
+    ("contact", "Contact", "phone"),
+    ("links", "Liens", "link-2"),
+    ("status", "Statut & dates", "activity"),
+    ("notes", "Notes & description", "file-text"),
+    ("other", "Autres informations", "info"),
+)
+
+
 def make_crud(
     *,
     model,
@@ -133,27 +234,61 @@ def make_crud(
             return ctx
 
         def _build_fields(self):
-            out = []
+            """Retourne un dict {category_key: [{label, value, icon, raw}, ...]}.
+
+            Le dict respecte l'ordre de _CATEGORY_META. Les méta-champs internes
+            (uuid, tenant, etc.) sont exclus.
+            """
+            from collections import OrderedDict
+            grouped = OrderedDict()
+            for key, _, _ in _CATEGORY_META:
+                grouped[key] = []
+
             for f in self.object._meta.get_fields():
+                fname = getattr(f, "name", None)
+                if not fname or fname in _HIDDEN_FIELDS:
+                    continue
                 if f.is_relation and f.many_to_many:
                     try:
-                        vals = list(getattr(self.object, f.name).all()[:5])
+                        vals = list(getattr(self.object, fname).all()[:5])
                         val = ", ".join(str(v) for v in vals) if vals else None
                     except Exception:
                         val = None
                 elif f.is_relation and f.one_to_many:
-                    continue
+                    continue  # reverse relations affichées via context_extras
                 elif f.is_relation:
-                    try: val = getattr(self.object, f.name, None)
+                    try: val = getattr(self.object, fname, None)
                     except Exception: val = None
                 else:
-                    val = getattr(self.object, f.name, None)
+                    val = getattr(self.object, fname, None)
+
+                # Préfère display() pour les choices fields (status, type, etc.)
+                getter = f"get_{fname}_display"
+                if hasattr(self.object, getter):
+                    try: val = getattr(self.object, getter)()
+                    except Exception: pass
+
                 if hasattr(f, "verbose_name"):
                     label = str(f.verbose_name).capitalize()
                 else:
-                    label = f.name.replace("_", " ").capitalize()
-                out.append((label, val))
-            return out
+                    label = fname.replace("_", " ").capitalize()
+
+                category = _CATEGORY_BY_FIELD.get(fname, "other")
+                icon = _ICON_BY_FIELD.get(fname, "circle-dot")
+
+                grouped[category].append({
+                    "label": label, "value": val, "icon": icon,
+                    "raw_name": fname,
+                })
+
+            # Liste des sections non-vides + meta
+            sections = []
+            for key, title, sec_icon in _CATEGORY_META:
+                items = grouped.get(key) or []
+                if items:
+                    sections.append({"key": key, "title": title,
+                                      "icon": sec_icon, "items": items})
+            return sections
 
     class _Update(AdminContextMixin, InjectKaydanTenantMixin, SuccessMessageMixin, UpdateView):
         form_class = _form_cls
@@ -276,32 +411,48 @@ def _badge_detail_extras(view, ctx):
 
 
 def _company_detail_extras(view, ctx):
-    """Injecte les compteurs (employés, ouvriers, visiteurs) + sites pour la
-    fiche détail d'une filiale.
+    """Injecte compteurs + onglets paginés (employés, ouvriers, sites, visiteurs).
+
+    L'onglet courant est sélectionné via ?tab=employees|workers|sites|visitors,
+    avec recherche ?q=… + filtre ?status=active|inactive et pagination ?page=N.
     """
     company = view.object
-    extras = {}
+    request = getattr(view, "request", None)
+    GET = request.GET if request else {}
+    tab = GET.get("tab", "employees")
+    q = (GET.get("q") or "").strip()
+    status_filter = GET.get("status", "")
+
+    extras = {"q": q, "status_filter": status_filter}
+    extras["tab"] = tab if tab in ("employees", "workers", "sites", "visitors") else "employees"
+
     try:
+        from datetime import timedelta
+
+        from django.db.models import Q
+        from django.utils import timezone
+
+        from administration.views import paginate
         from devices.models import Badge
         from employees.models import Employee
         from ouvriers.models import Worker
         from sites.models import Site
-        from visitors.models import Visitor, VisitRequest
+        from visitors.models import Visitor
 
-        emp_qs = Employee.objects.filter(company=company)
-        extras["employees_count"] = emp_qs.count()
-        extras["employees_active"] = emp_qs.filter(status="active").count()
+        # ─── Counters ─────────────────────────────────────────────
+        emp_all = Employee.objects.filter(company=company)
+        extras["employees_count"] = emp_all.count()
+        extras["employees_active"] = emp_all.filter(status="active").count()
         extras["employees_with_badge"] = Badge.objects.filter(
             category="employee_rfid", status__in=("active", "assigned"),
             holder_kind="employee",
-            holder_object_id__in=emp_qs.values_list("id", flat=True),
+            holder_object_id__in=emp_all.values_list("id", flat=True),
         ).count()
 
-        sites_qs = Site.objects.filter(company=company)
-        extras["sites_count"] = sites_qs.count()
-        extras["sites_list"] = list(sites_qs.order_by("name")[:8])
+        sites_all = Site.objects.filter(company=company)
+        extras["sites_count"] = sites_all.count()
+        site_ids = list(sites_all.values_list("id", flat=True))
 
-        site_ids = list(sites_qs.values_list("id", flat=True))
         worker_ids = set()
         if site_ids:
             try:
@@ -318,42 +469,89 @@ def _company_detail_extras(view, ctx):
                 ).values_list("worker_id", flat=True).distinct())
             except Exception:
                 pass
-        wk_qs = Worker.objects.filter(id__in=worker_ids) if worker_ids else Worker.objects.none()
-        extras["workers_count"] = wk_qs.count()
-        extras["workers_active"] = wk_qs.filter(status="active").count()
+        wk_all = Worker.objects.filter(id__in=worker_ids) if worker_ids else Worker.objects.none()
+        extras["workers_count"] = wk_all.count()
+        extras["workers_active"] = wk_all.filter(status="active").count()
         extras["workers_with_badge"] = Badge.objects.filter(
             category="worker_rfid", status__in=("active", "assigned"),
             holder_kind="worker",
-            holder_object_id__in=worker_ids,
+            holder_object_id__in=list(worker_ids),
         ).count() if worker_ids else 0
 
-        vis_qs = Visitor.objects.filter(
+        vis_all = Visitor.objects.filter(
             visit_requests__site__in=site_ids,
         ).distinct() if site_ids else Visitor.objects.none()
-        extras["visitors_count"] = vis_qs.count()
-        from datetime import timedelta
-
-        from django.utils import timezone
-        extras["visitors_recent"] = vis_qs.filter(
+        extras["visitors_count"] = vis_all.count()
+        extras["visitors_recent"] = vis_all.filter(
             visit_requests__created_at__gte=timezone.now() - timedelta(days=30),
         ).distinct().count() if site_ids else 0
 
-        extras["top_employees"] = list(
-            emp_qs.order_by("-created_at").select_related("position", "department")[:5]
-        )
-        extras["top_workers"] = list(
-            wk_qs.order_by("-created_at").select_related("trade", "subcontractor")[:5]
-        ) if worker_ids else []
+        # ─── Onglet actif → queryset filtré + paginé ──────────────
+        if extras["tab"] == "employees":
+            qs = emp_all.select_related("position", "department")
+            if q:
+                qs = qs.filter(
+                    Q(first_name__icontains=q) | Q(last_name__icontains=q) |
+                    Q(matricule__icontains=q) | Q(email__icontains=q)
+                )
+            if status_filter:
+                qs = qs.filter(status=status_filter)
+            qs = qs.order_by("last_name", "first_name")
+            page_obj, page_qs = paginate(qs, request, per_page=20)
+            extras["page_obj"] = page_obj
+            extras["employees"] = page_qs
+            extras["filtered_count"] = qs.count()
+        elif extras["tab"] == "workers":
+            qs = wk_all.select_related("trade", "subcontractor")
+            if q:
+                qs = qs.filter(
+                    Q(first_name__icontains=q) | Q(last_name__icontains=q) |
+                    Q(matricule__icontains=q)
+                )
+            if status_filter:
+                qs = qs.filter(status=status_filter)
+            qs = qs.order_by("last_name", "first_name")
+            page_obj, page_qs = paginate(qs, request, per_page=20)
+            extras["page_obj"] = page_obj
+            extras["workers"] = page_qs
+            extras["filtered_count"] = qs.count()
+        elif extras["tab"] == "sites":
+            qs = sites_all
+            if q:
+                qs = qs.filter(Q(name__icontains=q) | Q(code__icontains=q))
+            if status_filter:
+                qs = qs.filter(status=status_filter)
+            qs = qs.order_by("name")
+            page_obj, page_qs = paginate(qs, request, per_page=20)
+            extras["page_obj"] = page_obj
+            extras["sites"] = page_qs
+            extras["filtered_count"] = qs.count()
+        else:  # visitors
+            qs = vis_all
+            if q:
+                qs = qs.filter(
+                    Q(first_name__icontains=q) | Q(last_name__icontains=q) |
+                    Q(id_number__icontains=q)
+                )
+            qs = qs.order_by("-created_at")
+            page_obj, page_qs = paginate(qs, request, per_page=20)
+            extras["page_obj"] = page_obj
+            extras["visitors"] = page_qs
+            extras["filtered_count"] = qs.count()
+
     except Exception:
         import logging
         logging.getLogger(__name__).exception("company_detail_extras failed")
         for k in ("employees_count", "employees_active", "employees_with_badge",
                   "sites_count", "workers_count", "workers_active",
-                  "workers_with_badge", "visitors_count", "visitors_recent"):
+                  "workers_with_badge", "visitors_count", "visitors_recent",
+                  "filtered_count"):
             extras.setdefault(k, 0)
-        extras.setdefault("sites_list", [])
-        extras.setdefault("top_employees", [])
-        extras.setdefault("top_workers", [])
+        extras.setdefault("employees", [])
+        extras.setdefault("workers", [])
+        extras.setdefault("sites", [])
+        extras.setdefault("visitors", [])
+        extras.setdefault("page_obj", None)
     return extras
 
 
@@ -413,12 +611,18 @@ def _holder_movement_extras(holder_kind: str):
 # Lazy-load des modèles
 # ---------------------------------------------------------------------------
 def _build_all():
+    from ai_assistant.models import AIPromptTemplate
     from antifraud.models import FraudRule
+    from attendance.models import LeaveRequest, OvertimeRule
+    from audit.models import (ConformityRegister, DataExportRequest,
+                                LegalRetentionPolicy)
     from core.models import Company, FeatureFlag, SiteGateway, Tenant
     from devices.models import Badge, Device, DeviceModel as DM, Helmet
     from employees.models import Employee
+    from mobile_sync.models import MobileDevice
     from notifications.models import NotificationTemplate
     from ouvriers.models import Subcontractor, Worker
+    from reports.models import Report, ReportSchedule
     from sites.models import Site, Zone
     from visitors.models import Visitor, VisitRequest
 
@@ -500,6 +704,57 @@ def _build_all():
           active_nav="settings", list_url_name="admin-settings",
           url_prefix="feature-flags", entity_label="Feature flag",
           entity_label_plural="Feature flags"),
+
+        # ===================== Pointage / présence =====================
+        C("leaverequest", model=LeaveRequest, form_class=kforms.LeaveRequestForm,
+          active_nav="attendance", list_url_name="admin-attendance",
+          url_prefix="leave-requests", entity_label="Demande de congé",
+          entity_label_plural="Demandes de congés"),
+        C("overtimerule", model=OvertimeRule, form_class=kforms.OvertimeRuleForm,
+          active_nav="attendance", list_url_name="admin-attendance",
+          url_prefix="overtime-rules", entity_label="Règle d'heures sup.",
+          entity_label_plural="Règles d'heures sup."),
+
+        # ===================== Audit / conformité =====================
+        C("retentionpolicy", model=LegalRetentionPolicy,
+          form_class=kforms.LegalRetentionPolicyForm,
+          active_nav="audit", list_url_name="admin-audit",
+          url_prefix="retention-policies", entity_label="Politique de rétention",
+          entity_label_plural="Politiques de rétention"),
+        C("dataexport", model=DataExportRequest,
+          form_class=kforms.DataExportRequestForm,
+          active_nav="audit", list_url_name="admin-audit",
+          url_prefix="data-exports", entity_label="Export RGPD",
+          entity_label_plural="Exports RGPD"),
+        C("conformity", model=ConformityRegister,
+          form_class=kforms.ConformityRegisterForm,
+          active_nav="audit", list_url_name="admin-audit",
+          url_prefix="conformity-registers", entity_label="Registre de conformité",
+          entity_label_plural="Registres de conformité"),
+
+        # ===================== Reporting =====================
+        C("report", model=Report, form_class=kforms.ReportForm,
+          active_nav="reports", list_url_name="admin-reports",
+          url_prefix="reports-mng", entity_label="Rapport",
+          entity_label_plural="Rapports"),
+        C("reportschedule", model=ReportSchedule,
+          form_class=kforms.ReportScheduleForm,
+          active_nav="reports", list_url_name="admin-reports",
+          url_prefix="report-schedules", entity_label="Planification",
+          entity_label_plural="Planifications"),
+
+        # ===================== Mobile =====================
+        C("mobiledevice", model=MobileDevice, form_class=kforms.MobileDeviceForm,
+          active_nav="mobile", list_url_name="admin-mobile",
+          url_prefix="mobile-devices", entity_label="Device mobile",
+          entity_label_plural="Devices mobiles"),
+
+        # ===================== AI =====================
+        C("aitemplate", model=AIPromptTemplate,
+          form_class=kforms.AIPromptTemplateForm,
+          active_nav="ai", list_url_name="admin-ai",
+          url_prefix="ai-templates", entity_label="Prompt IA",
+          entity_label_plural="Prompts IA"),
     ]
     return dict(pairs)
 

@@ -1,8 +1,51 @@
 {% extends "layout/base.html" %}
+{% load admin_filters %}
+
+{% block title %}Équipements · KAYDAN SHIELD{% endblock %}
+{% block page_title %}Équipements{% endblock %}
+{% block page_subtitle %}Lecteurs NFC/UHF, caméras, tablettes terrain.{% endblock %}
+{% block breadcrumb %}Équipements{% endblock %}
+
+{% block page_actions %}
+  <a class="btn btn-ghost" href="{% url 'admin-devicemodel-create' %}"><i data-lucide="layers" style="width:16px;height:16px"></i> Nouveau modèle</a>
+  <a class="btn btn-primary" href="{% url 'admin-device-create' %}"><i data-lucide="plus" style="width:16px;height:16px"></i> Nouvel équipement</a>
+{% endblock %}
+
 {% block content %}
-<section class="card" style="padding:48px 24px;text-align:center">
-  <h2>{{ page_title }}</h2>
-  <p class="text-muted">{{ page_subtitle }}</p>
-  <p class="text-dim mt-2">Module en développement.</p>
-</section>
+  <section class="statstrip mb-2">
+    <div><div class="label">Équipements totaux</div><div class="value">{{ page_obj.paginator.count|default:0 }}</div></div>
+    <div><div class="label">Modèles d'équipement</div><div class="value">{{ models_count }}</div></div>
+  </section>
+
+  <section class="card" style="padding:0">
+    {% if devices %}
+      <div class="table-wrap"><table class="table">
+        <thead><tr>
+          <th>N° série</th><th>Modèle</th><th>Type</th><th>Site</th>
+          <th>Zone</th><th>API key</th><th>Statut</th><th></th>
+        </tr></thead>
+        <tbody>
+          {% for d in devices %}
+          <tr>
+            <td class="mono">{{ d.serial_number }}</td>
+            <td>{{ d.model.brand }} {{ d.model.model }}</td>
+            <td><span class="pill pill-info">{{ d.model.get_type_display|default:d.model.type }}</span></td>
+            <td>{{ d.site.name|default:"—" }}</td>
+            <td>{{ d.zone.name|default:"—" }}</td>
+            <td class="mono" style="font-size:11px">{% if d.api_key %}{{ d.api_key.public_id|slice:":12" }}…{% else %}—{% endif %}</td>
+            <td>{% if d.status == 'active' %}<span class="pill pill-success">Actif</span>{% elif d.status == 'maintenance' %}<span class="pill pill-warning">Maintenance</span>{% elif d.status == 'offline' %}<span class="pill pill-danger">Offline</span>{% else %}<span class="pill pill-muted">{{ d.get_status_display }}</span>{% endif %}</td>
+            <td><div class="row gap-2">
+              <a class="icon-btn" href="{% url 'admin-device-detail' d.pk %}"><i data-lucide="eye"></i></a>
+              <a class="icon-btn" href="{% url 'admin-device-update' d.pk %}"><i data-lucide="pencil"></i></a>
+              <a class="icon-btn" href="{% url 'admin-device-delete' d.pk %}" style="color:var(--danger)"><i data-lucide="trash-2"></i></a>
+            </div></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table></div>
+    {% else %}
+      {% include "administration/_partials/empty_card.html" with icon="cpu" title="Aucun équipement" cta_label="Enregistrer un équipement" cta_url="/devices-mng/new/" %}
+    {% endif %}
+    {% include "administration/_partials/pagination.html" %}
+  </section>
 {% endblock %}

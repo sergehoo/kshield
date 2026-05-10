@@ -1,8 +1,46 @@
 {% extends "layout/base.html" %}
+{% load admin_filters %}
+
+{% block title %}Sites & zones · KAYDAN SHIELD{% endblock %}
+{% block page_title %}Sites & zones{% endblock %}
+{% block page_subtitle %}Bureaux, chantiers, entrepôts et zones d'accès.{% endblock %}
+{% block breadcrumb %}Sites & zones{% endblock %}
+
+{% block page_actions %}
+  <a class="btn btn-ghost" href="{% url 'admin-zone-create' %}"><i data-lucide="layers" style="width:16px;height:16px"></i> Nouvelle zone</a>
+  <a class="btn btn-primary" href="{% url 'admin-site-create' %}"><i data-lucide="plus" style="width:16px;height:16px"></i> Nouveau site</a>
+{% endblock %}
+
 {% block content %}
-<section class="card" style="padding:48px 24px;text-align:center">
-  <h2>{{ page_title }}</h2>
-  <p class="text-muted">{{ page_subtitle }}</p>
-  <p class="text-dim mt-2">Module en développement.</p>
-</section>
+  <section class="card" style="padding:0">
+    {% if sites %}
+      <div class="table-wrap"><table class="table">
+        <thead><tr>
+          <th>Site</th><th>Code</th><th>Type</th><th>Filiale</th>
+          <th>Statut</th><th>Adresse</th><th>Coordonnées</th><th></th>
+        </tr></thead>
+        <tbody>
+          {% for s in sites %}
+          <tr>
+            <td><div style="font-weight:600">{{ s.name }}</div></td>
+            <td class="mono">{{ s.code }}</td>
+            <td><span class="pill pill-info">{{ s.get_type_display }}</span></td>
+            <td>{{ s.company.name|default:"—" }}</td>
+            <td>{% if s.status == 'active' %}<span class="pill pill-success">Actif</span>{% elif s.status == 'maintenance' %}<span class="pill pill-warning">Maintenance</span>{% else %}<span class="pill pill-muted">{{ s.get_status_display }}</span>{% endif %}</td>
+            <td>{{ s.address|truncatechars:40|default:"—" }}</td>
+            <td class="mono" style="font-size:11px">{% if s.latitude %}{{ s.latitude|floatformat:4 }}, {{ s.longitude|floatformat:4 }}{% else %}—{% endif %}</td>
+            <td><div class="row gap-2">
+              <a class="icon-btn" href="{% url 'admin-site-detail' s.pk %}"><i data-lucide="eye"></i></a>
+              <a class="icon-btn" href="{% url 'admin-site-update' s.pk %}"><i data-lucide="pencil"></i></a>
+              <a class="icon-btn" href="{% url 'admin-site-delete' s.pk %}" style="color:var(--danger)"><i data-lucide="trash-2"></i></a>
+            </div></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table></div>
+    {% else %}
+      {% include "administration/_partials/empty_card.html" with icon="map-pin" title="Aucun site enregistré" cta_label="Créer un site" cta_url="/sites-mng/new/" %}
+    {% endif %}
+    {% include "administration/_partials/pagination.html" %}
+  </section>
 {% endblock %}

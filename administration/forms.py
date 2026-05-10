@@ -457,3 +457,129 @@ class APIKeyForm(StyledModelForm):
         widgets = {
             "expires_at": forms.DateTimeInput(attrs={"type": "datetime-local"}),
         }
+
+
+# ===========================================================================
+# Pointage / présence
+# ===========================================================================
+class LeaveRequestForm(StyledModelForm):
+    class Meta:
+        from attendance.models import LeaveRequest
+        model = LeaveRequest
+        fields = [
+            "employee", "worker", "type", "status",
+            "start_date", "end_date", "reason", "document",
+        ]
+        widgets = {
+            "start_date": forms.DateInput(attrs={"type": "date"}),
+            "end_date": forms.DateInput(attrs={"type": "date"}),
+            "reason": forms.Textarea(attrs={"rows": 3}),
+        }
+
+
+class OvertimeRuleForm(StyledModelForm):
+    class Meta:
+        from attendance.models import OvertimeRule
+        model = OvertimeRule
+        fields = [
+            "company", "name", "weekly_threshold_hours",
+            "rate_125", "rate_150", "night_rate", "is_active",
+        ]
+
+
+# ===========================================================================
+# Audit / conformité
+# ===========================================================================
+class LegalRetentionPolicyForm(StyledModelForm):
+    class Meta:
+        from audit.models import LegalRetentionPolicy
+        model = LegalRetentionPolicy
+        fields = ["target_model", "retention_days", "legal_basis", "is_active"]
+        widgets = {
+            "legal_basis": forms.Textarea(attrs={"rows": 3}),
+        }
+
+
+class DataExportRequestForm(StyledModelForm):
+    class Meta:
+        from audit.models import DataExportRequest
+        model = DataExportRequest
+        fields = [
+            "subject_holder_kind", "subject_holder_id", "kind",
+            "status", "parameters", "expires_at",
+        ]
+        widgets = {
+            "parameters": forms.Textarea(attrs={"rows": 4,
+                "placeholder": '{"include_audit": true}'}),
+            "expires_at": forms.DateTimeInput(attrs={"type": "datetime-local"}),
+        }
+
+
+class ConformityRegisterForm(StyledModelForm):
+    class Meta:
+        from audit.models import ConformityRegister
+        model = ConformityRegister
+        fields = [
+            "site", "kind", "title", "performed_at",
+            "performed_by", "result", "document",
+        ]
+        widgets = {
+            "performed_at": forms.DateTimeInput(attrs={"type": "datetime-local"}),
+            "result": forms.Textarea(attrs={"rows": 3}),
+        }
+
+
+# ===========================================================================
+# Reporting
+# ===========================================================================
+class ReportForm(StyledModelForm):
+    class Meta:
+        from reports.models import Report
+        model = Report
+        fields = [
+            "name", "code", "type", "description",
+            "query", "scope", "is_active",
+        ]
+        widgets = {
+            "description": forms.Textarea(attrs={"rows": 3}),
+            "query": forms.Textarea(attrs={"rows": 6,
+                "placeholder": '{"select": ["…"], "from": "access_event"}'}),
+        }
+
+
+class ReportScheduleForm(StyledModelForm):
+    class Meta:
+        from reports.models import ReportSchedule
+        model = ReportSchedule
+        fields = ["report", "frequency", "cron_expression",
+                  "parameters", "is_active"]
+        widgets = {
+            "parameters": forms.Textarea(attrs={"rows": 3}),
+        }
+
+
+# ===========================================================================
+# Mobile / sync
+# ===========================================================================
+class MobileDeviceForm(StyledModelForm):
+    class Meta:
+        from mobile_sync.models import MobileDevice
+        model = MobileDevice
+        fields = [
+            "user", "device_id", "name", "os", "os_version",
+            "app_version", "site", "api_key", "status",
+        ]
+
+
+# ===========================================================================
+# AI assistant
+# ===========================================================================
+class AIPromptTemplateForm(StyledModelForm):
+    class Meta:
+        from ai_assistant.models import AIPromptTemplate
+        model = AIPromptTemplate
+        fields = ["code", "role", "name", "system_prompt", "is_active"]
+        widgets = {
+            "system_prompt": forms.Textarea(attrs={"rows": 8,
+                "placeholder": "Tu es l'assistant KAYDAN SHIELD…"}),
+        }

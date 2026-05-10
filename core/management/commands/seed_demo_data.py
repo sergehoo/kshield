@@ -21,6 +21,11 @@ class Command(BaseCommand):
         parser.add_argument("--sites", type=int, default=4)
         parser.add_argument("--days", type=int, default=14,
                              help="Nombre de jours d'historique de scans")
+        parser.add_argument("--scans", type=int, default=0,
+                             help="Nombre d'AccessEvent à générer répartis sur --days "
+                                  "(0 = aucun, 1000 recommandé pour démo).")
+        parser.add_argument("--issue-badges", action="store_true",
+                             help="Émet des badges pour 80%% des employés et ouvriers.")
         parser.add_argument("--reset", action="store_true",
                              help="Vide les tables avant de seeder.")
 
@@ -176,10 +181,138 @@ class Command(BaseCommand):
                 },
             )
 
+        # ---------------------------------------------------------------
+        # Émission de badges (option --issue-badges)
+        # ---------------------------------------------------------------
+        if opts.get("issue_badges"):
+            self.stdout.write("Émission des badges (80% des employés + ouvriers)…")
+            from devices.services import BadgeWorkflowService
+            issued = 0
+
+            for emp in Employee.objects.filter(tenant=tenant)[: int(opts["employees"] * 0.8)]:
+                try:
+                    if not emp.badge:  # n'a pas déjà un badge actif
+                        BadgeWorkflowService.issue_employee_badge(emp)
+                        issued += 1
+                except Exception:
+                    pass
+
+            # ouvriers : besoin d'un casque, on en crée à la volée
+            for w in Worker.objects.filter(tenant=tenant)[: int(opts["workers"] * 0.8)]:
+                try:
+                    if w.badge:
+                        continue
+                    helmet, _ = Helmet.objects.get_or_create(
+                        tenant=tenant, serial_number=f"HLM-{w.matricule}",
+                        defaults={
+                            "uhf_tag_uid": f"UHF-{w.matricule}",
+                            "ble_beacon_uid": f"BLE-{w.matricule}",
+                            "status": "active",
+                        },
+                    )
+                    BadgeWorkflowService.issue_worker_badge(w, helmet=helmet)
+                    issued += 1
+                except Exception:
+                    pass
+            self.stdout.write(f"✓ {issued} badges émis")
+
+        # ---------------------------------------------------------------
+        # Génération de scans / AccessEvent (option --scans N)
+        # ---------------------------------------------------------------
+        scan_count = int(opts.get("scans") or 0)
+        if scan_count > 0:
+            self.stdout.write(f"Génération de {scan_count} scans répartis sur "
+                               f"{opts['days']} jours…")
+            self._seed_scans(tenant, sites, scan_count, days=opts["days"])
+
         self.stdout.write(self.style.SUCCESS(
             f"\nFait : {opts['employees']} empl + {opts['workers']} ouvr + "
             f"{opts['visitors']} visit + {opts['sites']} sites"
+            + (f" + {scan_count} scans" if scan_count else "")
         ))
         self.stdout.write("\nProchaines étapes :")
-        self.stdout.write("  • Émettre les badges depuis /badges/")
-        self.stdout.write("  • Pour générer un historique de scans, ajouter une commande seed_scans")
+        if not opts.get("issue_badges"):
+            self.stdout.write("  • Émettre les badges : --issue-badges")
+        if not scan_count:
+            self.stdout.write("  • Générer un historique de scans : --scans 1000")
+
+    # =================================================================
+    # Helpers
+    # =================================================================
+    def _seed_scans(self, tenant, sites, count, days=14):
+        """Génère AccessEvent + BadgeScanEvent réalistes."""
+        from datetime import timedelta
+
+        from django.contrib.contenttypes.models import ContentType
+
+        from access_control.models import AccessDecision, AccessEvent
+        from devices.models import Badge, BadgeScanEvent, Device, DeviceModel
+        from employees.models import Employee
+        from ouvriers.models import Worker
+        from visitors.models import Visitor
+
+        if not sites:
+            self.stdout.write("  Aucun site → impossible de générer des scans.")
+            return
+
+        # Assure-toi qu'on a au moins un Device par site
+        dm, _ = DeviceModel.objects.get_or_create(
+            brand="Demo", model="NFC-Reader-Demo",
+            defaults={"type": "nfc_reader", "is_active": True},
+        )
+        for s in sites:
+            Device.objects.get_or_create(
+                tenant=tenant, model=dm,
+                serial_number=f"DEV-{s.code}",
+                defaults={"site": s, "status": "active"},
+            )
+
+        # Pool de badges actifs avec leurs holders
+        badges = list(Badge.objects.filter(
+            tenant=tenant, status__in=("active", "assigned"),
+        ).select_related("paired_helmet")[:500])
+
+        if not badges:
+            self.stdout.write("  Aucun badge actif → utilise --issue-badges d'abord.")
+            return
+
+        now = timezone.now()
+        decisions_distribution = (
+            ["granted"] * 80 + ["denied"] * 15 + ["review"] * 5
+        )
+        denial_reasons = ["BADGE_INCONNU", "BADGE_EXPIRED", "OUT_OF_HOURS",
+                          "ZONE_RESTRICTED", "CASQUE_MANQUANT"]
+
+        events = []
+        for i in range(count):
+            badge = random.choice(badges)
+            site = random.choice(sites)
+            device = Device.objects.filter(site=site).first()
+            offset_min = random.randint(0, days * 24 * 60)
+            ts = now - timedelta(minutes=offset_min)
+            decision = random.choice(decisions_distribution)
+            reason = random.choice(denial_reasons) if decision == "denied" else ""
+
+            holder_kind = badge.holder_kind or "employee"
+            ev = AccessEvent.objects.create(
+                tenant=tenant, site=site, device=device,
+                timestamp=ts, badge_uid=badge.uid,
+                helmet_uid=badge.paired_helmet.uhf_tag_uid if badge.paired_helmet else "",
+                holder_kind=holder_kind,
+                holder_object_id=badge.holder_object_id,
+                direction=random.choice(["in", "in", "in", "out"]),
+                method=random.choice(["nfc", "uhf", "qr"]),
+                decision=decision, denial_reason=reason,
+            )
+            AccessDecision.objects.create(event=ev, deciding_rule_code=reason or "OK")
+            BadgeScanEvent.objects.create(
+                badge=badge, site=site,
+                timestamp=ts, decision=decision,
+                method=ev.method, access_event=ev,
+            )
+            events.append(ev)
+            if (i + 1) % 100 == 0:
+                self.stdout.write(f"  {i+1}/{count}…")
+
+        self.stdout.write(f"✓ {len(events)} scans générés "
+                           f"(badges actifs={len(badges)}, sites={len(sites)})")

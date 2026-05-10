@@ -1,8 +1,56 @@
 {% extends "layout/base.html" %}
+{% load admin_filters %}
+
+{% block title %}Paramètres · KAYDAN SHIELD{% endblock %}
+{% block page_title %}Paramètres KAYDAN GROUPE{% endblock %}
+{% block page_subtitle %}Tenant unique, filiales, feature flags et configuration globale.{% endblock %}
+{% block breadcrumb %}Paramètres{% endblock %}
+
 {% block content %}
-<section class="card" style="padding:48px 24px;text-align:center">
-  <h2>{{ page_title }}</h2>
-  <p class="text-muted">{{ page_subtitle }}</p>
-  <p class="text-dim mt-2">Module en développement.</p>
-</section>
+  <section class="card mb-2">
+    <header style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <h3 style="margin:0">Tenant KAYDAN GROUPE</h3>
+      {% if tenant %}<a class="btn btn-ghost" href="{% url 'admin-tenant-update' tenant.pk %}"><i data-lucide="pencil" style="width:14px;height:14px"></i> Modifier</a>{% endif %}
+    </header>
+    {% if tenant %}
+      <div class="form-grid">
+        <div><div class="label">Nom</div><div style="font-weight:600">{{ tenant.name }}</div></div>
+        <div><div class="label">Code</div><div class="mono">{{ tenant.code }}</div></div>
+        <div><div class="label">Pays</div><div>{{ tenant.country|default:"—" }}</div></div>
+        <div><div class="label">Fuseau</div><div class="mono">{{ tenant.timezone|default:"Africa/Abidjan" }}</div></div>
+        <div><div class="label">Email contact</div><div>{{ tenant.contact_email|default:"—" }}</div></div>
+        <div><div class="label">Téléphone</div><div>{{ tenant.contact_phone|default:"—" }}</div></div>
+      </div>
+    {% else %}
+      <p class="text-dim">Tenant introuvable. Le service <code>core.services.get_kaydan_tenant()</code> doit en créer un automatiquement.</p>
+    {% endif %}
+  </section>
+
+  <section class="card mb-2">
+    <header style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <h3 style="margin:0">Filiales</h3>
+      <a class="btn btn-ghost" href="{% url 'admin-companies' %}"><i data-lucide="external-link" style="width:14px;height:14px"></i> Gérer les filiales</a>
+    </header>
+    <p class="text-muted">Les sociétés du groupe (BTP, Logistique, Industrie, Trading) se gèrent depuis la page dédiée.</p>
+  </section>
+
+  <section class="card mb-2">
+    <header style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <h3 style="margin:0">Feature flags</h3>
+      <a class="btn btn-ghost" href="{% url 'admin-featureflag-create' %}"><i data-lucide="plus" style="width:14px;height:14px"></i> Nouveau flag</a>
+    </header>
+    <p class="text-muted">Active/désactive les modules optionnels (anti-fraude avancée, IA, BLE stillness, etc.).</p>
+  </section>
+
+  <section class="card">
+    <h3 style="margin-top:0">Configuration KAYDAN_SHIELD (settings.py)</h3>
+    <ul style="list-style:none;padding-left:0">
+      <li><span class="text-dim">BLE stillness :</span> <span class="mono">30 min</span></li>
+      <li><span class="text-dim">Tolérance retard :</span> <span class="mono">10 min</span></li>
+      <li><span class="text-dim">Clock skew API key :</span> <span class="mono">60 sec</span></li>
+      <li><span class="text-dim">Rétention visiteurs :</span> <span class="mono">365 jours</span></li>
+      <li><span class="text-dim">Algo audit hash :</span> <span class="mono">SHA-256</span></li>
+    </ul>
+    <p class="text-dim" style="font-size:12px;margin-top:10px">Ces valeurs sont définies dans <code>kshield/settings/base.py</code> sous la clé <code>KAYDAN_SHIELD</code>.</p>
+  </section>
 {% endblock %}

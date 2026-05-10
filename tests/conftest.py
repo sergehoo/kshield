@@ -69,6 +69,21 @@ def visitor(db, kaydan_tenant):
 
 
 @pytest.fixture
+def device(db, kaydan_tenant, site_chantier):
+    """Lecteur NFC fixe minimal pour les tests."""
+    from devices.models import Device, DeviceModel
+    model, _ = DeviceModel.objects.get_or_create(
+        brand="Test", model="NFC-Reader-1",
+        defaults={"type": "nfc_reader", "is_active": True},
+    )
+    return Device.objects.create(
+        tenant=kaydan_tenant, model=model,
+        serial_number="DEV-TEST-001",
+        site=site_chantier, status="active",
+    )
+
+
+@pytest.fixture
 def api_client():
     from rest_framework.test import APIClient
     return APIClient()

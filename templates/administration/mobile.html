@@ -1,8 +1,108 @@
 {% extends "layout/base.html" %}
+{% load admin_filters %}
+
+{% block title %}Mobile · KAYDAN SHIELD{% endblock %}
+{% block page_title %}Mobile & sync{% endblock %}
+{% block page_subtitle %}Devices terrain, file offline et sessions de synchronisation.{% endblock %}
+{% block breadcrumb %}Mobile{% endblock %}
+
+{% block page_actions %}
+  {% if tab == "devices" %}
+    <a class="btn btn-primary" href="{% url 'admin-mobiledevice-create' %}"><i data-lucide="plus" style="width:16px;height:16px"></i> Enregistrer un device</a>
+  {% endif %}
+{% endblock %}
+
 {% block content %}
-<section class="card" style="padding:48px 24px;text-align:center">
-  <h2>{{ page_title }}</h2>
-  <p class="text-muted">{{ page_subtitle }}</p>
-  <p class="text-dim mt-2">Module en développement.</p>
-</section>
+  <section class="statstrip mb-2">
+    <div><div class="label">Devices enregistrés</div><div class="value">{{ devices_total }}</div></div>
+    <div><div class="label">Devices actifs</div><div class="value text-success">{{ devices_active }}</div></div>
+    <div><div class="label">File offline</div><div class="value text-warning">{{ queue_pending }}</div></div>
+    <div><div class="label">Sessions du jour</div><div class="value">{{ sessions_today }}</div></div>
+  </section>
+
+  <nav class="tabs mb-2">
+    <a class="tab {% if tab == 'devices' %}is-active{% endif %}" href="?tab=devices">Devices</a>
+    <a class="tab {% if tab == 'queue' %}is-active{% endif %}" href="?tab=queue">File offline</a>
+    <a class="tab {% if tab == 'sessions' %}is-active{% endif %}" href="?tab=sessions">Sessions sync</a>
+    <a class="tab {% if tab == 'bundles' %}is-active{% endif %}" href="?tab=bundles">Bundles</a>
+  </nav>
+
+  <section class="card" style="padding:0">
+    {% if tab == "devices" %}
+      {% if devices %}
+      <div class="table-wrap"><table class="table">
+        <thead><tr><th>Device ID</th><th>Nom</th><th>OS</th><th>Utilisateur</th><th>Site</th><th>Dernière sync</th><th>Statut</th><th></th></tr></thead>
+        <tbody>
+          {% for d in devices %}
+          <tr>
+            <td class="mono">{{ d.device_id|slice:":18" }}…</td>
+            <td>{{ d.name|default:"—" }}</td>
+            <td>{{ d.os }} {{ d.os_version }}</td>
+            <td>{{ d.user.email|default:"—" }}</td>
+            <td>{{ d.site.name|default:"—" }}</td>
+            <td>{{ d.last_sync_at|date:"d/m H:i"|default:"—" }}</td>
+            <td><span class="pill {% if d.status == 'active' %}pill-success{% else %}pill-muted{% endif %}">{{ d.get_status_display }}</span></td>
+            <td><div class="row gap-2">
+              <a class="icon-btn" href="{% url 'admin-mobiledevice-detail' d.pk %}"><i data-lucide="eye"></i></a>
+              <a class="icon-btn" href="{% url 'admin-mobiledevice-update' d.pk %}"><i data-lucide="pencil"></i></a>
+            </div></td>
+          </tr>
+          {% endfor %}
+        </tbody></table></div>
+      {% else %}{% include "administration/_partials/empty_card.html" with icon="smartphone" title="Aucun device enregistré" cta_label="Enregistrer un device" cta_url="/mobile-devices/new/" %}{% endif %}
+
+    {% elif tab == "queue" %}
+      {% if queue_items %}
+      <div class="table-wrap"><table class="table">
+        <thead><tr><th>Capturé</th><th>Device</th><th>UUID client</th><th>Statut</th><th>Synchronisé</th><th>Motif rejet</th></tr></thead>
+        <tbody>
+          {% for q in queue_items %}
+          <tr>
+            <td class="mono">{{ q.captured_at|date:"d/m H:i:s" }}</td>
+            <td>{{ q.device.name|default:q.device.device_id|truncatechars:16 }}</td>
+            <td class="mono">{{ q.client_uuid|slice:":12" }}…</td>
+            <td><span class="pill {% if q.status == 'synced' %}pill-success{% elif q.status == 'rejected' %}pill-danger{% else %}pill-warning{% endif %}">{{ q.get_status_display }}</span></td>
+            <td>{{ q.synced_at|date:"d/m H:i"|default:"—" }}</td>
+            <td>{{ q.rejection_reason|default:"—" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody></table></div>
+      {% else %}{% include "administration/_partials/empty_card.html" with icon="cloud-off" title="File offline vide" %}{% endif %}
+
+    {% elif tab == "sessions" %}
+      {% if sessions %}
+      <div class="table-wrap"><table class="table">
+        <thead><tr><th>Démarrée</th><th>Device</th><th>Reçu</th><th>Envoyé</th><th>Conflits</th><th>Erreur</th></tr></thead>
+        <tbody>
+          {% for s in sessions %}
+          <tr>
+            <td class="mono">{{ s.started_at|date:"d/m H:i" }}</td>
+            <td>{{ s.device.name|default:s.device.device_id|truncatechars:18 }}</td>
+            <td>{{ s.pulled_count }}</td>
+            <td>{{ s.pushed_count }}</td>
+            <td class="{% if s.conflict_count %}text-warning{% endif %}">{{ s.conflict_count }}</td>
+            <td>{{ s.error|truncatechars:40|default:"—" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody></table></div>
+      {% else %}{% include "administration/_partials/empty_card.html" with icon="refresh-cw" title="Aucune session de sync" %}{% endif %}
+
+    {% else %}
+      {% if bundles %}
+      <div class="table-wrap"><table class="table">
+        <thead><tr><th>Créé</th><th>Cible</th><th>Version</th><th>Statut</th></tr></thead>
+        <tbody>
+          {% for b in bundles %}
+          <tr>
+            <td>{{ b.created_at|date:"d/m/Y H:i" }}</td>
+            <td>{{ b.target|default:"—" }}</td>
+            <td class="mono">{{ b.version|default:"—" }}</td>
+            <td>{{ b.status|default:"—" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody></table></div>
+      {% else %}{% include "administration/_partials/empty_card.html" with icon="package" title="Aucun bundle disponible" %}{% endif %}
+    {% endif %}
+    {% include "administration/_partials/pagination.html" %}
+  </section>
 {% endblock %}

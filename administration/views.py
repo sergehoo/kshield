@@ -96,6 +96,146 @@ class DashboardView(BaseAdminView):
     page_subtitle = "Suivi en direct des accès, des pointages et des alertes."
     breadcrumb = "Tableau de bord"
 
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        from collections import Counter
+        from datetime import timedelta
+
+        from django.db.models import Count
+        from django.utils import timezone
+
+        now = timezone.now()
+        today = now.date()
+        week_ago = now - timedelta(days=7)
+
+        try:
+            from access_control.models import AccessEvent
+            from antifraud.models import FraudAlert
+            from devices.models import Badge, BadgeScanEvent
+            from employees.models import Employee
+            from ouvriers.models import Worker
+            from sites.models import Site
+            from visitors.models import Visitor, VisitRequest
+
+            # ── KPIs principaux ──────────────────────────────────────────
+            ctx["kpi_employees_total"] = Employee.objects.count()
+            ctx["kpi_employees_active"] = Employee.objects.filter(status="active").count()
+            ctx["kpi_workers_total"] = Worker.objects.count()
+            ctx["kpi_workers_active"] = Worker.objects.filter(status="active").count()
+            ctx["kpi_visitors_total"] = Visitor.objects.count()
+            ctx["kpi_visitors_today"] = VisitRequest.objects.filter(
+                created_at__date=today,
+            ).count()
+            ctx["kpi_badges_active"] = Badge.objects.filter(
+                status__in=("active", "assigned"),
+            ).count()
+            ctx["kpi_badges_total"] = Badge.objects.count()
+            ctx["kpi_sites_active"] = Site.objects.filter(status="active").count()
+
+            # ── Activité d'accès ─────────────────────────────────────────
+            ctx["scans_today"] = AccessEvent.objects.filter(timestamp__date=today).count()
+            ctx["scans_today_granted"] = AccessEvent.objects.filter(
+                timestamp__date=today, decision="granted").count()
+            ctx["scans_today_denied"] = AccessEvent.objects.filter(
+                timestamp__date=today, decision="denied").count()
+            ctx["scans_today_review"] = AccessEvent.objects.filter(
+                timestamp__date=today, decision="review").count()
+            ctx["scans_last_hour"] = AccessEvent.objects.filter(
+                timestamp__gte=now - timedelta(hours=1)).count()
+            yesterday_count = AccessEvent.objects.filter(
+                timestamp__date=today - timedelta(days=1)).count() or 1
+            ctx["scans_today_delta"] = round(
+                (ctx["scans_today"] - yesterday_count) / yesterday_count * 100, 1)
+
+            # ── Tendance 7 jours (mini-chart) ───────────────────────────
+            scans_by_day = []
+            max_count = 1
+            for i in range(6, -1, -1):
+                d = today - timedelta(days=i)
+                c = AccessEvent.objects.filter(timestamp__date=d).count()
+                scans_by_day.append({
+                    "label": d.strftime("%a")[:3],
+                    "date": d.strftime("%d/%m"),
+                    "count": c,
+                })
+                max_count = max(max_count, c)
+            for entry in scans_by_day:
+                entry["height_pct"] = round(entry["count"] / max_count * 100, 1)
+            ctx["scans_by_day"] = scans_by_day
+            ctx["scans_7d_total"] = sum(e["count"] for e in scans_by_day)
+
+            # ── Alertes anti-fraude ─────────────────────────────────────
+            ctx["alerts_open"] = FraudAlert.objects.filter(
+                status="open").count()
+            ctx["alerts_critical"] = FraudAlert.objects.filter(
+                status="open", severity__in=("critical", "high")).count()
+            ctx["recent_alerts"] = list(
+                FraudAlert.objects.select_related("rule", "site")
+                .order_by("-raised_at")[:5]
+            )
+
+            # ── Top sites par activité (7 derniers jours) ───────────────
+            site_counts = (AccessEvent.objects
+                           .filter(timestamp__gte=week_ago)
+                           .values("site_id", "site__name", "site__type")
+                           .annotate(c=Count("id"))
+                           .order_by("-c")[:5])
+            ctx["top_sites"] = list(site_counts)
+
+            # ── Présence en cours (uniques par holder dans la dernière h) ─
+            recent_events = (AccessEvent.objects
+                             .filter(timestamp__gte=now - timedelta(hours=8),
+                                     decision="granted",
+                                     holder_object_id__isnull=False)
+                             .values("holder_kind", "holder_object_id"))
+            unique_present = {(e["holder_kind"], e["holder_object_id"])
+                              for e in recent_events}
+            kind_distribution = Counter(k for k, _ in unique_present)
+            ctx["present_total"] = len(unique_present)
+            ctx["present_employees"] = kind_distribution.get("employee", 0)
+            ctx["present_workers"] = kind_distribution.get("worker", 0)
+            ctx["present_visitors"] = kind_distribution.get("visitor", 0)
+
+            # ── Derniers événements ─────────────────────────────────────
+            ctx["recent_events"] = _annotate_events_with_holders(list(
+                AccessEvent.objects.select_related("site", "device")
+                .order_by("-timestamp")[:8]
+            ))
+
+            # ── Visites prévues aujourd'hui ─────────────────────────────
+            ctx["upcoming_visits"] = list(
+                VisitRequest.objects.filter(
+                    scheduled_at__date=today,
+                    status__in=("pending", "approved"),
+                ).select_related("visitor", "site", "host_employee")
+                .order_by("scheduled_at")[:5]
+            )
+
+            # ── Badges par catégorie ────────────────────────────────────
+            ctx["badges_visitor"] = Badge.objects.filter(category="visitor_qr").count()
+            ctx["badges_employee"] = Badge.objects.filter(category="employee_rfid").count()
+            ctx["badges_worker"] = Badge.objects.filter(category="worker_rfid").count()
+
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception("DashboardView context failed")
+            # Fallback pour ne pas planter le rendering
+            for k in ("kpi_employees_total", "kpi_employees_active",
+                      "kpi_workers_total", "kpi_workers_active",
+                      "kpi_visitors_total", "kpi_visitors_today",
+                      "kpi_badges_active", "kpi_badges_total", "kpi_sites_active",
+                      "scans_today", "scans_today_granted", "scans_today_denied",
+                      "scans_today_review", "scans_last_hour", "scans_today_delta",
+                      "scans_7d_total", "alerts_open", "alerts_critical",
+                      "present_total", "present_employees", "present_workers",
+                      "present_visitors",
+                      "badges_visitor", "badges_employee", "badges_worker"):
+                ctx[k] = 0
+            for k in ("scans_by_day", "recent_alerts", "top_sites",
+                      "recent_events", "upcoming_visits"):
+                ctx[k] = []
+        return ctx
+
 
 class AdminHomeView(DashboardView):
     pass
@@ -579,7 +719,7 @@ class BadgesView(BaseAdminView):
                 Badge.objects.filter(category="worker_rfid")
             ).select_related("paired_helmet").order_by("-issued_at")
 
-            ctx["tab"] = tab if tab in ("visitor", "employee", "worker") else "visitor"
+            ctx["tab"] = tab if tab in ("visitor", "employee", "worker", "helmet") else "visitor"
             target_qs = {
                 "visitor": visitor_qs,
                 "employee": employee_qs,
@@ -591,7 +731,21 @@ class BadgesView(BaseAdminView):
             ctx["visitor_badges"] = page_qs if ctx["tab"] == "visitor" else list(visitor_qs[:50])
             ctx["employee_badges"] = page_qs if ctx["tab"] == "employee" else list(employee_qs[:50])
             ctx["worker_badges"] = page_qs if ctx["tab"] == "worker" else list(worker_qs[:50])
-            ctx["helmets"] = Helmet.objects.all()[:50]
+
+            # Onglet Casques : pagination dédiée
+            helmet_qs = (Helmet.objects
+                         .select_related("current_worker")
+                         .annotate(active_pairings=Count(
+                             "paired_badges", filter=Q(paired_badges__status__in=("active", "assigned"))))
+                         .order_by("status", "serial_number"))
+            if ctx["tab"] == "helmet":
+                page_obj, page_qs = paginate(helmet_qs, self.request, per_page=20)
+                ctx["page_obj"] = page_obj
+                ctx["helmets"] = page_qs
+            else:
+                ctx["helmets"] = list(helmet_qs[:50])
+            ctx["helmet_total"] = Helmet.objects.count()
+            ctx["helmet_active"] = Helmet.objects.filter(status="active").count()
             ctx["visitor_pool_count"] = Badge.objects.filter(category="visitor_qr", status="available").count()
             ctx["visitor_assigned_count"] = Badge.objects.filter(category="visitor_qr", status="active").count()
             ctx["employee_total"] = Badge.objects.filter(category="employee_rfid").count()
@@ -731,7 +885,63 @@ class AttendanceView(BaseAdminView):
     template_name = "administration/attendance.html"
     active_nav = "attendance"
     page_title = "Pointage & présence"
+    page_subtitle = "Punches, journées de travail et demandes de congés."
     breadcrumb = "Pointage"
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        from datetime import timedelta
+
+        from django.utils import timezone
+        try:
+            from attendance.models import (AttendanceDay, LeaveRequest,
+                                            OvertimeRule, Punch)
+            now = timezone.now()
+            today = now.date()
+            week_ago = today - timedelta(days=7)
+
+            tab = self.request.GET.get("tab", "punches")
+            ctx["tab"] = tab if tab in ("punches", "days", "leaves", "rules") else "punches"
+
+            if ctx["tab"] == "punches":
+                qs = (Punch.objects.select_related("site")
+                      .order_by("-timestamp"))
+                page_obj, page_qs = paginate(qs, self.request, per_page=25)
+                ctx["page_obj"] = page_obj
+                ctx["punches"] = page_qs
+            elif ctx["tab"] == "days":
+                qs = (AttendanceDay.objects.select_related("site")
+                      .order_by("-date"))
+                page_obj, page_qs = paginate(qs, self.request, per_page=25)
+                ctx["page_obj"] = page_obj
+                ctx["days"] = page_qs
+            elif ctx["tab"] == "leaves":
+                qs = (LeaveRequest.objects.select_related("employee", "worker", "approved_by")
+                      .order_by("-start_date"))
+                page_obj, page_qs = paginate(qs, self.request, per_page=25)
+                ctx["page_obj"] = page_obj
+                ctx["leaves"] = page_qs
+            else:
+                qs = (OvertimeRule.objects.select_related("company")
+                      .order_by("-is_active", "company__name"))
+                page_obj, page_qs = paginate(qs, self.request, per_page=25)
+                ctx["page_obj"] = page_obj
+                ctx["rules"] = page_qs
+
+            ctx["punches_today"] = Punch.objects.filter(timestamp__date=today).count()
+            ctx["punches_week"] = Punch.objects.filter(timestamp__date__gte=week_ago).count()
+            ctx["days_today"] = AttendanceDay.objects.filter(date=today).count()
+            ctx["leaves_pending"] = LeaveRequest.objects.filter(status="pending").count()
+            ctx["rules_active"] = OvertimeRule.objects.filter(is_active=True).count()
+        except Exception:
+            for k in ("punches", "days", "leaves", "rules"):
+                ctx[k] = []
+            for k in ("punches_today", "punches_week", "days_today",
+                      "leaves_pending", "rules_active"):
+                ctx[k] = 0
+            ctx["page_obj"] = None
+            ctx["tab"] = "punches"
+        return ctx
 
 
 class AntifraudView(BaseAdminView):
@@ -759,35 +969,297 @@ class AuditView(BaseAdminView):
     template_name = "administration/audit.html"
     active_nav = "audit"
     page_title = "Audit & conformité"
+    page_subtitle = "Journal d'audit, exports RGPD et politiques de rétention."
     breadcrumb = "Audit"
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        try:
+            from audit.models import (AuditLog, ConformityRegister,
+                                       DataExportRequest, LegalRetentionPolicy)
+            tab = self.request.GET.get("tab", "logs")
+            ctx["tab"] = tab if tab in ("logs", "exports", "policies", "registers") else "logs"
+
+            q = (self.request.GET.get("q") or "").strip()
+            ctx["q"] = q
+
+            if ctx["tab"] == "logs":
+                qs = AuditLog.objects.select_related("user").order_by("-timestamp")
+                if q:
+                    qs = qs.filter(Q(action__icontains=q) | Q(target_model__icontains=q))
+                page_obj, page_qs = paginate(qs, self.request, per_page=25)
+                ctx["page_obj"] = page_obj
+                ctx["logs"] = page_qs
+            elif ctx["tab"] == "exports":
+                qs = (DataExportRequest.objects
+                      .select_related("requested_by")
+                      .order_by("-created_at"))
+                page_obj, page_qs = paginate(qs, self.request, per_page=25)
+                ctx["page_obj"] = page_obj
+                ctx["exports"] = page_qs
+            elif ctx["tab"] == "policies":
+                qs = LegalRetentionPolicy.objects.order_by("-is_active", "target_model")
+                page_obj, page_qs = paginate(qs, self.request, per_page=25)
+                ctx["page_obj"] = page_obj
+                ctx["policies"] = page_qs
+            else:
+                qs = (ConformityRegister.objects.select_related("site", "performed_by")
+                      .order_by("-performed_at"))
+                page_obj, page_qs = paginate(qs, self.request, per_page=25)
+                ctx["page_obj"] = page_obj
+                ctx["registers"] = page_qs
+
+            ctx["logs_total"] = AuditLog.objects.count()
+            ctx["exports_pending"] = DataExportRequest.objects.filter(status="pending").count()
+            ctx["policies_active"] = LegalRetentionPolicy.objects.filter(is_active=True).count()
+            ctx["registers_total"] = ConformityRegister.objects.count()
+        except Exception:
+            for k in ("logs", "exports", "policies", "registers"):
+                ctx[k] = []
+            for k in ("logs_total", "exports_pending", "policies_active",
+                      "registers_total"):
+                ctx[k] = 0
+            ctx["page_obj"] = None
+            ctx["tab"] = "logs"
+        return ctx
 
 
 class NotificationsView(BaseAdminView):
     template_name = "administration/notifications.html"
     active_nav = "notifications"
     page_title = "Notifications"
+    page_subtitle = "Templates, notifications envoyées et préférences."
     breadcrumb = "Notifications"
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        try:
+            from notifications.models import (Notification, NotificationPreference,
+                                                NotificationTemplate)
+            tab = self.request.GET.get("tab", "sent")
+            ctx["tab"] = tab if tab in ("sent", "templates", "preferences") else "sent"
+
+            if ctx["tab"] == "sent":
+                qs = (Notification.objects.select_related("recipient", "template")
+                      .order_by("-created_at"))
+                status = self.request.GET.get("status", "")
+                if status in ("sent", "delivered", "failed", "read", "queued"):
+                    qs = qs.filter(status=status)
+                page_obj, page_qs = paginate(qs, self.request, per_page=25)
+                ctx["page_obj"] = page_obj
+                ctx["notifications"] = page_qs
+                ctx["status"] = status
+            elif ctx["tab"] == "templates":
+                qs = NotificationTemplate.objects.order_by("code")
+                page_obj, page_qs = paginate(qs, self.request, per_page=25)
+                ctx["page_obj"] = page_obj
+                ctx["templates"] = page_qs
+            else:
+                qs = (NotificationPreference.objects.select_related("user")
+                      .order_by("user__email"))
+                page_obj, page_qs = paginate(qs, self.request, per_page=25)
+                ctx["page_obj"] = page_obj
+                ctx["preferences"] = page_qs
+
+            ctx["sent_total"] = Notification.objects.count()
+            ctx["sent_failed"] = Notification.objects.filter(status="failed").count()
+            ctx["sent_today"] = Notification.objects.filter(
+                created_at__date__gte=__import__("django").utils.timezone.now().date(),
+            ).count()
+            ctx["templates_total"] = NotificationTemplate.objects.count()
+        except Exception:
+            for k in ("notifications", "templates", "preferences"):
+                ctx[k] = []
+            for k in ("sent_total", "sent_failed", "sent_today", "templates_total"):
+                ctx[k] = 0
+            ctx["page_obj"] = None
+            ctx["tab"] = "sent"
+        return ctx
 
 
 class MobileSyncView(BaseAdminView):
     template_name = "administration/mobile.html"
     active_nav = "mobile"
     page_title = "Mobile & sync"
+    page_subtitle = "Devices terrain, file offline et sessions de synchronisation."
     breadcrumb = "Mobile"
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        try:
+            from mobile_sync.models import (MobileBundle, MobileDevice,
+                                              OfflineScanQueue, SyncSession)
+            tab = self.request.GET.get("tab", "devices")
+            ctx["tab"] = tab if tab in ("devices", "queue", "sessions", "bundles") else "devices"
+
+            if ctx["tab"] == "devices":
+                qs = (MobileDevice.objects.select_related("user", "site")
+                      .order_by("-last_sync_at"))
+                page_obj, page_qs = paginate(qs, self.request, per_page=25)
+                ctx["page_obj"] = page_obj
+                ctx["devices"] = page_qs
+            elif ctx["tab"] == "queue":
+                qs = (OfflineScanQueue.objects.select_related("device")
+                      .order_by("-captured_at"))
+                page_obj, page_qs = paginate(qs, self.request, per_page=25)
+                ctx["page_obj"] = page_obj
+                ctx["queue_items"] = page_qs
+            elif ctx["tab"] == "sessions":
+                qs = (SyncSession.objects.select_related("device")
+                      .order_by("-started_at"))
+                page_obj, page_qs = paginate(qs, self.request, per_page=25)
+                ctx["page_obj"] = page_obj
+                ctx["sessions"] = page_qs
+            else:
+                qs = MobileBundle.objects.order_by("-created_at")
+                page_obj, page_qs = paginate(qs, self.request, per_page=25)
+                ctx["page_obj"] = page_obj
+                ctx["bundles"] = page_qs
+
+            ctx["devices_total"] = MobileDevice.objects.count()
+            ctx["devices_active"] = MobileDevice.objects.filter(status="active").count()
+            ctx["queue_pending"] = OfflineScanQueue.objects.filter(status="queued").count()
+            ctx["sessions_today"] = SyncSession.objects.filter(
+                started_at__date=__import__("django").utils.timezone.now().date(),
+            ).count()
+        except Exception:
+            for k in ("devices", "queue_items", "sessions", "bundles"):
+                ctx[k] = []
+            for k in ("devices_total", "devices_active", "queue_pending",
+                      "sessions_today"):
+                ctx[k] = 0
+            ctx["page_obj"] = None
+            ctx["tab"] = "devices"
+        return ctx
 
 
 class ReportsView(BaseAdminView):
     template_name = "administration/reports.html"
     active_nav = "reports"
     page_title = "Rapports & KPI"
+    page_subtitle = "Rapports configurables, exécutions et planifications."
     breadcrumb = "Rapports"
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        try:
+            from reports.models import (KPISnapshot, Report, ReportRun,
+                                          ReportSchedule)
+            tab = self.request.GET.get("tab", "reports")
+            ctx["tab"] = tab if tab in ("reports", "runs", "schedules", "kpis") else "reports"
+
+            if ctx["tab"] == "reports":
+                qs = Report.objects.order_by("-is_active", "name")
+                page_obj, page_qs = paginate(qs, self.request, per_page=25)
+                ctx["page_obj"] = page_obj
+                ctx["reports"] = page_qs
+            elif ctx["tab"] == "runs":
+                qs = (ReportRun.objects.select_related("report", "requested_by")
+                      .order_by("-created_at"))
+                page_obj, page_qs = paginate(qs, self.request, per_page=25)
+                ctx["page_obj"] = page_obj
+                ctx["runs"] = page_qs
+            elif ctx["tab"] == "schedules":
+                qs = (ReportSchedule.objects.select_related("report")
+                      .order_by("-is_active", "report__name"))
+                page_obj, page_qs = paginate(qs, self.request, per_page=25)
+                ctx["page_obj"] = page_obj
+                ctx["schedules"] = page_qs
+            else:
+                qs = (KPISnapshot.objects.select_related("site")
+                      .order_by("-date"))
+                page_obj, page_qs = paginate(qs, self.request, per_page=25)
+                ctx["page_obj"] = page_obj
+                ctx["kpis"] = page_qs
+
+            ctx["reports_total"] = Report.objects.count()
+            ctx["reports_active"] = Report.objects.filter(is_active=True).count()
+            ctx["runs_pending"] = ReportRun.objects.filter(status="pending").count()
+            ctx["schedules_active"] = ReportSchedule.objects.filter(is_active=True).count()
+
+            # ── Insights IA / analytics déterministe ───────────────
+            period = self.request.GET.get("period", "week")
+            start = self.request.GET.get("start", "")
+            end = self.request.GET.get("end", "")
+            ctx["period"] = period if period in ("day", "week", "month",
+                                                  "quarter", "year", "custom") else "week"
+            ctx["period_start"] = start
+            ctx["period_end"] = end
+            try:
+                from reports.insights import (compute_attendance_breakdown,
+                                                compute_insights,
+                                                executive_summary,
+                                                resolve_period)
+                insights = compute_insights(period=ctx["period"], start=start, end=end)
+                ctx["insights"] = insights
+                ctx["executive_summary"] = executive_summary(insights) if insights else ""
+                ctx["attendance"] = compute_attendance_breakdown(
+                    period=ctx["period"], start=start, end=end)
+                _, _, _, _, ctx["period_label"] = resolve_period(
+                    ctx["period"], start, end)
+            except Exception:
+                ctx["insights"] = []
+                ctx["executive_summary"] = ""
+                ctx["attendance"] = {"by_company": [], "by_site": [], "label": ""}
+                ctx["period_label"] = ""
+        except Exception:
+            for k in ("reports", "runs", "schedules", "kpis"):
+                ctx[k] = []
+            for k in ("reports_total", "reports_active", "runs_pending",
+                      "schedules_active"):
+                ctx[k] = 0
+            ctx["page_obj"] = None
+            ctx["insights"] = []
+            ctx["executive_summary"] = ""
+            ctx["tab"] = "reports"
+        return ctx
 
 
 class AIAssistantView(BaseAdminView):
     template_name = "administration/ai.html"
     active_nav = "ai"
     page_title = "Assistant IA"
+    page_subtitle = "Conversations, prompts système et appels d'outils."
     breadcrumb = "IA"
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        try:
+            from ai_assistant.models import (AIConversation, AIMessage,
+                                               AIPromptTemplate, AIToolCall)
+            tab = self.request.GET.get("tab", "conversations")
+            ctx["tab"] = tab if tab in ("conversations", "templates", "tools") else "conversations"
+
+            if ctx["tab"] == "conversations":
+                qs = (AIConversation.objects.select_related("user", "site")
+                      .order_by("-last_activity_at"))
+                page_obj, page_qs = paginate(qs, self.request, per_page=25)
+                ctx["page_obj"] = page_obj
+                ctx["conversations"] = page_qs
+            elif ctx["tab"] == "templates":
+                qs = AIPromptTemplate.objects.order_by("-is_active", "code")
+                page_obj, page_qs = paginate(qs, self.request, per_page=25)
+                ctx["page_obj"] = page_obj
+                ctx["templates"] = page_qs
+            else:
+                qs = AIToolCall.objects.select_related("message").order_by("-created_at")
+                page_obj, page_qs = paginate(qs, self.request, per_page=25)
+                ctx["page_obj"] = page_obj
+                ctx["tools"] = page_qs
+
+            ctx["conversations_total"] = AIConversation.objects.count()
+            ctx["messages_total"] = AIMessage.objects.count()
+            ctx["templates_active"] = AIPromptTemplate.objects.filter(is_active=True).count()
+            ctx["tool_calls_total"] = AIToolCall.objects.count()
+        except Exception:
+            for k in ("conversations", "templates", "tools"):
+                ctx[k] = []
+            for k in ("conversations_total", "messages_total",
+                      "templates_active", "tool_calls_total"):
+                ctx[k] = 0
+            ctx["page_obj"] = None
+            ctx["tab"] = "conversations"
+        return ctx
 
 
 class FaceRecognitionTestView(BaseAdminView):
@@ -1450,3 +1922,192 @@ class RoleUpdateView(_UserCRUDMixin, UpdateView):
 
     def get_success_url(self):
         return reverse("admin-roles")
+
+
+# ===========================================================================
+# Gestion des APIKeys IoT — vue dédiée car le secret brut n'est visible qu'une
+# seule fois après création (puis seul `secret_hash` reste en base).
+# ===========================================================================
+class APIKeyListView(BaseAdminView):
+    """Liste des clés API IoT — utilisées pour signer les requêtes HMAC."""
+    template_name = "administration/api_keys.html"
+    active_nav = "accounts"
+    page_title = "Clés API IoT"
+    breadcrumb = "Utilisateurs · Clés API"
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        try:
+            from accounts.models import APIKey
+            qs = (APIKey.objects.select_related("tenant", "site")
+                  .order_by("-is_active", "-created_at"))
+            from .views import paginate
+            page_obj, page_qs = paginate(qs, self.request, per_page=25)
+            ctx["page_obj"] = page_obj
+            ctx["api_keys"] = page_qs
+            ctx["total"] = APIKey.objects.count()
+            ctx["active"] = APIKey.objects.filter(is_active=True, revoked_at__isnull=True).count()
+            ctx["revoked"] = APIKey.objects.filter(revoked_at__isnull=False).count()
+        except Exception:
+            ctx["api_keys"] = []
+            ctx["page_obj"] = None
+            ctx["total"] = 0
+            ctx["active"] = 0
+            ctx["revoked"] = 0
+        # Récupère le secret one-shot stocké en session (si vient d'une création)
+        ctx["new_key_secret"] = self.request.session.pop("new_api_key_secret", None)
+        ctx["new_key_id"] = self.request.session.pop("new_api_key_public_id", None)
+        return ctx
+
+
+class APIKeyCreateView(BaseAdminView):
+    """Création d'une APIKey — affiche le secret brut UNE seule fois."""
+    template_name = "administration/_form.html"
+    active_nav = "accounts"
+    page_title = "Nouvelle clé API IoT"
+    breadcrumb = "Utilisateurs · Clés API · Nouvelle"
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        from .forms import APIKeyForm
+        ctx["form"] = kwargs.get("form") or APIKeyForm()
+        ctx["entity_label"] = "Clé API"
+        ctx["entity_label_plural"] = "Clés API"
+        ctx["list_url_name"] = "admin-api-keys"
+        return ctx
+
+    def post(self, request, *args, **kwargs):
+        import hashlib
+        import secrets
+
+        from .forms import APIKeyForm
+        form = APIKeyForm(request.POST)
+        if not form.is_valid():
+            return self.render_to_response(self.get_context_data(form=form))
+
+        from accounts.models import APIKey
+        from core.services import get_kaydan_tenant
+        instance = form.save(commit=False)
+        if not instance.tenant_id:
+            try:
+                instance.tenant = get_kaydan_tenant()
+            except Exception:
+                pass
+        # Génération secret + public_id ; on stocke uniquement le hash
+        public_id = secrets.token_urlsafe(12)[:32]
+        raw_secret = APIKey.generate_secret()
+        instance.public_id = public_id
+        instance.secret_hash = hashlib.sha256(raw_secret.encode()).hexdigest()
+        instance.save()
+
+        # Le secret brut transite UNE seule fois via la session puis disparaît
+        request.session["new_api_key_secret"] = raw_secret
+        request.session["new_api_key_public_id"] = public_id
+        dj_messages.success(request,
+            f"Clé API « {instance.name} » créée. Notez le secret immédiatement, "
+            "il ne sera plus affiché.")
+        return redirect("admin-api-keys")
+
+
+class APIKeyRevokeView(View):
+    """POST → révoque une APIKey (is_active=False + revoked_at=now)."""
+
+    def post(self, request, pk):
+        from django.utils import timezone
+
+        from accounts.models import APIKey
+        key = get_object_or_404(APIKey, pk=pk)
+        key.is_active = False
+        key.revoked_at = timezone.now()
+        key.save(update_fields=["is_active", "revoked_at"])
+        dj_messages.success(request, f"Clé API « {key.name} » révoquée.")
+        return redirect("admin-api-keys")
+
+
+# ===========================================================================
+# Mini-API notifications (consommée par le dropdown de la topbar)
+# ===========================================================================
+class NotificationUnreadCountView(View):
+    """GET /api/notifications/unread/ → {count: N} pour l'utilisateur courant."""
+
+    def get(self, request):
+        if not request.user.is_authenticated:
+            return JsonResponse({"count": 0})
+        try:
+            from notifications.models import Notification
+            n = Notification.objects.filter(
+                recipient=request.user,
+                read_at__isnull=True,
+            ).count()
+            return JsonResponse({"count": n})
+        except Exception:
+            return JsonResponse({"count": 0})
+
+
+class NotificationRecentView(View):
+    """GET /api/notifications/recent/ → 20 dernières notifications du user."""
+
+    def get(self, request):
+        if not request.user.is_authenticated:
+            return JsonResponse({"results": []})
+        try:
+            from django.utils import timezone
+
+            from notifications.models import Notification
+            notifs = list(Notification.objects.filter(
+                recipient=request.user,
+            ).order_by("-created_at")[:20])
+            now = timezone.now()
+            results = []
+            for n in notifs:
+                # severity inférée du payload (alert_id) ou de la rule
+                severity = "info"
+                payload = n.payload or {}
+                if "alert_id" in payload:
+                    try:
+                        from antifraud.models import FraudAlert
+                        a = FraudAlert.objects.filter(pk=payload["alert_id"]).first()
+                        if a:
+                            severity = a.severity or "medium"
+                    except Exception:
+                        pass
+
+                delta = now - n.created_at
+                if delta.total_seconds() < 60:
+                    timeago = "à l'instant"
+                elif delta.total_seconds() < 3600:
+                    timeago = f"il y a {int(delta.total_seconds() // 60)} min"
+                elif delta.total_seconds() < 86400:
+                    timeago = f"il y a {int(delta.total_seconds() // 3600)} h"
+                else:
+                    timeago = f"il y a {delta.days} j"
+
+                results.append({
+                    "id": n.id,
+                    "subject": n.subject or "Notification",
+                    "body": (n.body or "")[:120],
+                    "read": n.read_at is not None,
+                    "severity": severity,
+                    "timeago": timeago,
+                })
+            return JsonResponse({"results": results})
+        except Exception:
+            return JsonResponse({"results": []})
+
+
+class NotificationMarkAllReadView(View):
+    """POST /api/notifications/mark-all-read/ → marque toutes les notifs lues."""
+
+    def post(self, request):
+        if not request.user.is_authenticated:
+            return JsonResponse({"ok": False}, status=401)
+        try:
+            from django.utils import timezone
+
+            from notifications.models import Notification
+            updated = Notification.objects.filter(
+                recipient=request.user, read_at__isnull=True,
+            ).update(read_at=timezone.now())
+            return JsonResponse({"ok": True, "updated": updated})
+        except Exception:
+            return JsonResponse({"ok": False}, status=500)

@@ -1,8 +1,76 @@
 {% extends "layout/base.html" %}
+{% load admin_filters %}
+
+{% block title %}Utilisateurs · KAYDAN SHIELD{% endblock %}
+{% block page_title %}Utilisateurs & rôles{% endblock %}
+{% block page_subtitle %}Comptes administrateurs, rôles, permissions et clés API.{% endblock %}
+{% block breadcrumb %}Utilisateurs{% endblock %}
+
+{% block page_actions %}
+  <a class="btn btn-ghost" href="{% url 'admin-roles' %}"><i data-lucide="shield" style="width:16px;height:16px"></i> Rôles</a>
+  <a class="btn btn-primary" href="{% url 'admin-user-create' %}"><i data-lucide="user-plus" style="width:16px;height:16px"></i> Nouvel utilisateur</a>
+{% endblock %}
+
 {% block content %}
-<section class="card" style="padding:48px 24px;text-align:center">
-  <h2>{{ page_title }}</h2>
-  <p class="text-muted">{{ page_subtitle }}</p>
-  <p class="text-dim mt-2">Module en développement.</p>
-</section>
+  <section class="statstrip mb-2">
+    <div><div class="label">Utilisateurs</div><div class="value">{{ users_total }}</div></div>
+    <div><div class="label">Actifs</div><div class="value text-success">{{ users_active }}</div></div>
+    <div><div class="label">Staff / admin</div><div class="value">{{ users_staff }}</div></div>
+    <div><div class="label">Rôles</div><div class="value">{{ roles_count }}</div></div>
+    <div><div class="label">Clés API</div><div class="value">{{ api_keys_count }}</div></div>
+  </section>
+
+  <section class="card mb-2" style="padding:0">
+    <header style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
+      <h3 style="margin:0">Utilisateurs</h3>
+    </header>
+    {% if users %}
+      <div class="table-wrap"><table class="table">
+        <thead><tr>
+          <th>Email</th><th>Nom</th><th>Filiale</th><th>Statut</th>
+          <th>Staff</th><th>MFA</th><th>Dernière connexion</th><th></th>
+        </tr></thead>
+        <tbody>
+          {% for u in users %}
+          <tr>
+            <td><a href="{% url 'admin-user-detail' u.pk %}" style="font-weight:600">{{ u.email }}</a></td>
+            <td>{{ u.get_full_name|default:"—" }}</td>
+            <td>{{ u.company.name|default:"—" }}</td>
+            <td>{% if u.is_active %}<span class="pill pill-success">Actif</span>{% else %}<span class="pill pill-danger">Désactivé</span>{% endif %}</td>
+            <td>{% if u.is_staff %}<span class="pill pill-info">Staff</span>{% else %}—{% endif %}</td>
+            <td>{% if u.mfa_enabled %}<i data-lucide="shield-check" style="color:var(--success);width:16px;height:16px"></i>{% else %}<i data-lucide="shield-off" style="color:var(--text-dim);width:16px;height:16px"></i>{% endif %}</td>
+            <td class="mono" style="font-size:11px">{{ u.last_login|date:"d/m/Y H:i"|default:"—" }}</td>
+            <td><div class="row gap-2">
+              <a class="icon-btn" href="{% url 'admin-user-detail' u.pk %}"><i data-lucide="eye"></i></a>
+              <a class="icon-btn" href="{% url 'admin-user-update' u.pk %}"><i data-lucide="pencil"></i></a>
+              <a class="icon-btn" href="{% url 'admin-user-password' u.pk %}" title="Mot de passe"><i data-lucide="key"></i></a>
+            </div></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table></div>
+    {% else %}{% include "administration/_partials/empty_card.html" with icon="users" title="Aucun utilisateur" cta_label="Nouvel utilisateur" cta_url="/accounts/new/" %}{% endif %}
+    {% include "administration/_partials/pagination.html" %}
+  </section>
+
+  {% if api_keys %}
+  <section class="card" style="padding:0">
+    <header style="padding:14px 16px;border-bottom:1px solid var(--border)"><h3 style="margin:0">Clés API IoT (20 dernières)</h3></header>
+    <div class="table-wrap"><table class="table">
+      <thead><tr><th>Nom</th><th>Scope</th><th>Site</th><th>Public ID</th><th>Statut</th><th>Expire</th></tr></thead>
+      <tbody>
+        {% for k in api_keys %}
+        <tr>
+          <td>{{ k.name }}</td>
+          <td><span class="pill pill-info">{{ k.scope }}</span></td>
+          <td>{{ k.site.name|default:"—" }}</td>
+          <td class="mono" style="font-size:11px">{{ k.public_id }}</td>
+          <td>{% if k.is_active and not k.revoked_at %}<span class="pill pill-success">Active</span>{% elif k.revoked_at %}<span class="pill pill-danger">Révoquée</span>{% else %}<span class="pill pill-muted">Inactive</span>{% endif %}</td>
+          <td>{{ k.expires_at|date:"d/m/Y"|default:"—" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+  </section>
+  {% endif %}
 {% endblock %}

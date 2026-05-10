@@ -1,8 +1,87 @@
 {% extends "layout/base.html" %}
+{% load admin_filters %}
+
+{% block title %}Assistant IA · KAYDAN SHIELD{% endblock %}
+{% block page_title %}Assistant IA{% endblock %}
+{% block page_subtitle %}Conversations, prompts système et appels d'outils.{% endblock %}
+{% block breadcrumb %}IA{% endblock %}
+
+{% block page_actions %}
+  {% if tab == "templates" %}
+    <a class="btn btn-primary" href="{% url 'admin-aitemplate-create' %}"><i data-lucide="plus" style="width:16px;height:16px"></i> Nouveau prompt</a>
+  {% endif %}
+{% endblock %}
+
 {% block content %}
-<section class="card" style="padding:48px 24px;text-align:center">
-  <h2>{{ page_title }}</h2>
-  <p class="text-muted">{{ page_subtitle }}</p>
-  <p class="text-dim mt-2">Module en développement.</p>
-</section>
+  <section class="statstrip mb-2">
+    <div><div class="label">Conversations</div><div class="value">{{ conversations_total }}</div></div>
+    <div><div class="label">Messages</div><div class="value">{{ messages_total }}</div></div>
+    <div><div class="label">Prompts actifs</div><div class="value text-success">{{ templates_active }}</div></div>
+    <div><div class="label">Appels d'outils</div><div class="value">{{ tool_calls_total }}</div></div>
+  </section>
+
+  <nav class="tabs mb-2">
+    <a class="tab {% if tab == 'conversations' %}is-active{% endif %}" href="?tab=conversations">Conversations</a>
+    <a class="tab {% if tab == 'templates' %}is-active{% endif %}" href="?tab=templates">Prompts système</a>
+    <a class="tab {% if tab == 'tools' %}is-active{% endif %}" href="?tab=tools">Appels d'outils</a>
+  </nav>
+
+  <section class="card" style="padding:0">
+    {% if tab == "conversations" %}
+      {% if conversations %}
+      <div class="table-wrap"><table class="table">
+        <thead><tr><th>Démarrée</th><th>Utilisateur</th><th>Titre</th><th>Site</th><th>Dernière activité</th><th>Archive</th></tr></thead>
+        <tbody>
+          {% for c in conversations %}
+          <tr>
+            <td>{{ c.started_at|date:"d/m H:i" }}</td>
+            <td>{{ c.user.email|default:"—" }}</td>
+            <td>{{ c.title|truncatechars:60|default:"(sans titre)" }}</td>
+            <td>{{ c.site.name|default:"—" }}</td>
+            <td>{{ c.last_activity_at|date:"d/m H:i" }}</td>
+            <td>{% if c.is_archived %}<span class="pill pill-muted">Oui</span>{% else %}—{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody></table></div>
+      {% else %}{% include "administration/_partials/empty_card.html" with icon="message-circle" title="Aucune conversation" %}{% endif %}
+
+    {% elif tab == "templates" %}
+      {% if templates %}
+      <div class="table-wrap"><table class="table">
+        <thead><tr><th>Code</th><th>Rôle</th><th>Nom</th><th>Statut</th><th></th></tr></thead>
+        <tbody>
+          {% for t in templates %}
+          <tr>
+            <td class="mono">{{ t.code }}</td>
+            <td><span class="pill pill-info">{{ t.role }}</span></td>
+            <td>{{ t.name }}</td>
+            <td>{% if t.is_active %}<span class="pill pill-success">Actif</span>{% else %}<span class="pill pill-muted">Inactif</span>{% endif %}</td>
+            <td><div class="row gap-2">
+              <a class="icon-btn" href="{% url 'admin-aitemplate-detail' t.pk %}"><i data-lucide="eye"></i></a>
+              <a class="icon-btn" href="{% url 'admin-aitemplate-update' t.pk %}"><i data-lucide="pencil"></i></a>
+              <a class="icon-btn" href="{% url 'admin-aitemplate-delete' t.pk %}" style="color:var(--danger)"><i data-lucide="trash-2"></i></a>
+            </div></td>
+          </tr>
+          {% endfor %}
+        </tbody></table></div>
+      {% else %}{% include "administration/_partials/empty_card.html" with icon="brain" title="Aucun prompt système" cta_label="Nouveau prompt" cta_url="/ai-templates/new/" %}{% endif %}
+
+    {% else %}
+      {% if tools %}
+      <div class="table-wrap"><table class="table">
+        <thead><tr><th>Date</th><th>Outil</th><th>Statut</th><th>Durée</th></tr></thead>
+        <tbody>
+          {% for t in tools %}
+          <tr>
+            <td class="mono">{{ t.created_at|date:"d/m H:i:s" }}</td>
+            <td>{{ t.tool_name|default:"—" }}</td>
+            <td>{{ t.status|default:"—" }}</td>
+            <td>{{ t.latency_ms|default:"—" }} ms</td>
+          </tr>
+          {% endfor %}
+        </tbody></table></div>
+      {% else %}{% include "administration/_partials/empty_card.html" with icon="wrench" title="Aucun appel d'outil enregistré" %}{% endif %}
+    {% endif %}
+    {% include "administration/_partials/pagination.html" %}
+  </section>
 {% endblock %}

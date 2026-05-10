@@ -28,11 +28,23 @@ class TimeStampedModel(models.Model):
 
 
 class SoftDeleteQuerySet(models.QuerySet):
+    """QuerySet helper avec `.alive()` pour filtrer les enregistrements vivants."""
     def alive(self):
         return self.filter(is_deleted=False)
 
 
 class SoftDeleteModel(models.Model):
+    """Mixin abstrait pour les modèles RGPD-sensibles.
+
+    À appliquer sur Visitor, Employee, Worker, Helmet quand on a besoin de
+    conserver l'historique sans exposer les données — le `soft_delete()`
+    bascule juste un flag, ce qui préserve les ForeignKey existantes
+    (AccessEvent, BadgeAssignment, etc.) sans CASCADE destructive.
+
+    Pas encore appliqué : déclencher une migration coordonnée par modèle
+    qui ajoute les 3 champs + remplace `objects` par `SoftDeleteQuerySet`.
+    Voir docs/SOFT_DELETE_PLAN.md (à rédiger) avant adoption.
+    """
     is_deleted = models.BooleanField(default=False, db_index=True)
     deleted_at = models.DateTimeField(null=True, blank=True)
     deleted_by = models.ForeignKey(
@@ -50,6 +62,12 @@ class SoftDeleteModel(models.Model):
         self.is_deleted = True
         self.deleted_at = timezone.now()
         self.deleted_by = user
+        self.save(update_fields=["is_deleted", "deleted_at", "deleted_by"])
+
+    def restore(self):
+        self.is_deleted = False
+        self.deleted_at = None
+        self.deleted_by = None
         self.save(update_fields=["is_deleted", "deleted_at", "deleted_by"])
 
 

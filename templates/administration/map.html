@@ -1,76 +1,305 @@
 {% extends "layout/base.html" %}
 {% load static %}
+
 {% block title %}Cartographie · KAYDAN SHIELD{% endblock %}
 {% block breadcrumb %}Cartographie{% endblock %}
 {% block page_title %}{% endblock %}
 {% block page_subtitle %}{% endblock %}
+
 {% block extra_head %}
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <link rel="stylesheet"
+        href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+        crossorigin="">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+          crossorigin=""></script>
 {% endblock %}
+
 {% block extra_css %}
 <style>
-.main > .page-header { display: none !important; }
-.main { padding: 0 !important; overflow: hidden !important; }
-#map-container { position: fixed; top: 0; left: var(--sidebar-w,240px); right: 0; bottom: 0; }
-.is-collapsed #map-container { left: var(--sidebar-w-collapsed,76px); }
-#leaflet-map { width: 100%; height: 100%; background: #0f1d34; }
-.map-floating-panel { position: absolute; top: 14px; bottom: 14px; left: 14px; width: 320px;
-  background: rgba(17,39,66,.92); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,.1);
-  border-radius: 14px; z-index: 600; padding: 14px; overflow-y: auto; color: white; }
-.map-floating-panel h4 { font-size: 11px; text-transform: uppercase; color: var(--text-muted); margin: 0 0 6px; }
-.map-floating-panel select { width: 100%; margin-bottom: 12px; }
+  /* On supprime le header de page pour avoir une carte plein écran sous le topbar */
+  .main > .page-header { display: none !important; }
+  .main { padding: 0 !important; }
+
+  /* Container = pleine zone restante après topbar (pas position:fixed pour ne pas
+     couvrir la sidebar/topbar et garder la responsivité du grid) */
+  #map-container {
+    position: relative;
+    height: calc(100vh - var(--topbar-h, 64px));
+    width: 100%;
+  }
+  #leaflet-map {
+    width: 100%;
+    height: 100%;
+    z-index: 0;
+  }
+  [data-theme="dark"] #leaflet-map { background: #0f1d34; }
+  [data-theme="light"] #leaflet-map { background: #f1f5f9; }
+
+  /* Panel filtres flottant à gauche, par-dessus la carte */
+  .map-floating-panel {
+    position: absolute; top: 14px; bottom: 14px; left: 14px;
+    width: 320px; max-width: calc(100% - 28px);
+    z-index: 600; padding: 16px; overflow-y: auto;
+    border-radius: 14px; backdrop-filter: blur(12px);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    box-shadow: 0 12px 40px rgba(0,0,0,.18);
+  }
+  [data-theme="dark"] .map-floating-panel {
+    background: rgba(17,39,66,.92);
+    border-color: rgba(255,255,255,.1);
+  }
+  [data-theme="light"] .map-floating-panel {
+    background: rgba(255,255,255,.94);
+    border-color: rgba(15,29,52,.08);
+  }
+  .map-floating-panel h3 { margin: 0 0 14px; font-size: 14px; }
+  .map-floating-panel h4 {
+    font-size: 11px; text-transform: uppercase;
+    color: var(--text-muted); margin: 12px 0 6px;
+    letter-spacing: .04em;
+  }
+  .map-floating-panel select { width: 100%; }
+
+  /* Popups Leaflet stylés selon le thème */
+  [data-theme="light"] .leaflet-popup-content-wrapper {
+    background: #fff; color: #0f172a;
+    box-shadow: 0 4px 16px rgba(0,0,0,.1);
+  }
+  [data-theme="dark"] .leaflet-popup-content-wrapper {
+    background: #112742; color: #e2e8f0;
+  }
+  [data-theme="dark"] .leaflet-popup-tip { background: #112742; }
+  .leaflet-control-attribution {
+    font-size: 10px !important;
+    background: var(--surface) !important;
+    color: var(--text-dim) !important;
+  }
+
+  .map-error {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    background: var(--surface); padding: 18px 24px; border-radius: 12px;
+    border: 1px solid var(--danger); color: var(--danger);
+    z-index: 700; max-width: 480px; text-align: center;
+    box-shadow: 0 10px 30px rgba(0,0,0,.2);
+  }
 </style>
 {% endblock %}
+
 {% block content %}
 <div id="map-container">
   <aside class="map-floating-panel">
-    <h3 style="margin:0 0 14px;font-size:14px"><i data-lucide="map" style="color:var(--ks-orange-400)"></i> Filtres</h3>
+    <h3><i data-lucide="map" style="width:16px;height:16px;color:var(--ks-orange-400);vertical-align:-3px"></i> Filtres</h3>
+
     <h4>Site</h4>
-    <select id="f-site" class="form-select"><option value="">Tous</option>
+    <select id="f-site" class="form-select">
+      <option value="">Tous les sites</option>
       {% for s in sites %}<option value="{{ s.id }}">{{ s.name }}</option>{% endfor %}
     </select>
-    <h4>Type</h4>
-    <select id="f-kind" class="form-select"><option value="">Tous</option>
-      <option value="employee">Employés</option><option value="worker">Ouvriers</option><option value="visitor">Visiteurs</option>
-    </select>
-    <h4>Statistiques</h4>
-    <div id="map-stats" class="text-dim" style="font-size:13px">Chargement…</div>
-  </aside>
-  <div id="leaflet-map"></div>
-</div>
-<script>
-const map = L.map("leaflet-map").setView([5.345317, -4.024429], 12);
-L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
-  {attribution:"© OpenStreetMap, © CARTO", subdomains:"abcd", maxZoom:20}).addTo(map);
-const layers = {sites:L.layerGroup().addTo(map), checkpoints:L.layerGroup().addTo(map),
-  zones:L.layerGroup().addTo(map), people:L.layerGroup().addTo(map)};
 
-async function load() {
-  const params = new URLSearchParams();
-  const s = document.getElementById("f-site").value;
-  const k = document.getElementById("f-kind").value;
-  if (s) params.set("site", s); if (k) params.set("holder_kind", k);
-  const r = await fetch(`/map/data/?${params}`);
-  if (!r.ok) return;
-  const d = await r.json();
-  Object.values(layers).forEach(l => l.clearLayers());
-  d.sites.forEach(s => L.circleMarker([s.lat,s.lng],{radius:7,color:"#F26B1F",fillColor:"#F26B1F",fillOpacity:.85})
-    .bindPopup(`<strong>${s.name}</strong>`).addTo(layers.sites));
-  d.zones.forEach(z => L.polygon(z.polygon[0].map(c=>[c[1],c[0]]),{color:"#5eaaff",fillOpacity:.2})
-    .bindPopup(z.name).addTo(layers.zones));
-  d.checkpoints.forEach(c => L.marker([c.lat,c.lng]).bindPopup(`<strong>${c.name}</strong>`).addTo(layers.checkpoints));
-  d.people.forEach(p => L.circleMarker([p.lat,p.lng],{radius:8,color:"#5eaaff",fillColor:"#5eaaff",fillOpacity:.7})
-    .bindPopup(`<strong>${p.name}</strong><br>${p.last_site}`).addTo(layers.people));
-  document.getElementById("map-stats").innerHTML =
-    `${d.stats.total_present} présent(s)<br>${d.stats.employees} empl · ${d.stats.workers} ouvr · ${d.stats.visitors} vis<br><span style="color:#e35858">${d.stats.anomalies_count} alertes</span>`;
-  if (d.sites.length > 0) {
-    const bounds = L.latLngBounds(d.sites.map(s=>[s.lat,s.lng]));
-    map.fitBounds(bounds.pad(0.2), {maxZoom:15});
+    <h4>Type de porteur</h4>
+    <select id="f-kind" class="form-select">
+      <option value="">Tous</option>
+      <option value="employee">Employés</option>
+      <option value="worker">Ouvriers</option>
+      <option value="visitor">Visiteurs</option>
+    </select>
+
+    <h4>Statistiques</h4>
+    <div id="map-stats" class="text-dim" style="font-size:13px;line-height:1.6">
+      Chargement…
+    </div>
+
+    <h4 style="margin-top:16px">Légende</h4>
+    <div style="font-size:11.5px;line-height:1.8">
+      <div><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#F26B1F;margin-right:6px"></span>Sites</div>
+      <div><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#5eaaff;margin-right:6px"></span>Personnes présentes</div>
+      <div><span style="display:inline-block;width:10px;height:10px;border:2px solid #5eaaff;margin-right:6px"></span>Zones</div>
+    </div>
+  </aside>
+
+  <div id="leaflet-map"></div>
+  <div id="map-error" class="map-error" style="display:none"></div>
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  const errBox = document.getElementById("map-error");
+  function showError(msg) {
+    errBox.textContent = msg;
+    errBox.style.display = "block";
+    console.error("[map]", msg);
   }
-}
-document.getElementById("f-site").addEventListener("change", load);
-document.getElementById("f-kind").addEventListener("change", load);
-load(); setInterval(load, 60000);
+
+  // ─── Verifier que Leaflet est chargé ───────────────────────────
+  if (typeof L === "undefined") {
+    showError("Leaflet n'est pas chargé. Vérifiez la connexion à unpkg.com.");
+    return;
+  }
+
+  // ─── Initialisation Leaflet ─────────────────────────────────────
+  const mapDiv = document.getElementById("leaflet-map");
+  if (!mapDiv) {
+    showError("Conteneur #leaflet-map introuvable.");
+    return;
+  }
+
+  let map;
+  try {
+    map = L.map(mapDiv, {
+      zoomControl: true,
+      attributionControl: true,
+    }).setView([5.345317, -4.024429], 12);
+  } catch (e) {
+    showError("Échec init Leaflet : " + e.message);
+    return;
+  }
+
+  // ─── Tiles selon thème ──────────────────────────────────────────
+  const TILES = {
+    dark: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+    light: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+  };
+  function getTheme() {
+    return document.documentElement.dataset.theme === "light" ? "light" : "dark";
+  }
+  let tileLayer = null;
+  function applyTheme() {
+    if (tileLayer) {
+      try { map.removeLayer(tileLayer); } catch (e) {}
+      tileLayer = null;
+    }
+    tileLayer = L.tileLayer(TILES[getTheme()], {
+      attribution: "© OpenStreetMap, © CARTO",
+      subdomains: "abcd",
+      maxZoom: 20,
+    }).addTo(map);
+  }
+  applyTheme();
+
+  // Observer le toggle thème (uniquement après init)
+  try {
+    new MutationObserver(applyTheme).observe(document.documentElement, {
+      attributes: true, attributeFilter: ["data-theme"],
+    });
+  } catch (e) {
+    console.warn("[map] MutationObserver indisponible", e);
+  }
+
+  // ─── Recompute la taille au cas où le layout serait incomplet ───
+  setTimeout(() => map.invalidateSize(), 200);
+  window.addEventListener("resize", () => map.invalidateSize());
+
+  // ─── Layers ─────────────────────────────────────────────────────
+  const layers = {
+    sites: L.layerGroup().addTo(map),
+    zones: L.layerGroup().addTo(map),
+    checkpoints: L.layerGroup().addTo(map),
+    people: L.layerGroup().addTo(map),
+  };
+
+  // ─── Charge les données ─────────────────────────────────────────
+  async function load() {
+    const params = new URLSearchParams();
+    const s = document.getElementById("f-site").value;
+    const k = document.getElementById("f-kind").value;
+    if (s) params.set("site", s);
+    if (k) params.set("holder_kind", k);
+
+    let r;
+    try {
+      r = await fetch("/map/data/?" + params.toString(),
+        { credentials: "same-origin" });
+    } catch (err) {
+      showError("Erreur réseau : " + err.message);
+      return;
+    }
+    if (!r.ok) {
+      showError("HTTP " + r.status + " sur /map/data/");
+      return;
+    }
+
+    let d;
+    try { d = await r.json(); }
+    catch (e) { showError("Réponse JSON invalide"); return; }
+
+    if (d.error) { showError("Backend error: " + d.error); return; }
+
+    errBox.style.display = "none";
+    Object.values(layers).forEach(l => l.clearLayers());
+
+    const isLight = getTheme() === "light";
+    const zoneColor = isLight ? "#2563eb" : "#5eaaff";
+    const peopleColor = isLight ? "#1d4ed8" : "#5eaaff";
+
+    (d.sites || []).forEach(s => {
+      L.circleMarker([s.lat, s.lng], {
+        radius: 9, color: "#F26B1F", fillColor: "#F26B1F",
+        fillOpacity: .85, weight: 2,
+      }).bindPopup(
+        `<strong>${escapeHtml(s.name)}</strong><br>${escapeHtml(s.type_label || "")}`
+      ).addTo(layers.sites);
+    });
+
+    (d.zones || []).forEach(z => {
+      if (!z.polygon || !z.polygon[0]) return;
+      try {
+        L.polygon(z.polygon[0].map(c => [c[1], c[0]]), {
+          color: zoneColor, weight: 1.5, fillOpacity: .2,
+        }).bindPopup(escapeHtml(z.name || "")).addTo(layers.zones);
+      } catch (e) { console.warn("[map] zone polygon invalide", z, e); }
+    });
+
+    (d.checkpoints || []).forEach(c => {
+      L.circleMarker([c.lat, c.lng], {
+        radius: 5, color: "#a78bfa", fillColor: "#a78bfa",
+        fillOpacity: .9, weight: 1,
+      }).bindPopup(`<strong>${escapeHtml(c.name)}</strong>`)
+        .addTo(layers.checkpoints);
+    });
+
+    (d.people || []).forEach(p => {
+      L.circleMarker([p.lat, p.lng], {
+        radius: 8, color: peopleColor, fillColor: peopleColor,
+        fillOpacity: .7, weight: 1,
+      }).bindPopup(
+        `<strong>${escapeHtml(p.name)}</strong><br>${escapeHtml(p.last_site || "")}`
+      ).addTo(layers.people);
+    });
+
+    const stats = d.stats || {};
+    let html = `<strong>${stats.total_present || 0}</strong> présent(s)<br>` +
+               `${stats.employees || 0} empl · ${stats.workers || 0} ouvr · ${stats.visitors || 0} vis<br>` +
+               `<span style="color:var(--danger)">${stats.anomalies_count || 0} alerte(s)</span>`;
+    if (!d.sites || d.sites.length === 0) {
+      html += `<div class="text-dim" style="font-size:11px;margin-top:8px">` +
+              `Aucun site géolocalisé. Lancez <code>seed_demo_data --sites 4</code>.</div>`;
+    }
+    document.getElementById("map-stats").innerHTML = html;
+
+    // Auto-fit sur les sites — sinon on reste sur Abidjan
+    if (d.sites && d.sites.length > 0) {
+      try {
+        const bounds = L.latLngBounds(d.sites.map(s => [s.lat, s.lng]));
+        if (bounds.isValid()) map.fitBounds(bounds.pad(0.25), { maxZoom: 15 });
+      } catch (e) { /* ignore */ }
+    }
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({
+      "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;",
+    }[c]));
+  }
+
+  document.getElementById("f-site").addEventListener("change", load);
+  document.getElementById("f-kind").addEventListener("change", load);
+
+  load();
+  setInterval(load, 60000);
+});
 </script>
 {% endblock %}

@@ -49,3 +49,14 @@ urlpatterns = [
 # En prod c'est nginx qui sert /media/ via alias.
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+
+    # Django Debug Toolbar — monter ses URLs uniquement si l'app est installée
+    if "debug_toolbar" in settings.INSTALLED_APPS:
+        try:
+            import debug_toolbar
+            urlpatterns = [
+                path("__debug__/", include("debug_toolbar.urls")),
+                *urlpatterns,
+            ]
+        except ImportError:
+            pass

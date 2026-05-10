@@ -1,8 +1,124 @@
 {% extends "layout/base.html" %}
+{% load admin_filters %}
+
+{% block title %}Audit · KAYDAN SHIELD{% endblock %}
+{% block page_title %}Audit & conformité{% endblock %}
+{% block page_subtitle %}Journal d'audit hashé, exports RGPD, politiques de rétention.{% endblock %}
+{% block breadcrumb %}Audit{% endblock %}
+
+{% block page_actions %}
+  {% if tab == "policies" %}
+    <a class="btn btn-primary" href="{% url 'admin-retentionpolicy-create' %}"><i data-lucide="plus" style="width:16px;height:16px"></i> Nouvelle politique</a>
+  {% elif tab == "exports" %}
+    <a class="btn btn-primary" href="{% url 'admin-dataexport-create' %}"><i data-lucide="download" style="width:16px;height:16px"></i> Nouvel export RGPD</a>
+  {% elif tab == "registers" %}
+    <a class="btn btn-primary" href="{% url 'admin-conformity-create' %}"><i data-lucide="plus" style="width:16px;height:16px"></i> Nouveau registre</a>
+  {% endif %}
+{% endblock %}
+
 {% block content %}
-<section class="card" style="padding:48px 24px;text-align:center">
-  <h2>{{ page_title }}</h2>
-  <p class="text-muted">{{ page_subtitle }}</p>
-  <p class="text-dim mt-2">Module en développement.</p>
-</section>
+  <section class="statstrip mb-2">
+    <div><div class="label">Lignes d'audit</div><div class="value">{{ logs_total }}</div></div>
+    <div><div class="label">Exports en attente</div><div class="value text-warning">{{ exports_pending }}</div></div>
+    <div><div class="label">Politiques actives</div><div class="value text-success">{{ policies_active }}</div></div>
+    <div><div class="label">Registres conformité</div><div class="value">{{ registers_total }}</div></div>
+  </section>
+
+  <nav class="tabs mb-2">
+    <a class="tab {% if tab == 'logs' %}is-active{% endif %}" href="?tab=logs">Journal d'audit</a>
+    <a class="tab {% if tab == 'exports' %}is-active{% endif %}" href="?tab=exports">Exports RGPD</a>
+    <a class="tab {% if tab == 'policies' %}is-active{% endif %}" href="?tab=policies">Rétention</a>
+    <a class="tab {% if tab == 'registers' %}is-active{% endif %}" href="?tab=registers">Conformité</a>
+  </nav>
+
+  <section class="card" style="padding:0">
+    {% if tab == "logs" %}
+      <form method="get" class="row gap-2" style="padding:12px 16px;border-bottom:1px solid var(--border)">
+        <input type="hidden" name="tab" value="logs">
+        <input class="form-input" name="q" value="{{ q }}" placeholder="Action, modèle…" style="max-width:320px">
+        <button class="btn btn-ghost" type="submit">Filtrer</button>
+      </form>
+      {% if logs %}
+      <div class="table-wrap"><table class="table">
+        <thead><tr><th>Horodatage</th><th>Utilisateur</th><th>Action</th><th>Modèle</th><th>ID cible</th><th>IP</th><th>Hash</th></tr></thead>
+        <tbody>
+          {% for l in logs %}
+          <tr>
+            <td class="mono">{{ l.timestamp|date:"d/m/Y H:i:s" }}</td>
+            <td>{{ l.user.email|default:"système" }}</td>
+            <td><span class="pill pill-info">{{ l.action }}</span></td>
+            <td>{{ l.target_model|default:"—" }}</td>
+            <td class="mono">{{ l.target_id|default:"—" }}</td>
+            <td class="mono">{{ l.ip|default:"—" }}</td>
+            <td class="mono" title="{{ l.hash }}">{{ l.hash|slice:":12" }}…</td>
+          </tr>
+          {% endfor %}
+        </tbody></table></div>
+      {% else %}{% include "administration/_partials/empty_card.html" with icon="shield-check" title="Aucune ligne d'audit" %}{% endif %}
+
+    {% elif tab == "exports" %}
+      {% if exports %}
+      <div class="table-wrap"><table class="table">
+        <thead><tr><th>Demandé le</th><th>Demandeur</th><th>Sujet</th><th>Type</th><th>Statut</th><th>Expire</th><th></th></tr></thead>
+        <tbody>
+          {% for e in exports %}
+          <tr>
+            <td>{{ e.created_at|date:"d/m/Y H:i" }}</td>
+            <td>{{ e.requested_by.email|default:"—" }}</td>
+            <td>{{ e.subject_holder_kind|default:"—" }} #{{ e.subject_holder_id|default:"—" }}</td>
+            <td>{{ e.get_kind_display }}</td>
+            <td><span class="pill {% if e.status == 'completed' %}pill-success{% elif e.status == 'failed' %}pill-danger{% else %}pill-warning{% endif %}">{{ e.get_status_display }}</span></td>
+            <td>{{ e.expires_at|date:"d/m/Y"|default:"—" }}</td>
+            <td><div class="row gap-2">
+              <a class="icon-btn" href="{% url 'admin-dataexport-detail' e.pk %}"><i data-lucide="eye"></i></a>
+              <a class="icon-btn" href="{% url 'admin-dataexport-update' e.pk %}"><i data-lucide="pencil"></i></a>
+            </div></td>
+          </tr>
+          {% endfor %}
+        </tbody></table></div>
+      {% else %}{% include "administration/_partials/empty_card.html" with icon="file-down" title="Aucun export RGPD" cta_label="Nouvel export" cta_url="/data-exports/new/" %}{% endif %}
+
+    {% elif tab == "policies" %}
+      {% if policies %}
+      <div class="table-wrap"><table class="table">
+        <thead><tr><th>Modèle cible</th><th>Rétention</th><th>Base légale</th><th>Statut</th><th></th></tr></thead>
+        <tbody>
+          {% for p in policies %}
+          <tr>
+            <td class="mono">{{ p.target_model }}</td>
+            <td>{{ p.retention_days }} j</td>
+            <td>{{ p.legal_basis|truncatechars:80 }}</td>
+            <td>{% if p.is_active %}<span class="pill pill-success">Actif</span>{% else %}<span class="pill pill-muted">Inactif</span>{% endif %}</td>
+            <td><div class="row gap-2">
+              <a class="icon-btn" href="{% url 'admin-retentionpolicy-update' p.pk %}"><i data-lucide="pencil"></i></a>
+              <a class="icon-btn" href="{% url 'admin-retentionpolicy-delete' p.pk %}" style="color:var(--danger)"><i data-lucide="trash-2"></i></a>
+            </div></td>
+          </tr>
+          {% endfor %}
+        </tbody></table></div>
+      {% else %}{% include "administration/_partials/empty_card.html" with icon="shield" title="Aucune politique de rétention" cta_label="Nouvelle politique" cta_url="/retention-policies/new/" %}{% endif %}
+
+    {% else %}
+      {% if registers %}
+      <div class="table-wrap"><table class="table">
+        <thead><tr><th>Date</th><th>Site</th><th>Type</th><th>Titre</th><th>Effectué par</th><th></th></tr></thead>
+        <tbody>
+          {% for r in registers %}
+          <tr>
+            <td>{{ r.performed_at|date:"d/m/Y H:i" }}</td>
+            <td>{{ r.site.name|default:"—" }}</td>
+            <td>{{ r.kind }}</td>
+            <td>{{ r.title }}</td>
+            <td>{{ r.performed_by.email|default:"—" }}</td>
+            <td><div class="row gap-2">
+              <a class="icon-btn" href="{% url 'admin-conformity-detail' r.pk %}"><i data-lucide="eye"></i></a>
+              <a class="icon-btn" href="{% url 'admin-conformity-update' r.pk %}"><i data-lucide="pencil"></i></a>
+            </div></td>
+          </tr>
+          {% endfor %}
+        </tbody></table></div>
+      {% else %}{% include "administration/_partials/empty_card.html" with icon="clipboard-check" title="Aucun registre de conformité" cta_label="Nouveau registre" cta_url="/conformity-registers/new/" %}{% endif %}
+    {% endif %}
+    {% include "administration/_partials/pagination.html" %}
+  </section>
 {% endblock %}

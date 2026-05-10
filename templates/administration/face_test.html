@@ -1,8 +1,70 @@
 {% extends "layout/base.html" %}
+
+{% block title %}Test reconnaissance faciale · KAYDAN SHIELD{% endblock %}
+{% block page_title %}Test reconnaissance faciale{% endblock %}
+{% block page_subtitle %}Webcam + face-api.js : enrôlement et match d'employé.{% endblock %}
+{% block breadcrumb %}Employés · Test face{% endblock %}
+
+{% block page_actions %}
+  <a class="btn btn-ghost" href="{% url 'admin-employees' %}"><i data-lucide="arrow-left" style="width:14px;height:14px"></i> Retour employés</a>
+{% endblock %}
+
 {% block content %}
-<section class="card" style="padding:48px 24px;text-align:center">
-  <h2>{{ page_title }}</h2>
-  <p class="text-muted">{{ page_subtitle }}</p>
-  <p class="text-dim mt-2">Module en développement.</p>
-</section>
+  <section class="card">
+    <h3 style="margin-top:0">Caméra</h3>
+    <div class="row" style="gap:24px;align-items:flex-start;flex-wrap:wrap">
+      <div style="flex:1;min-width:320px">
+        <video id="ks-face-video" autoplay muted playsinline
+               style="width:100%;max-width:480px;background:#000;border-radius:8px"></video>
+        <canvas id="ks-face-canvas" style="display:none"></canvas>
+        <div class="row gap-2 mt-2">
+          <button class="btn btn-ghost" id="ks-face-start"><i data-lucide="video" style="width:14px;height:14px"></i> Démarrer</button>
+          <button class="btn btn-ghost" id="ks-face-stop"><i data-lucide="video-off" style="width:14px;height:14px"></i> Arrêter</button>
+        </div>
+      </div>
+      <div style="flex:1;min-width:280px">
+        <h4 style="margin-top:0">Résultat</h4>
+        <div id="ks-face-status" class="text-dim">Prêt à démarrer la webcam.</div>
+        <pre id="ks-face-log" class="mono" style="background:rgba(0,0,0,.04);padding:12px;border-radius:6px;font-size:11px;max-height:240px;overflow:auto;margin-top:10px">—</pre>
+      </div>
+    </div>
+  </section>
+
+  <section class="card mt-2" style="border:1px dashed var(--border)">
+    <h4 style="margin-top:0">Note d'intégration</h4>
+    <p class="text-dim" style="margin:0">
+      Cette page est conçue pour héberger <code>face-api.js</code> + les modèles téléchargés localement
+      sous <code>static/vendor/face-api/</code>. Si la bibliothèque n'est pas encore installée,
+      la webcam s'allume mais aucun descripteur n'est calculé.
+      Endpoints attendus côté API&nbsp;: <code>POST /api/v1/employees/face/enroll/</code> et
+      <code>POST /api/v1/employees/face/match/</code>.
+    </p>
+  </section>
+
+  <script>
+    (function () {
+      const video = document.getElementById("ks-face-video");
+      const status = document.getElementById("ks-face-status");
+      const log = document.getElementById("ks-face-log");
+      let stream = null;
+      document.getElementById("ks-face-start").addEventListener("click", async () => {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ video: true });
+          video.srcObject = stream;
+          status.textContent = "Webcam active.";
+          log.textContent = "Webcam démarrée à " + new Date().toLocaleTimeString();
+        } catch (e) {
+          status.textContent = "Erreur webcam : " + e.message;
+        }
+      });
+      document.getElementById("ks-face-stop").addEventListener("click", () => {
+        if (stream) {
+          stream.getTracks().forEach(t => t.stop());
+          stream = null;
+          video.srcObject = null;
+          status.textContent = "Webcam arrêtée.";
+        }
+      });
+    })();
+  </script>
 {% endblock %}

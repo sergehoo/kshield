@@ -18,27 +18,128 @@
   </a>
 {% endblock %}
 
-{% block content %}
-  <section class="card">
-    <div class="card-title">
-      <h3><i data-lucide="info" style="width:18px;height:18px;color:var(--ks-orange-400);vertical-align:-3px"></i> Informations</h3>
-    </div>
+{% block extra_css %}
+<style>
+  .info-section { margin-bottom: 14px; padding: 0; }
+  .info-section-head {
+    display: flex; align-items: center; gap: 10px;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+  }
+  .info-section-head .head-icon {
+    width: 32px; height: 32px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(242,107,31,.10);
+    color: var(--ks-orange-400);
+    flex-shrink: 0;
+  }
+  .info-section-head h3 {
+    margin: 0; font-size: 13.5px; font-weight: 600;
+  }
+  .info-section-head .count {
+    margin-left: auto; font-size: 11px;
+    color: var(--text-dim); padding: 2px 8px;
+    background: var(--surface-strong); border-radius: 999px;
+  }
 
-    <div class="detail-grid">
-      {% for label, value in fields %}
-        <div class="detail-row">
-          <span class="key">{{ label }}</span>
-          {% if value is None or value == "" %}
-            <span class="val empty"></span>
-          {% elif value is True %}
-            <span class="val"><span class="pill pill-success">Oui</span></span>
-          {% elif value is False %}
-            <span class="val"><span class="pill pill-muted">Non</span></span>
-          {% else %}
-            <span class="val">{{ value }}</span>
-          {% endif %}
+  .info-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 0;
+  }
+  .info-item {
+    display: flex; align-items: flex-start; gap: 12px;
+    padding: 14px 18px;
+    border-right: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    min-height: 60px;
+    transition: background .15s ease;
+  }
+  .info-item:hover { background: var(--surface); }
+  /* Retire la bordure droite sur la dernière colonne de chaque ligne (heuristique simple) */
+  @media (min-width: 920px) {
+    .info-grid > .info-item:nth-child(2n) { border-right: none; }
+  }
+  @media (min-width: 1300px) {
+    .info-grid > .info-item:nth-child(2n) { border-right: 1px solid var(--border); }
+    .info-grid > .info-item:nth-child(3n) { border-right: none; }
+  }
+  .info-item .icon-wrap {
+    width: 30px; height: 30px; border-radius: 7px;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--surface-strong);
+    color: var(--text-muted);
+    flex-shrink: 0; margin-top: 2px;
+  }
+  .info-item .label {
+    font-size: 10.5px; color: var(--text-muted);
+    text-transform: uppercase; letter-spacing: .04em;
+    font-weight: 600; margin-bottom: 4px;
+    display: block;
+  }
+  .info-item .value {
+    font-size: 13.5px; color: var(--text);
+    word-break: break-word; line-height: 1.4;
+  }
+  .info-item .value.empty { color: var(--text-dim); font-style: italic; }
+  .info-item .value a { color: var(--ks-orange-400); text-decoration: none; }
+  .info-item .value a:hover { text-decoration: underline; }
+
+  /* Image inline (logo, photo) */
+  .info-item img {
+    max-width: 80px; max-height: 80px;
+    object-fit: contain; border-radius: 6px;
+    background: white; padding: 4px;
+    border: 1px solid var(--border);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+{% if fields %}
+  {% for section in fields %}
+  <section class="card info-section" style="padding:0">
+    <header class="info-section-head">
+      <div class="head-icon">
+        <i data-lucide="{{ section.icon }}" style="width:16px;height:16px"></i>
+      </div>
+      <h3>{{ section.title }}</h3>
+      <span class="count">{{ section.items|length }} info{{ section.items|length|pluralize }}</span>
+    </header>
+    <div class="info-grid">
+      {% for item in section.items %}
+      <div class="info-item">
+        <div class="icon-wrap">
+          <i data-lucide="{{ item.icon }}" style="width:14px;height:14px"></i>
         </div>
+        <div style="flex:1;min-width:0">
+          <span class="label">{{ item.label }}</span>
+          <div class="value{% if item.value is None or item.value == '' %} empty{% endif %}">
+            {% if item.value is None or item.value == '' %}
+              —
+            {% elif item.value is True %}
+              <span class="pill pill-success">Oui</span>
+            {% elif item.value is False %}
+              <span class="pill pill-muted">Non</span>
+            {% elif item.raw_name == 'email' or item.raw_name == 'contact_email' %}
+              <a href="mailto:{{ item.value }}">{{ item.value }}</a>
+            {% elif item.raw_name == 'phone' or item.raw_name == 'contact_phone' or item.raw_name == 'emergency_contact_phone' %}
+              <a href="tel:{{ item.value }}">{{ item.value }}</a>
+            {% elif item.raw_name == 'logo' or item.raw_name == 'photo' or item.raw_name == 'id_document' %}
+              {% if item.value.url %}<img src="{{ item.value.url }}" alt="">{% else %}{{ item.value }}{% endif %}
+            {% else %}
+              {{ item.value }}
+            {% endif %}
+          </div>
+        </div>
+      </div>
       {% endfor %}
     </div>
   </section>
+  {% endfor %}
+{% else %}
+  <section class="card" style="padding:24px;text-align:center;color:var(--text-dim)">
+    Aucune information à afficher.
+  </section>
+{% endif %}
 {% endblock %}

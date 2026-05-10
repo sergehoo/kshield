@@ -1,8 +1,51 @@
 {% extends "layout/base.html" %}
+{% load admin_filters %}
+
+{% block title %}Gateways · KAYDAN SHIELD{% endblock %}
+{% block page_title %}Gateways locales{% endblock %}
+{% block page_subtitle %}Edge devices KAYDAN-EDGE déployés sur chaque site (offline-first).{% endblock %}
+{% block breadcrumb %}Gateways{% endblock %}
+
+{% block page_actions %}
+  <a class="btn btn-primary" href="{% url 'admin-gateway-create' %}"><i data-lucide="plus" style="width:16px;height:16px"></i> Nouvelle gateway</a>
+{% endblock %}
+
 {% block content %}
-<section class="card" style="padding:48px 24px;text-align:center">
-  <h2>{{ page_title }}</h2>
-  <p class="text-muted">{{ page_subtitle }}</p>
-  <p class="text-dim mt-2">Module en développement.</p>
-</section>
+  <section class="statstrip mb-2">
+    <div><div class="label">Gateways totales</div><div class="value">{{ total }}</div></div>
+    <div><div class="label">En ligne</div><div class="value text-success">{{ online }}</div></div>
+    <div><div class="label">Hors ligne</div><div class="value text-danger">{{ offline }}</div></div>
+  </section>
+
+  <section class="card" style="padding:0">
+    {% if gateways %}
+      <div class="table-wrap"><table class="table">
+        <thead><tr>
+          <th>Site</th><th>Nom</th><th>Code</th><th>Hardware</th>
+          <th>LAN</th><th>Public IP</th><th>Statut</th><th></th>
+        </tr></thead>
+        <tbody>
+          {% for g in gateways %}
+          <tr>
+            <td>{{ g.site.name|default:"—" }}</td>
+            <td><span style="font-weight:600">{{ g.name }}</span></td>
+            <td class="mono">{{ g.code }}</td>
+            <td>{{ g.hardware|default:"—" }}</td>
+            <td class="mono" style="font-size:11px">{{ g.lan_ip|default:"—" }}</td>
+            <td class="mono" style="font-size:11px">{{ g.public_ip|default:"—" }}</td>
+            <td>{% if g.status == 'active' %}<span class="pill pill-success">En ligne</span>{% elif g.status == 'offline' %}<span class="pill pill-danger">Hors ligne</span>{% elif g.status == 'degraded' %}<span class="pill pill-warning">Dégradée</span>{% else %}<span class="pill pill-muted">{{ g.get_status_display }}</span>{% endif %}</td>
+            <td><div class="row gap-2">
+              <a class="icon-btn" href="{% url 'admin-gateway-detail' g.pk %}"><i data-lucide="eye"></i></a>
+              <a class="icon-btn" href="{% url 'admin-gateway-update' g.pk %}"><i data-lucide="pencil"></i></a>
+              <a class="icon-btn" href="{% url 'admin-gateway-delete' g.pk %}" style="color:var(--danger)"><i data-lucide="trash-2"></i></a>
+            </div></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table></div>
+    {% else %}
+      {% include "administration/_partials/empty_card.html" with icon="server" title="Aucune gateway enregistrée" cta_label="Enregistrer une gateway" cta_url="/gateways-mng/new/" %}
+    {% endif %}
+    {% include "administration/_partials/pagination.html" %}
+  </section>
 {% endblock %}

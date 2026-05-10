@@ -89,6 +89,9 @@
       <a href="?{% qs_replace request tab='worker' page=None %}" class="{% if tab == 'worker' %}active{% endif %}">
         Ouvriers RFID ({{ worker_total }})
       </a>
+      <a href="?{% qs_replace request tab='helmet' page=None %}" class="{% if tab == 'helmet' %}active{% endif %}">
+        Casques ({{ helmet_total }})
+      </a>
     </div>
   </div>
 
@@ -239,6 +242,54 @@
       {% include "administration/_partials/pagination.html" %}
     {% else %}
       {% include "administration/_partials/empty_card.html" with icon="hard-hat" title="Aucun badge ouvrier" description="Couplage badge + casque obligatoire." %}
+    {% endif %}
+  </section>
+  {% endif %}
+
+  {# ============== TAB Casques ============== #}
+  {% if tab == 'helmet' %}
+  <section class="card mb-2" style="display:flex;justify-content:space-between;align-items:center">
+    <div>
+      <h3 style="margin:0">Inventaire des casques connectés</h3>
+      <p class="text-muted" style="margin:4px 0 0;font-size:12.5px">
+        {{ helmet_active }} actif{{ helmet_active|pluralize }} sur {{ helmet_total }} casque{{ helmet_total|pluralize }} en stock.
+      </p>
+    </div>
+    <a class="btn btn-primary" href="{% url 'admin-helmet-create' %}">
+      <i data-lucide="plus" style="width:16px;height:16px"></i> Nouveau casque
+    </a>
+  </section>
+  <section class="card" style="padding:0">
+    {% if helmets %}
+      <div class="table-wrap"><table class="table">
+        <thead><tr>
+          <th>N° série</th><th>UHF tag</th><th>BLE beacon</th>
+          <th>Taille</th><th>Statut</th><th>Ouvrier courant</th>
+          <th>Apparié actif</th><th>Dernière vue</th><th></th>
+        </tr></thead>
+        <tbody>
+          {% for h in helmets %}
+          <tr>
+            <td class="mono" style="font-weight:600">{{ h.serial_number }}</td>
+            <td class="mono" style="font-size:11px">{{ h.uhf_tag_uid|default:"—" }}</td>
+            <td class="mono" style="font-size:11px">{{ h.ble_beacon_uid|default:"—" }}</td>
+            <td>{{ h.size|default:"—" }}</td>
+            <td>{% if h.status == 'active' %}<span class="pill pill-success">Actif</span>{% elif h.status == 'maintenance' %}<span class="pill pill-warning">Maintenance</span>{% elif h.status == 'lost' %}<span class="pill pill-danger">Perdu</span>{% else %}<span class="pill pill-muted">{{ h.get_status_display }}</span>{% endif %}</td>
+            <td>{% if h.current_worker %}{{ h.current_worker.first_name }} {{ h.current_worker.last_name }}{% else %}—{% endif %}</td>
+            <td>{% if h.active_pairings %}<span class="pill pill-info">Oui</span>{% else %}—{% endif %}</td>
+            <td class="mono" style="font-size:11px">{{ h.last_seen_at|date:"d/m H:i"|default:"—" }}</td>
+            <td><div class="row gap-2">
+              <a class="icon-btn" href="{% url 'admin-helmet-detail' h.pk %}"><i data-lucide="eye"></i></a>
+              <a class="icon-btn" href="{% url 'admin-helmet-update' h.pk %}"><i data-lucide="pencil"></i></a>
+              <a class="icon-btn" href="{% url 'admin-helmet-delete' h.pk %}" style="color:var(--danger)"><i data-lucide="trash-2"></i></a>
+            </div></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table></div>
+      {% include "administration/_partials/pagination.html" %}
+    {% else %}
+      {% include "administration/_partials/empty_card.html" with icon="hard-hat" title="Aucun casque enregistré" cta_label="Enregistrer un casque" cta_url="/helmets/new/" %}
     {% endif %}
   </section>
   {% endif %}

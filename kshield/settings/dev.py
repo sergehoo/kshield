@@ -122,6 +122,28 @@ try:
     INSTALLED_APPS = [*INSTALLED_APPS, "debug_toolbar"]
     MIDDLEWARE = ["debug_toolbar.middleware.DebugToolbarMiddleware", *MIDDLEWARE]
     INTERNAL_IPS = ["127.0.0.1"]
+
+    # Sur Python 3.14, sys.setprofile interdit 2 profilers simultanés.
+    # Le ProfilingPanel de debug-toolbar utilise cProfile, ce qui plante toute
+    # vue où Django (ou un autre middleware) installe déjà un profiler.
+    # On désactive ce panel et on laisse les autres.
+    DEBUG_TOOLBAR_PANELS = [
+        "debug_toolbar.panels.history.HistoryPanel",
+        "debug_toolbar.panels.versions.VersionsPanel",
+        "debug_toolbar.panels.timer.TimerPanel",
+        "debug_toolbar.panels.settings.SettingsPanel",
+        "debug_toolbar.panels.headers.HeadersPanel",
+        "debug_toolbar.panels.request.RequestPanel",
+        "debug_toolbar.panels.sql.SQLPanel",
+        "debug_toolbar.panels.staticfiles.StaticFilesPanel",
+        "debug_toolbar.panels.templates.TemplatesPanel",
+        "debug_toolbar.panels.alerts.AlertsPanel",
+        "debug_toolbar.panels.cache.CachePanel",
+        "debug_toolbar.panels.signals.SignalsPanel",
+        "debug_toolbar.panels.redirects.RedirectsPanel",
+        # "debug_toolbar.panels.profiling.ProfilingPanel",  # ← désactivé pour Python 3.14
+        "debug_toolbar.panels.logging.LoggingPanel",
+    ]
 except ImportError:
     pass
 

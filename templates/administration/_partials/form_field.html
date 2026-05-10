@@ -1,5 +1,4 @@
-{# Single form field rendering.
-   Variables : field (BoundField), span="full"|"" #}
+
 <div class="form-row {% if span == 'full' %}form-row--full{% endif %}">
   <label class="form-label" for="{{ field.id_for_label }}">
     {{ field.label }}

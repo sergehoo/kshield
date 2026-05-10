@@ -1,8 +1,10 @@
 """Pipeline de traitement d'un scan — AccessGatewayService.process_scan."""
 from __future__ import annotations
 
+import logging
 from datetime import date
 
+from django.db import transaction
 from django.utils import timezone
 
 from devices.models import Badge, BadgeHelmetPairing, Device, Helmet
@@ -11,6 +13,8 @@ from ouvriers.models import Worker
 from visitors.models import Visitor
 
 from .models import AccessDecision, AccessEvent
+
+logger = logging.getLogger(__name__)
 
 
 class AccessGatewayService:
@@ -60,7 +64,16 @@ class AccessGatewayService:
         if isinstance(holder, Worker) and badge and helmet and site:
             cls._track_pairing(holder, badge, helmet, site, event.timestamp)
 
-        # TODO: dispatch async tasks (notifications, antifraud)
+        # Dispatch async (anti-fraude + notifications + WS broadcast).
+        # Utilise transaction.on_commit pour s'assurer que l'event est bien
+        # persisté avant que le worker Celery ne le lise.
+        try:
+            from access_control.tasks import dispatch_access_event
+            transaction.on_commit(
+                lambda: dispatch_access_event.delay(event.id),
+            )
+        except Exception:
+            logger.exception("Échec du dispatch async pour event=%s", event.id)
         return event
 
     @staticmethod

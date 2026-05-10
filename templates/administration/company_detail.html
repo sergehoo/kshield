@@ -1,55 +1,248 @@
 {% extends "administration/_detail.html" %}
-{% load static %}
+{% load static admin_filters %}
+
+{% block page_title %}{{ object.name }}{% endblock %}
+{% block page_subtitle %}Filiale KAYDAN GROUPE — vue d'ensemble.{% endblock %}
+
 {% block content %}
-<section class="card" style="margin-bottom:18px">
+{# ─── Header filiale (les boutons Retour/Supprimer/Modifier sont dans page_actions) ─── #}
+<section class="card mb-2">
   <div class="row gap-4" style="align-items:center;flex-wrap:wrap">
     {% if object.logo %}
-      <img src="{{ object.logo.url }}" alt="" style="max-width:140px;max-height:90px;object-fit:contain;background:white;border-radius:10px;padding:8px;border:1px solid var(--border)">
+      <img src="{{ object.logo.url }}" alt="{{ object.name }}"
+           style="max-width:120px;max-height:80px;object-fit:contain;background:white;
+                  border-radius:10px;padding:8px;border:1px solid var(--border)">
     {% else %}
-      <div style="width:140px;height:90px;background:var(--surface-strong);border:1px dashed var(--border);border-radius:10px;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:11px">Sans logo</div>
+      <div style="width:120px;height:80px;background:var(--surface-strong);border:1px dashed var(--border);
+                  border-radius:10px;display:flex;align-items:center;justify-content:center;
+                  color:var(--text-muted);font-size:11px">Sans logo</div>
     {% endif %}
     <div style="flex:1;min-width:240px">
-      <div class="text-dim" style="font-size:11px;text-transform:uppercase">Filiale KAYDAN</div>
-      <h2 style="margin:2px 0 4px">{{ object.name }}</h2>
-      <span class="pill pill-info">{{ object.get_sector_display }}</span>
-      {% if object.is_active %}<span class="pill pill-success">Actif</span>{% else %}<span class="pill pill-muted">Inactif</span>{% endif %}
+      <div class="text-dim" style="font-size:11px;text-transform:uppercase;letter-spacing:.04em">
+        Filiale KAYDAN GROUPE
+      </div>
+      <h2 style="margin:2px 0 8px;font-size:22px">{{ object.name }}</h2>
+      <div class="row gap-2" style="flex-wrap:wrap">
+        <span class="pill pill-info">{{ object.get_sector_display }}</span>
+        {% if object.is_active %}
+          <span class="pill pill-success">Actif</span>
+        {% else %}
+          <span class="pill pill-muted">Inactif</span>
+        {% endif %}
+        <span class="pill pill-muted">{{ object.code|default:"" }}</span>
+      </div>
+      {% if object.legal_name or object.contact_email %}
+      <div class="text-dim" style="font-size:12px;margin-top:8px">
+        {% if object.legal_name %}{{ object.legal_name }}{% endif %}
+        {% if object.contact_email %}{% if object.legal_name %} · {% endif %}<a href="mailto:{{ object.contact_email }}" style="color:var(--text-muted)">{{ object.contact_email }}</a>{% endif %}
+      </div>
+      {% endif %}
     </div>
   </div>
 </section>
 
-<div class="kpi-grid" style="margin-bottom:18px">
-  <a href="{% url 'admin-employees' %}?company={{ object.id }}" class="kpi-card kpi-info">
-    <div class="kpi-icon"><i data-lucide="users"></i></div>
-    <div class="kpi-body">
-      <div class="kpi-label">Employés</div>
-      <div class="kpi-value">{{ employees_count }}</div>
-      <div class="kpi-sub">{{ employees_active }} actifs · {{ employees_with_badge }} avec badge</div>
+{# ─── KPIs ─── #}
+<section class="kpi-row mb-2">
+  <a href="?tab=employees" class="stat-card" style="text-decoration:none;color:inherit">
+    <div class="row">
+      <span class="label">Employés</span>
+      <span class="icon" style="background:rgba(96,165,250,.12);color:var(--info)">
+        <i data-lucide="users" style="width:18px;height:18px"></i>
+      </span>
     </div>
+    <div class="value">{{ employees_count }}</div>
+    <div class="sub">{{ employees_active }} actifs · {{ employees_with_badge }} avec badge</div>
   </a>
-  <a href="{% url 'admin-workers' %}" class="kpi-card kpi-warning">
-    <div class="kpi-icon"><i data-lucide="hard-hat"></i></div>
-    <div class="kpi-body">
-      <div class="kpi-label">Ouvriers</div>
-      <div class="kpi-value">{{ workers_count }}</div>
-      <div class="kpi-sub">{{ workers_active }} actifs · {{ workers_with_badge }} avec badge</div>
+  <a href="?tab=workers" class="stat-card" style="text-decoration:none;color:inherit">
+    <div class="row">
+      <span class="label">Ouvriers</span>
+      <span class="icon" style="background:rgba(251,146,60,.12);color:#fb923c">
+        <i data-lucide="hard-hat" style="width:18px;height:18px"></i>
+      </span>
     </div>
+    <div class="value">{{ workers_count }}</div>
+    <div class="sub">{{ workers_active }} actifs · {{ workers_with_badge }} avec badge</div>
   </a>
-  <a href="{% url 'admin-visitors' %}" class="kpi-card kpi-purple">
-    <div class="kpi-icon"><i data-lucide="user-plus"></i></div>
-    <div class="kpi-body">
-      <div class="kpi-label">Visiteurs</div>
-      <div class="kpi-value">{{ visitors_count }}</div>
-      <div class="kpi-sub">{{ visitors_recent }} sur 30 jours</div>
+  <a href="?tab=sites" class="stat-card" style="text-decoration:none;color:inherit">
+    <div class="row">
+      <span class="label">Sites rattachés</span>
+      <span class="icon" style="background:rgba(242,107,31,.12);color:var(--ks-orange-400)">
+        <i data-lucide="map-pin" style="width:18px;height:18px"></i>
+      </span>
     </div>
+    <div class="value">{{ sites_count }}</div>
+    <div class="sub">Bureaux · Chantiers · Entrepôts</div>
   </a>
-  <a href="{% url 'admin-sites' %}" class="kpi-card kpi-orange">
-    <div class="kpi-icon"><i data-lucide="map-pin"></i></div>
-    <div class="kpi-body">
-      <div class="kpi-label">Sites rattachés</div>
-      <div class="kpi-value">{{ sites_count }}</div>
+  <a href="?tab=visitors" class="stat-card" style="text-decoration:none;color:inherit">
+    <div class="row">
+      <span class="label">Visiteurs</span>
+      <span class="icon" style="background:rgba(167,139,250,.12);color:#a78bfa">
+        <i data-lucide="user-plus" style="width:18px;height:18px"></i>
+      </span>
     </div>
+    <div class="value">{{ visitors_count }}</div>
+    <div class="sub">{{ visitors_recent }} sur 30 jours</div>
   </a>
-</div>
+</section>
 
-{{ block.super }}
+{# ─── Onglets + recherche ─── #}
+<nav class="tabs mb-2">
+  <a class="tab {% if tab == 'employees' %}is-active{% endif %}" href="?tab=employees">
+    Employés <span class="text-dim" style="font-size:10px">({{ employees_count }})</span>
+  </a>
+  <a class="tab {% if tab == 'workers' %}is-active{% endif %}" href="?tab=workers">
+    Ouvriers <span class="text-dim" style="font-size:10px">({{ workers_count }})</span>
+  </a>
+  <a class="tab {% if tab == 'sites' %}is-active{% endif %}" href="?tab=sites">
+    Sites <span class="text-dim" style="font-size:10px">({{ sites_count }})</span>
+  </a>
+  <a class="tab {% if tab == 'visitors' %}is-active{% endif %}" href="?tab=visitors">
+    Visiteurs <span class="text-dim" style="font-size:10px">({{ visitors_count }})</span>
+  </a>
+</nav>
+
+<section class="card mb-2" style="padding:14px 16px">
+  <form method="get" class="row gap-2" style="flex-wrap:wrap;align-items:center">
+    <input type="hidden" name="tab" value="{{ tab }}">
+    <input class="form-input" name="q" value="{{ q }}"
+           placeholder="Recherche : nom, matricule, email, code…"
+           style="flex:1;min-width:240px">
+    {% if tab == 'employees' or tab == 'workers' or tab == 'sites' %}
+    <select name="status" class="form-select" style="max-width:200px">
+      <option value="">Tous statuts</option>
+      {% if tab == 'employees' %}
+        <option value="active" {% if status_filter == 'active' %}selected{% endif %}>Actifs</option>
+        <option value="on_leave" {% if status_filter == 'on_leave' %}selected{% endif %}>En congé</option>
+        <option value="terminated" {% if status_filter == 'terminated' %}selected{% endif %}>Sortis</option>
+      {% elif tab == 'workers' %}
+        <option value="active" {% if status_filter == 'active' %}selected{% endif %}>Actifs</option>
+        <option value="suspended" {% if status_filter == 'suspended' %}selected{% endif %}>Suspendus</option>
+        <option value="blacklisted" {% if status_filter == 'blacklisted' %}selected{% endif %}>Blacklist</option>
+      {% else %}
+        <option value="active" {% if status_filter == 'active' %}selected{% endif %}>Actif</option>
+        <option value="maintenance" {% if status_filter == 'maintenance' %}selected{% endif %}>Maintenance</option>
+        <option value="closed" {% if status_filter == 'closed' %}selected{% endif %}>Fermé</option>
+      {% endif %}
+    </select>
+    {% endif %}
+    <button class="btn btn-ghost" type="submit"><i data-lucide="filter" style="width:14px;height:14px"></i> Filtrer</button>
+    {% if q or status_filter %}
+    <a class="btn btn-ghost" href="?tab={{ tab }}" style="font-size:11px">
+      <i data-lucide="x" style="width:13px;height:13px"></i> Reset
+    </a>
+    {% endif %}
+    <span class="text-dim" style="font-size:12px;margin-left:auto">
+      {{ filtered_count }} résultat{{ filtered_count|pluralize }}
+    </span>
+  </form>
+</section>
+
+{# ─── Tableau de l'onglet courant ─── #}
+<section class="card" style="padding:0">
+  {% if tab == 'employees' %}
+    {% if employees %}
+    <div class="table-wrap"><table class="table">
+      <thead><tr>
+        <th>Employé</th><th>Matricule</th><th>Département</th><th>Poste</th><th>Contrat</th><th>Statut</th><th></th>
+      </tr></thead>
+      <tbody>
+        {% for e in employees %}
+        <tr>
+          <td>
+            <div class="row" style="gap:10px;align-items:center">
+              {% if e.photo %}<img src="{{ e.photo.url }}" style="width:32px;height:32px;border-radius:50%;object-fit:cover">
+              {% else %}<div class="avatar" style="width:32px;height:32px;font-size:11px">{{ e.first_name|slice:":1" }}{{ e.last_name|slice:":1" }}</div>{% endif %}
+              <div>
+                <div style="font-weight:600">{{ e.first_name }} {{ e.last_name }}</div>
+                <div class="text-dim" style="font-size:11px">{{ e.email|default:"—" }}</div>
+              </div>
+            </div>
+          </td>
+          <td class="mono">{{ e.matricule }}</td>
+          <td>{{ e.department.name|default:"—" }}</td>
+          <td>{{ e.position.title|default:"—" }}</td>
+          <td><span class="pill pill-info">{{ e.get_contract_type_display }}</span></td>
+          <td>{% if e.status == 'active' %}<span class="pill pill-success">Actif</span>{% elif e.status == 'on_leave' %}<span class="pill pill-info">Congé</span>{% else %}<span class="pill pill-muted">{{ e.get_status_display }}</span>{% endif %}</td>
+          <td><a class="icon-btn" href="{% url 'admin-employee-detail' e.pk %}"><i data-lucide="eye"></i></a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+    {% else %}{% include "administration/_partials/empty_card.html" with icon="users" title="Aucun employé pour ce filtre" %}{% endif %}
+
+  {% elif tab == 'workers' %}
+    {% if workers %}
+    <div class="table-wrap"><table class="table">
+      <thead><tr>
+        <th>Ouvrier</th><th>Matricule</th><th>Métier</th><th>Sous-traitant</th><th>Statut</th><th></th>
+      </tr></thead>
+      <tbody>
+        {% for w in workers %}
+        <tr>
+          <td>
+            <div class="row" style="gap:10px;align-items:center">
+              {% if w.photo %}<img src="{{ w.photo.url }}" style="width:32px;height:32px;border-radius:50%;object-fit:cover">
+              {% else %}<div class="avatar" style="width:32px;height:32px;font-size:11px;background:rgba(251,146,60,.15);color:#fb923c">{{ w.first_name|slice:":1" }}{{ w.last_name|slice:":1" }}</div>{% endif %}
+              <div>
+                <div style="font-weight:600">{{ w.first_name }} {{ w.last_name }}</div>
+                <div class="text-dim" style="font-size:11px">{{ w.phone|default:"—" }}</div>
+              </div>
+            </div>
+          </td>
+          <td class="mono">{{ w.matricule }}</td>
+          <td>{{ w.trade.name|default:"—" }}</td>
+          <td>{{ w.subcontractor.name|default:"Direct" }}</td>
+          <td>{% if w.status == 'active' %}<span class="pill pill-success">Actif</span>{% elif w.status == 'suspended' %}<span class="pill pill-warning">Suspendu</span>{% else %}<span class="pill pill-muted">{{ w.get_status_display }}</span>{% endif %}</td>
+          <td><a class="icon-btn" href="{% url 'admin-worker-detail' w.pk %}"><i data-lucide="eye"></i></a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+    {% else %}{% include "administration/_partials/empty_card.html" with icon="hard-hat" title="Aucun ouvrier rattaché à cette filiale via les sites" %}{% endif %}
+
+  {% elif tab == 'sites' %}
+    {% if sites %}
+    <div class="table-wrap"><table class="table">
+      <thead><tr>
+        <th>Site</th><th>Code</th><th>Type</th><th>Statut</th><th>Localisation</th><th></th>
+      </tr></thead>
+      <tbody>
+        {% for s in sites %}
+        <tr>
+          <td><strong>{{ s.name }}</strong></td>
+          <td class="mono">{{ s.code }}</td>
+          <td><span class="pill pill-info">{{ s.get_type_display }}</span></td>
+          <td>{% if s.status == 'active' %}<span class="pill pill-success">Actif</span>{% else %}<span class="pill pill-muted">{{ s.get_status_display }}</span>{% endif %}</td>
+          <td class="mono" style="font-size:11px">{% if s.latitude %}{{ s.latitude|floatformat:3 }}, {{ s.longitude|floatformat:3 }}{% else %}—{% endif %}</td>
+          <td><a class="icon-btn" href="{% url 'admin-site-detail' s.pk %}"><i data-lucide="eye"></i></a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+    {% else %}{% include "administration/_partials/empty_card.html" with icon="map-pin" title="Aucun site enregistré pour cette filiale" %}{% endif %}
+
+  {% elif tab == 'visitors' %}
+    {% if visitors %}
+    <div class="table-wrap"><table class="table">
+      <thead><tr>
+        <th>Visiteur</th><th>CNI</th><th>Société</th><th>Phone</th><th>Créé le</th><th></th>
+      </tr></thead>
+      <tbody>
+        {% for v in visitors %}
+        <tr>
+          <td><strong>{{ v.first_name }} {{ v.last_name }}</strong></td>
+          <td class="mono" style="font-size:11px">{{ v.id_number|default:"—" }}</td>
+          <td>{{ v.company|default:"—" }}</td>
+          <td class="mono" style="font-size:11px">{{ v.phone|default:"—" }}</td>
+          <td class="mono" style="font-size:11px">{{ v.created_at|date:"d/m/Y" }}</td>
+          <td><a class="icon-btn" href="{% url 'admin-visitor-detail' v.pk %}"><i data-lucide="eye"></i></a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+    {% else %}{% include "administration/_partials/empty_card.html" with icon="user-plus" title="Aucun visiteur enregistré sur les sites de cette filiale" %}{% endif %}
+  {% endif %}
+
+  {% include "administration/_partials/pagination.html" %}
+</section>
 {% endblock %}

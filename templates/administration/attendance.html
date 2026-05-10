@@ -1,8 +1,118 @@
 {% extends "layout/base.html" %}
+{% load admin_filters %}
+
+{% block title %}Pointage · KAYDAN SHIELD{% endblock %}
+{% block page_title %}Pointage & présence{% endblock %}
+{% block page_subtitle %}Punches NFC, journées de travail, congés et heures supplémentaires.{% endblock %}
+{% block breadcrumb %}Pointage{% endblock %}
+
+{% block page_actions %}
+  {% if tab == "leaves" %}
+    <a class="btn btn-primary" href="{% url 'admin-leaverequest-create' %}"><i data-lucide="plus" style="width:16px;height:16px"></i> Nouvelle demande</a>
+  {% elif tab == "rules" %}
+    <a class="btn btn-primary" href="{% url 'admin-overtimerule-create' %}"><i data-lucide="plus" style="width:16px;height:16px"></i> Nouvelle règle</a>
+  {% endif %}
+{% endblock %}
+
 {% block content %}
-<section class="card" style="padding:48px 24px;text-align:center">
-  <h2>{{ page_title }}</h2>
-  <p class="text-muted">{{ page_subtitle }}</p>
-  <p class="text-dim mt-2">Module en développement.</p>
-</section>
+  <section class="statstrip mb-2">
+    <div><div class="label">Punches aujourd'hui</div><div class="value">{{ punches_today }}</div></div>
+    <div><div class="label">Punches 7 jours</div><div class="value">{{ punches_week }}</div></div>
+    <div><div class="label">Journées du jour</div><div class="value">{{ days_today }}</div></div>
+    <div><div class="label">Congés en attente</div><div class="value text-warning">{{ leaves_pending }}</div></div>
+    <div><div class="label">Règles HS actives</div><div class="value text-success">{{ rules_active }}</div></div>
+  </section>
+
+  <nav class="tabs mb-2">
+    <a class="tab {% if tab == 'punches' %}is-active{% endif %}" href="?tab=punches">Punches</a>
+    <a class="tab {% if tab == 'days' %}is-active{% endif %}" href="?tab=days">Journées</a>
+    <a class="tab {% if tab == 'leaves' %}is-active{% endif %}" href="?tab=leaves">Congés</a>
+    <a class="tab {% if tab == 'rules' %}is-active{% endif %}" href="?tab=rules">Règles HS</a>
+  </nav>
+
+  <section class="card" style="padding:0">
+    {% if tab == "punches" %}
+      {% if punches %}
+      <div class="table-wrap"><table class="table">
+        <thead><tr><th>Horodatage</th><th>Site</th><th>Type porteur</th><th>Type</th><th>Statut</th><th>Retard</th></tr></thead>
+        <tbody>
+          {% for p in punches %}
+          <tr>
+            <td class="mono">{{ p.timestamp|date:"d/m/Y H:i" }}</td>
+            <td>{{ p.site.name|default:"—" }}</td>
+            <td><span class="pill pill-info">{{ p.holder_kind }}</span></td>
+            <td>{{ p.get_type_display }}</td>
+            <td><span class="pill {% if p.status == 'ok' %}pill-success{% else %}pill-warning{% endif %}">{{ p.get_status_display }}</span></td>
+            <td>{% if p.delay_minutes %}{{ p.delay_minutes }} min{% else %}—{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody></table></div>
+      {% else %}{% include "administration/_partials/empty_card.html" with icon="clock" title="Aucun punch" description="Les punches apparaîtront ici dès le premier pointage NFC." %}{% endif %}
+
+    {% elif tab == "days" %}
+      {% if days %}
+      <div class="table-wrap"><table class="table">
+        <thead><tr><th>Date</th><th>Site</th><th>Porteur</th><th>1er punch</th><th>Dernier punch</th><th>Durée</th><th>Statut</th></tr></thead>
+        <tbody>
+          {% for d in days %}
+          <tr>
+            <td>{{ d.date|date:"d/m/Y" }}</td>
+            <td>{{ d.site.name|default:"—" }}</td>
+            <td>{{ d.holder_kind }} #{{ d.holder_object_id }}</td>
+            <td class="mono">{{ d.first_punch_at|time:"H:i"|default:"—" }}</td>
+            <td class="mono">{{ d.last_punch_at|time:"H:i"|default:"—" }}</td>
+            <td>{{ d.duration_minutes|default:0 }} min</td>
+            <td><span class="pill {% if d.status == 'present' %}pill-success{% else %}pill-muted{% endif %}">{{ d.get_status_display }}</span></td>
+          </tr>
+          {% endfor %}
+        </tbody></table></div>
+      {% else %}{% include "administration/_partials/empty_card.html" with icon="calendar" title="Aucune journée enregistrée" description="Les journées de présence sont consolidées chaque nuit." %}{% endif %}
+
+    {% elif tab == "leaves" %}
+      {% if leaves %}
+      <div class="table-wrap"><table class="table">
+        <thead><tr><th>Demandeur</th><th>Type</th><th>Du</th><th>Au</th><th>Statut</th><th>Approuvé par</th><th></th></tr></thead>
+        <tbody>
+          {% for l in leaves %}
+          <tr>
+            <td>{% if l.employee %}{{ l.employee.first_name }} {{ l.employee.last_name }}{% elif l.worker %}{{ l.worker.first_name }} {{ l.worker.last_name }}{% else %}—{% endif %}</td>
+            <td>{{ l.get_type_display }}</td>
+            <td>{{ l.start_date|date:"d/m/Y" }}</td>
+            <td>{{ l.end_date|date:"d/m/Y" }}</td>
+            <td><span class="pill {% if l.status == 'approved' %}pill-success{% elif l.status == 'rejected' %}pill-danger{% else %}pill-warning{% endif %}">{{ l.get_status_display }}</span></td>
+            <td>{{ l.approved_by.email|default:"—" }}</td>
+            <td><div class="row gap-2">
+              <a class="icon-btn" href="{% url 'admin-leaverequest-detail' l.pk %}"><i data-lucide="eye"></i></a>
+              <a class="icon-btn" href="{% url 'admin-leaverequest-update' l.pk %}"><i data-lucide="pencil"></i></a>
+            </div></td>
+          </tr>
+          {% endfor %}
+        </tbody></table></div>
+      {% else %}{% include "administration/_partials/empty_card.html" with icon="palmtree" title="Aucune demande de congé" cta_label="Nouvelle demande" cta_url="/leave-requests/new/" %}{% endif %}
+
+    {% else %}
+      {% if rules %}
+      <div class="table-wrap"><table class="table">
+        <thead><tr><th>Filiale</th><th>Nom</th><th>Seuil hebdo</th><th>×1.25</th><th>×1.50</th><th>Nuit</th><th>Statut</th><th></th></tr></thead>
+        <tbody>
+          {% for r in rules %}
+          <tr>
+            <td>{{ r.company.name|default:"—" }}</td>
+            <td>{{ r.name }}</td>
+            <td>{{ r.weekly_threshold_hours }} h</td>
+            <td class="mono">{{ r.rate_125 }}</td>
+            <td class="mono">{{ r.rate_150 }}</td>
+            <td class="mono">{{ r.night_rate }}</td>
+            <td>{% if r.is_active %}<span class="pill pill-success">Actif</span>{% else %}<span class="pill pill-muted">Inactif</span>{% endif %}</td>
+            <td><div class="row gap-2">
+              <a class="icon-btn" href="{% url 'admin-overtimerule-update' r.pk %}"><i data-lucide="pencil"></i></a>
+              <a class="icon-btn" href="{% url 'admin-overtimerule-delete' r.pk %}" style="color:var(--danger)"><i data-lucide="trash-2"></i></a>
+            </div></td>
+          </tr>
+          {% endfor %}
+        </tbody></table></div>
+      {% else %}{% include "administration/_partials/empty_card.html" with icon="settings" title="Aucune règle d'heures supplémentaires" cta_label="Nouvelle règle" cta_url="/overtime-rules/new/" %}{% endif %}
+    {% endif %}
+    {% include "administration/_partials/pagination.html" %}
+  </section>
 {% endblock %}
