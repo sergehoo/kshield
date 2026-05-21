@@ -25,13 +25,19 @@ ALLOWED_HOSTS = config("ALLOWED_HOSTS", cast=Csv())
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 SECURE_SSL_REDIRECT = config("SECURE_SSL_REDIRECT", default=True, cast=bool)
 SESSION_COOKIE_SECURE = True
+SESSION_COOKIE_SAMESITE = "Lax"
+SESSION_COOKIE_HTTPONLY = True
 CSRF_COOKIE_SECURE = True
+CSRF_COOKIE_SAMESITE = "Lax"
 SECURE_HSTS_SECONDS = config("SECURE_HSTS_SECONDS", default=60 * 60 * 24 * 365, cast=int)
 SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 SECURE_HSTS_PRELOAD = True
 SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
 X_FRAME_OPTIONS = "DENY"
+
+# CSP : reporting endpoint optionnel
+CSP_REPORT_ONLY = config("CSP_REPORT_ONLY", default=False, cast=bool)
 
 # ---------------------------------------------------------------------------
 # Database — PostGIS impératif (geofencing zones + sites)

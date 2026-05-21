@@ -1,0 +1,30 @@
+{% extends "layout/base.html" %}
+{% block title %}Erreur SSO · KAYDAN SHIELD{% endblock %}
+{% block page_title %}Erreur de connexion SSO{% endblock %}
+{% block breadcrumb %}SSO · Erreur{% endblock %}
+
+{% block content %}
+<section class="card" style="text-align:center;padding:48px 24px">
+  <div style="width:64px;height:64px;border-radius:50%;background:rgba(248,113,113,.12);
+              display:flex;align-items:center;justify-content:center;margin:0 auto 14px">
+    <i data-lucide="shield-x" style="width:30px;height:30px;color:var(--danger)"></i>
+  </div>
+  <h2 style="margin:0 0 8px">Authentification SSO impossible</h2>
+  <p class="text-muted" style="margin:0 auto;max-width:480px">
+    {% if error == "access_denied" %}
+      Votre identité a été refusée par Keycloak. Contactez votre administrateur si le problème persiste.
+    {% elif error == "session_expired" %}
+      Votre session a expiré. Veuillez vous reconnecter.
+    {% else %}
+      Une erreur SSO est survenue : <strong>{{ error }}</strong>.
+      {% if description %}<br><span class="text-dim">{{ description }}</span>{% endif %}
+    {% endif %}
+  </p>
+  <div class="row gap-2" style="justify-content:center;margin-top:18px">
+    <a class="btn btn-ghost" href="/auth/login/">Login local</a>
+    <a class="btn btn-primary" href="{% url 'sso:login' %}">
+      <i data-lucide="rotate-ccw" style="width:14px;height:14px"></i> Réessayer SSO
+    </a>
+  </div>
+</section>
+{% endblock %}

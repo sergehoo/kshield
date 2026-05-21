@@ -110,7 +110,7 @@
             <td>{% if p.is_active %}<span class="pill pill-success">Actif</span>{% else %}<span class="pill pill-muted">Inactif</span>{% endif %}</td>
             <td><div class="row gap-2">
               <a class="icon-btn" href="{% url 'admin-retentionpolicy-update' p.pk %}"><i data-lucide="pencil"></i></a>
-              <a class="icon-btn" href="{% url 'admin-retentionpolicy-delete' p.pk %}" style="color:var(--danger)"><i data-lucide="trash-2"></i></a>
+              <a class="icon-btn" href="{% url 'admin-retentionpolicy-delete' p.pk %}" style="color:var(--danger)" onclick="return confirm('Supprimer cette politique de rétention ? Cette action est irréversible.');"><i data-lucide="trash-2"></i></a>
             </div></td>
           </tr>
           {% endfor %}

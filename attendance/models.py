@@ -202,3 +202,100 @@ class AttendanceCorrection(TimeStampedModel):
     performed_by = models.ForeignKey(
         "accounts.User", on_delete=models.PROTECT, related_name="attendance_corrections",
     )
+
+
+# ---------------------------------------------------------------------------
+# Reconnaissance faciale → confirmation présence
+# (ENRICHIT le pointage RFID existant, ne le remplace pas)
+# ---------------------------------------------------------------------------
+class FaceSightingEvent(TimeStampedModel):
+    """Détection visage sur un flux caméra — trace brute (matched ou non).
+
+    Chaque détection est enregistrée. Si ``matched=True``, l'employee est lié.
+    Sinon c'est un visage inconnu (visiteur ? intrus ? employé non enrôlé ?).
+    """
+
+    camera = models.ForeignKey(
+        "devices.Camera", on_delete=models.CASCADE, related_name="sightings",
+    )
+    site = models.ForeignKey(
+        "sites.Site", on_delete=models.SET_NULL, related_name="face_sightings",
+        null=True, blank=True,
+    )
+    employee = models.ForeignKey(
+        "employees.Employee", on_delete=models.SET_NULL,
+        related_name="face_sightings", null=True, blank=True, db_index=True,
+    )
+
+    timestamp = models.DateTimeField(db_index=True)
+    face_score = models.FloatField(default=0.0, help_text="Similarité cosine 0-1")
+    liveness_score = models.FloatField(null=True, blank=True,
+        help_text="Score anti-spoof real_score 0-1 (null si liveness off)")
+    bbox = models.JSONField(default=list, blank=True,
+        help_text="[x1, y1, x2, y2] dans le repère image")
+    snapshot = models.ImageField(
+        upload_to="face_sightings/%Y/%m/%d/", null=True, blank=True,
+        help_text="Crop ou frame complète au moment du sighting",
+    )
+    matched = models.BooleanField(default=False, db_index=True)
+
+    class Meta:
+        ordering = ("-timestamp",)
+        indexes = [
+            models.Index(fields=["employee", "timestamp"]),
+            models.Index(fields=["camera", "timestamp"]),
+            models.Index(fields=["matched", "timestamp"]),
+        ]
+
+
+class FaceCheckinConfirmation(TimeStampedModel):
+    """Lie un sighting visage à un Punch RFID (ou pas) pour 1 employé/jour/type.
+
+    Le pointage RFID reste la source de vérité. Cette table sert à :
+      - confirmer qu'un employé a bien été VU à son arrivée/départ
+      - alerter si un visage est vu sans badge correspondant (et inversement)
+      - dédupliquer : 2 entrées max par employé par jour (arrival + departure)
+    """
+
+    KIND_CHOICES = [
+        ("arrival",   "Arrivée bureau"),
+        ("departure", "Départ bureau"),
+    ]
+    STATUS_CHOICES = [
+        ("confirmed",      "Confirmé (badge + face matchent)"),
+        ("face_only",      "Visage seul (pas de badge)"),
+        ("badge_only",     "Badge seul (pas de visage)"),
+        ("out_of_window",  "Hors fenêtre temporelle"),
+    ]
+
+    employee = models.ForeignKey(
+        "employees.Employee", on_delete=models.CASCADE,
+        related_name="checkin_confirmations",
+    )
+    date = models.DateField(db_index=True)
+    kind = models.CharField(max_length=10, choices=KIND_CHOICES)
+
+    sighting = models.OneToOneField(
+        FaceSightingEvent, on_delete=models.SET_NULL,
+        related_name="confirmation", null=True, blank=True,
+    )
+    punch = models.ForeignKey(
+        Punch, on_delete=models.SET_NULL, related_name="face_confirmations",
+        null=True, blank=True,
+    )
+
+    delta_seconds = models.IntegerField(
+        null=True, blank=True,
+        help_text="Écart temporel face↔badge (positif = badge après face)",
+    )
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES,
+                                default="confirmed", db_index=True)
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ("-date", "kind")
+        unique_together = ("employee", "date", "kind")
+        indexes = [
+            models.Index(fields=["date", "kind"]),
+            models.Index(fields=["status"]),
+        ]

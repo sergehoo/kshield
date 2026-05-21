@@ -1,3 +1,35 @@
+# ─── SSO Keycloak (OpenID Connect) ───
+mozilla-django-oidc>=4.0,<5
+PyJWT[crypto]>=2.8,<3
+cryptography>=42.0
+requests>=2.31
+
+# ─── Monitoring (Prometheus exporter) ───
+django-prometheus>=2.3,<3
+prometheus-client>=0.20
+
+# ─── Tests (dev) ───
+pytest>=8.0
+pytest-django>=4.7
+pytest-cov>=4.1
+pytest-mock>=3.12
+
+# ─── Reconnaissance faciale (InsightFace + SilentFace) ───
+# Pipeline universel CPU. Pour activer GPU sur un host avec NVIDIA :
+#   pip uninstall -y onnxruntime
+#   pip install "onnxruntime-gpu>=1.18,<2"
+# Puis FACE_CTX_ID=0 + FACE_PROVIDERS=CUDAExecutionProvider,CPUExecutionProvider.
+#
+# Note : pins volontairement larges pour supporter Python 3.10 → 3.14.
+# - onnxruntime 1.24+ : Python 3.13 / 3.14
+# - onnxruntime 1.18-1.20 : Python 3.10-3.12
+# - numpy 2.x requis sur Python 3.13+ (1.x n'a pas de wheel py313+)
+# - opencv-python-headless 4.10+ pour py313+
+insightface>=0.7.3
+onnxruntime>=1.18,<2          # CPU par défaut (cf. doc pour passer en GPU)
+opencv-python-headless>=4.10
+numpy>=1.26
+
 amqp==5.3.1
 asgiref==3.11.1
 billiard==4.2.4

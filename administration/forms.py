@@ -5,7 +5,11 @@ vues `CreateView` / `UpdateView` génériques de Django.
 """
 from __future__ import annotations
 
+import logging
+
 from django import forms
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -197,6 +201,66 @@ class HelmetForm(StyledModelForm):
         }
 
 
+class CameraForm(StyledModelForm):
+    """Formulaire complet pour ajouter/configurer une caméra IP.
+
+    Le champ ``password`` est masqué par défaut. Si on est en mode édition,
+    on ne le re-pré-remplit pas (sécurité) — laisser vide pour conserver
+    l'ancien, ou saisir une nouvelle valeur pour mettre à jour.
+    """
+
+    password = forms.CharField(
+        required=False,
+        widget=forms.PasswordInput(attrs={"autocomplete": "new-password",
+                                            "placeholder": "(inchangé)"}),
+        help_text="Laisser vide pour conserver le mot de passe actuel.",
+    )
+
+    class Meta:
+        from devices.models import Camera
+        model = Camera
+        fields = [
+            # Identité
+            "name", "site", "zone", "location_label",
+            # Connexion
+            "rtsp_url", "transport", "codec",
+            "username", "password",
+            # Re-stream
+            "target_width", "target_height", "target_fps", "jpeg_quality",
+            # ONVIF
+            "onvif_enabled", "onvif_host", "onvif_port",
+            # Pipeline IA
+            "enable_face_recognition", "enable_motion_detection", "enable_recording",
+            # Statut
+            "is_active",
+        ]
+        widgets = {
+            "rtsp_url": forms.TextInput(attrs={
+                "placeholder": "rtsp://user:pass@192.168.1.50:554/Streaming/Channels/101",
+            }),
+            "location_label": forms.TextInput(attrs={
+                "placeholder": "Mât SE, hauteur 4m",
+            }),
+        }
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        # Si password vide en édition → conserve l'ancien
+        pwd = self.cleaned_data.get("password", "")
+        if not pwd and instance.pk:
+            try:
+                from devices.models import Camera as _Cam
+                instance.password = _Cam.objects.only("password").get(pk=instance.pk).password
+            except Exception:
+                pass
+        elif pwd:
+            instance.password = pwd
+        if commit:
+            instance.save()
+            self.save_m2m()
+        return instance
+
+
 # ===========================================================================
 # Gateway, Antifraud, Notifications
 # ===========================================================================
@@ -328,7 +392,7 @@ class UserCreateForm(forms.ModelForm):
             from core.services import get_kaydan_tenant
             user.tenant = get_kaydan_tenant()
         except Exception:
-            pass
+            logger.warning("Affectation tenant KAYDAN sur User échouée", exc_info=True)
         if commit:
             user.save()
             self._save_roles(user)
@@ -464,7 +528,8 @@ class RoleForm(StyledModelForm):
                 for uid in role.assignments.values_list("user_id", flat=True).distinct():
                     invalidate_user_perms(uid)
             except Exception:
-                pass
+                logger.warning("Invalidation cache RBAC après update rôle %s échouée",
+                                getattr(role, "code", "?"), exc_info=True)
         return role
 
     def _sync_permissions(self, role):

@@ -3,8 +3,11 @@ from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from access_control.services import AccessGatewayService
+from accounts.hmac_auth import HMACAPIKeyAuthentication
+from accounts.permissions import IsAuthenticatedOrAPIKey
 
 from .models import MobileBundle, MobileDevice, OfflineScanQueue, SyncSession
 from .serializers import (
@@ -35,7 +38,12 @@ class MobileBundleViewSet(viewsets.ModelViewSet):
 
 
 class PushBatchView(APIView):
-    """POST /api/v1/mobile/sync/push — terminal pousse ses scans offline."""
+    """POST /api/v1/mobile/sync/push — terminal pousse ses scans offline.
+
+    Authentification : HMAC (mobile/edge) OU JWT (back-office test).
+    """
+    authentication_classes = [HMACAPIKeyAuthentication, JWTAuthentication]
+    permission_classes = [IsAuthenticatedOrAPIKey]
 
     def post(self, request):
         s = PushBatchSerializer(data=request.data)
@@ -77,6 +85,8 @@ class PushBatchView(APIView):
 
 class PullBundleView(APIView):
     """POST /api/v1/mobile/sync/pull — terminal récupère son delta."""
+    authentication_classes = [HMACAPIKeyAuthentication, JWTAuthentication]
+    permission_classes = [IsAuthenticatedOrAPIKey]
 
     def post(self, request):
         device_id = request.data.get("device_id")

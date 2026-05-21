@@ -40,6 +40,10 @@ admin.site.site_title = "KAYDAN admin"
 admin.site.index_title = "Administration interne (superuser uniquement)"
 
 urlpatterns = [
+    # ───── Monitoring Prometheus (à scraper par /metrics) ─────
+    # django-prometheus expose métriques HTTP + DB + cache automatiquement.
+    # Métriques business custom dans core/metrics.py (mises à jour par Celery).
+    path("", include("django_prometheus.urls")),  # → /metrics
     # On déplace l'admin Django vers /django-admin/ (path obscur réservé aux DBA).
     # /admin/ sera capturé par administration.urls et redirigera vers la home.
     path("django-admin/", admin.site.urls),
@@ -48,6 +52,9 @@ urlpatterns = [
     path("badges/<int:pk>/thumbnail/", BadgeThumbnailView.as_view(),   name="badge-thumbnail"),
     # Back-office KAYDAN (administration)
     path("", include("administration.urls")),
+    # ───── SSO Keycloak (OIDC) ─────
+    path("sso/", include("sso.urls")),
+    path("api/sso/", include("sso.api_urls")),
     path("api/v1/", include(api_v1)),
     # OpenAPI / docs
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),

@@ -1,0 +1,20 @@
+include: package:flutter_lints/flutter.yaml
+
+linter:
+  rules:
+    - prefer_const_constructors
+    - prefer_const_literals_to_create_immutables
+    - avoid_print
+    - always_declare_return_types
+    - prefer_final_locals
+    - sort_pub_dependencies
+
+analyzer:
+  errors:
+    invalid_annotation_target: ignore
+    unused_import: warning
+    dead_code: warning
+  exclude:
+    - "**/*.g.dart"
+    - "**/*.freezed.dart"
+    - "build/**"

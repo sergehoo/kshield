@@ -36,7 +36,8 @@
 
       <div class="form-actions">
         {% if object and url_key %}
-          <a class="btn btn-ghost left" href="{% url 'admin-'|add:url_key|add:'-delete' object.pk %}" style="color:var(--danger)">
+          <a class="btn btn-ghost left" href="{% url 'admin-'|add:url_key|add:'-delete' object.pk %}" style="color:var(--danger)"
+             onclick="return confirm('Supprimer cet enregistrement ? Cette action est irréversible.');">
             <i data-lucide="trash-2" style="width:16px;height:16px"></i> Supprimer
           </a>
         {% endif %}

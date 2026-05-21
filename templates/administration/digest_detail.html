@@ -1,0 +1,184 @@
+{% extends "layout/base.html" %}
+{% load admin_filters %}
+
+{% block title %}{{ digest.title|default:"Digest" }} · KAYDAN SHIELD{% endblock %}
+{% block page_title %}{{ digest.title|default:"Digest exécutif" }}{% endblock %}
+{% block page_subtitle %}{{ digest.get_period_display }} · {{ digest.period_start|date:"d M Y" }} → {{ digest.period_end|date:"d M Y" }}{% endblock %}
+{% block breadcrumb %}<a href="{% url 'admin-digests' %}">Digest IA</a> · #{{ digest.id }}{% endblock %}
+
+{% block page_actions %}
+  <a class="btn btn-ghost" href="{% url 'admin-digests' %}">
+    <i data-lucide="arrow-left" style="width:14px;height:14px"></i> Retour
+  </a>
+  <form method="post" action="{% url 'admin-digest-item-action' pk=digest.id verb='regenerate' %}" style="display:inline">
+    {% csrf_token %}
+    <button type="submit" class="btn btn-secondary">
+      <i data-lucide="refresh-cw" style="width:14px;height:14px"></i> Régénérer
+    </button>
+  </form>
+  {% if digest.status == "ready" %}
+  <form method="post" action="{% url 'admin-digest-item-action' pk=digest.id verb='send' %}" style="display:inline">
+    {% csrf_token %}
+    <button type="submit" class="btn btn-primary">
+      <i data-lucide="send" style="width:14px;height:14px"></i> Envoyer par email
+    </button>
+  </form>
+  {% endif %}
+{% endblock %}
+
+{% block extra_css %}
+<style>
+  .digest-grid { display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px }
+  .digest-card { padding:16px;border-radius:14px;background:var(--surface);border:1px solid var(--border) }
+  .digest-card .label { font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-dim);margin-bottom:4px }
+  .digest-card .value { font-size:22px;font-weight:700;color:var(--text) }
+  .digest-card .delta { font-size:12px;margin-top:4px }
+  .delta.up { color:var(--success,#2dd4bf) }
+  .delta.down { color:var(--danger,#f87171) }
+  .delta.flat { color:var(--text-dim) }
+  .severity-pill { padding:2px 8px;border-radius:999px;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em }
+  .sev-critical { background:rgba(239,68,68,.14);color:#ef4444 }
+  .sev-high { background:rgba(249,115,22,.14);color:#f97316 }
+  .sev-medium { background:rgba(234,179,8,.14);color:#eab308 }
+  .sev-low { background:rgba(59,130,246,.14);color:#3b82f6 }
+  .reco-card { padding:14px;border-left:3px solid var(--ks-orange-400);background:rgba(242,107,31,.04);border-radius:0 10px 10px 0;margin-bottom:8px }
+  .meta-row { display:flex;flex-wrap:wrap;gap:14px;font-size:12px;color:var(--text-dim) }
+  .meta-row strong { color:var(--text) }
+</style>
+{% endblock %}
+
+{% block content %}
+
+{# ─── Bandeau status ─── #}
+{% if digest.status == "failed" %}
+  <section class="card mb-2" style="padding:14px 18px;border-left:3px solid var(--danger);background:rgba(248,113,113,.06)">
+    <strong style="color:var(--danger)">Échec génération</strong>
+    <div style="font-size:12.5px;margin-top:4px">{{ digest.error_message|default:"Cause inconnue — consultez les logs Celery." }}</div>
+  </section>
+{% elif digest.status == "generating" %}
+  <section class="card mb-2" style="padding:14px 18px;border-left:3px solid var(--info)">
+    <strong>Génération en cours…</strong> Le digest sera disponible dans quelques secondes.
+  </section>
+{% elif digest.status == "queued" %}
+  <section class="card mb-2" style="padding:14px 18px">
+    <strong>En file d'attente.</strong> Lancez un worker Celery pour traiter le digest.
+  </section>
+{% endif %}
+
+{# ─── Résumé exécutif ─── #}
+{% if digest.executive_summary %}
+<section class="card mb-2" style="padding:20px 24px;background:linear-gradient(135deg, rgba(242,107,31,.08), rgba(217,70,239,.04))">
+  <div style="display:flex;gap:14px;align-items:flex-start">
+    <div style="width:40px;height:40px;border-radius:10px;background:linear-gradient(135deg,#f26b1f,#d946ef);color:white;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+      <i data-lucide="sparkles" style="width:18px;height:18px"></i>
+    </div>
+    <div style="flex:1">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-dim);margin-bottom:6px">Résumé exécutif</div>
+      <p style="margin:0;font-size:14.5px;line-height:1.65;white-space:pre-line">{{ digest.executive_summary }}</p>
+    </div>
+  </div>
+</section>
+{% endif %}
+
+{# ─── KPI deltas ─── #}
+{% if digest.kpi_deltas %}
+<h3 style="font-size:14px;margin:18px 0 10px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-dim)">Indicateurs clés</h3>
+<section class="digest-grid mb-2">
+  {% for k in digest.kpi_deltas %}
+  <div class="digest-card">
+    <div class="label">{{ k.label }}</div>
+    <div class="value">{{ k.value }}</div>
+    <div class="delta {{ k.trend|default:'flat' }}">
+      {% if k.trend == "up" %}<i data-lucide="trending-up" style="width:12px;height:12px;vertical-align:-2px"></i>
+      {% elif k.trend == "down" %}<i data-lucide="trending-down" style="width:12px;height:12px;vertical-align:-2px"></i>
+      {% else %}<i data-lucide="minus" style="width:12px;height:12px;vertical-align:-2px"></i>{% endif %}
+      {{ k.comment|default:"" }}
+    </div>
+  </div>
+  {% endfor %}
+</section>
+{% endif %}
+
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:16px">
+
+{# ─── Top alertes ─── #}
+{% if digest.top_alerts %}
+<section class="card" style="padding:18px 20px">
+  <h3 style="margin:0 0 12px;font-size:14px"><i data-lucide="shield-alert" style="width:16px;height:16px;vertical-align:-3px;color:var(--danger)"></i> Top alertes</h3>
+  <ul style="list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:8px">
+    {% for a in digest.top_alerts %}
+    <li style="display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-bottom:1px solid var(--border)">
+      <span class="severity-pill sev-{{ a.severity|default:'medium' }}">{{ a.severity|default:"medium" }}</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:500">{{ a.rule|default:"—" }}</div>
+        <div style="font-size:11.5px;color:var(--text-dim);margin-top:2px">{{ a.site|default:"—" }} · {{ a.ts|truncatechars:16 }} · {{ a.holder|default:"" }}</div>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+{# ─── Anomalies ─── #}
+{% if digest.anomalies %}
+<section class="card" style="padding:18px 20px">
+  <h3 style="margin:0 0 12px;font-size:14px"><i data-lucide="activity" style="width:16px;height:16px;vertical-align:-3px;color:var(--warning,#fb923c)"></i> Anomalies détectées</h3>
+  <ul style="list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:8px">
+    {% for a in digest.anomalies %}
+    <li style="display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-bottom:1px solid var(--border)">
+      <span class="severity-pill sev-{{ a.severity|default:'medium' }}">{{ a.severity|default:"medium" }}</span>
+      <div style="flex:1">
+        <div style="font-size:13px;font-weight:500">{{ a.label|default:"—" }}</div>
+        {% if a.evidence %}<div style="font-size:11.5px;color:var(--text-dim);margin-top:2px">{{ a.evidence }}</div>{% endif %}
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+</div>
+
+{# ─── Recommandations ─── #}
+{% if digest.recommendations %}
+<h3 style="font-size:14px;margin:24px 0 10px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-dim)">Recommandations</h3>
+<section style="margin-bottom:16px">
+  {% for r in digest.recommendations %}
+  <div class="reco-card">
+    <strong style="font-size:13.5px">{{ r.title|default:"Action" }}</strong>
+    {% if r.action %}<div style="font-size:13px;margin-top:4px;line-height:1.5">{{ r.action }}</div>{% endif %}
+    {% if r.owner %}<div style="font-size:11.5px;color:var(--text-dim);margin-top:6px"><i data-lucide="user" style="width:11px;height:11px;vertical-align:-1px"></i> {{ r.owner }}</div>{% endif %}
+  </div>
+  {% endfor %}
+</section>
+{% endif %}
+
+{# ─── Méta & traçabilité ─── #}
+<section class="card" style="padding:14px 18px;margin-top:16px">
+  <h4 style="margin:0 0 10px;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-dim)">Traçabilité</h4>
+  <div class="meta-row">
+    <div><strong>Modèle :</strong> {{ digest.model_used|default:"—" }}</div>
+    <div><strong>Tokens :</strong> {{ digest.tokens_used|default:0 }}</div>
+    <div><strong>Génération :</strong> {{ digest.generation_seconds|default:0 }} s</div>
+    <div><strong>Créé :</strong> {{ digest.created_at|date:"d/m/Y H:i" }}</div>
+    <div><strong>Maj :</strong> {{ digest.updated_at|date:"d/m/Y H:i" }}</div>
+    {% if digest.sent_at %}
+    <div><strong>Envoyé :</strong> {{ digest.sent_at|date:"d/m/Y H:i" }} → {{ digest.sent_to|length }} destinataire(s)</div>
+    {% endif %}
+  </div>
+</section>
+
+{# ─── Preview email ─── #}
+{% if email_html %}
+<details style="margin-top:16px">
+  <summary style="cursor:pointer;font-size:13px;font-weight:500;color:var(--text-dim);padding:8px 0">
+    <i data-lucide="mail" style="width:14px;height:14px;vertical-align:-2px"></i>
+    Prévisualiser l'email
+  </summary>
+  <div style="margin-top:10px;padding:14px;background:#0f172a;border-radius:12px;overflow:auto">
+    {{ email_html|safe }}
+  </div>
+</details>
+{% endif %}
+
+{% endblock %}

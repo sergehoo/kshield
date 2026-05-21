@@ -7,7 +7,8 @@
 {% block page_actions %}
   <a class="btn btn-ghost" href="{% url 'admin-accounts' %}"><i data-lucide="arrow-left"></i> Retour</a>
   <a class="btn btn-ghost" href="{{ password_url }}"><i data-lucide="key"></i> Mot de passe</a>
-  <form method="post" action="{{ toggle_url }}" style="display:inline">{% csrf_token %}
+  <form method="post" action="{{ toggle_url }}" style="display:inline"
+        onsubmit="return confirm('{% if object.is_active %}Désactiver{% else %}Réactiver{% endif %} ce compte utilisateur ?');">{% csrf_token %}
     <button class="btn btn-ghost" type="submit">{% if object.is_active %}Désactiver{% else %}Réactiver{% endif %}</button>
   </form>
   <a class="btn btn-primary" href="{{ update_url }}"><i data-lucide="pencil"></i> Modifier</a>

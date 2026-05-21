@@ -1,0 +1,299 @@
+{% extends "layout/base.html" %}
+{% load static %}
+
+{% block title %}Live multi-caméras · KAYDAN SHIELD{% endblock %}
+{% block page_title %}Live multi-caméras{% endblock %}
+{% block page_subtitle %}Streaming MJPEG temps réel · sélection N×N · plein écran{% endblock %}
+{% block breadcrumb %}Caméras · Live{% endblock %}
+
+{% block page_actions %}
+  <a class="btn btn-ghost" href="{% url 'admin-cameras' %}">
+    <i data-lucide="arrow-left" style="width:14px;height:14px"></i> Retour catalogue
+  </a>
+  <button class="btn btn-primary" id="btn-fullscreen">
+    <i data-lucide="maximize" style="width:14px;height:14px"></i> Plein écran
+  </button>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+  /* Layout */
+  .live-toolbar {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 12px 14px;
+    display: flex; gap: 12px; flex-wrap: wrap; align-items: center;
+    margin-bottom: 14px;
+  }
+  .live-toolbar .grid-toggle { display: inline-flex; gap: 2px; background: rgba(0,0,0,.18); padding: 3px; border-radius: 8px; }
+  [data-theme="light"] .live-toolbar .grid-toggle { background: rgba(15,29,52,.06); }
+  .grid-btn {
+    background: transparent; border: 0;
+    padding: 6px 10px; border-radius: 6px;
+    color: var(--text-dim); font-weight: 600; font-size: 12px; cursor: pointer;
+    transition: all .15s;
+  }
+  .grid-btn:hover { color: var(--text); }
+  .grid-btn.is-active { background: var(--ks-orange-500); color: #fff; }
+
+  /* Grid */
+  .live-grid {
+    display: grid; gap: 8px;
+    grid-template-columns: repeat(var(--cols, 2), 1fr);
+  }
+  .live-tile {
+    position: relative;
+    aspect-ratio: 16 / 9;
+    background: #000;
+    border-radius: 10px; overflow: hidden;
+    border: 1px solid var(--border);
+  }
+  .live-tile img {
+    width: 100%; height: 100%; object-fit: cover; display: block;
+  }
+  .tile-meta {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    padding: 8px 12px;
+    background: linear-gradient(0deg, rgba(0,0,0,.85), rgba(0,0,0,0));
+    color: #fff;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 8px; font-size: 11.5px;
+    pointer-events: none;
+  }
+  .tile-meta .name { font-weight: 700; }
+  .tile-meta .site { opacity: .8; font-size: 10.5px; margin-left: 6px; }
+  .tile-controls {
+    position: absolute; top: 8px; right: 8px;
+    display: flex; gap: 4px; opacity: 0;
+    transition: opacity .2s;
+  }
+  .live-tile:hover .tile-controls { opacity: 1; }
+  .tile-ctrl-btn {
+    width: 28px; height: 28px; border-radius: 6px;
+    background: rgba(0,0,0,.65); backdrop-filter: blur(6px);
+    color: #fff; border: 0; cursor: pointer;
+    display: grid; place-items: center;
+  }
+  .tile-ctrl-btn:hover { background: var(--ks-orange-500); }
+  .tile-loading {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    color: #9ca3af; gap: 6px; font-size: 11px;
+  }
+
+  /* Selector */
+  .cam-selector { display: flex; gap: 6px; flex-wrap: wrap; }
+  .cam-selector label {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: var(--surface); border: 1px solid var(--border);
+    padding: 5px 9px; border-radius: 6px;
+    font-size: 11.5px; cursor: pointer;
+    user-select: none;
+  }
+  .cam-selector label.is-selected {
+    background: rgba(242,107,31,.15); border-color: var(--ks-orange-500);
+    color: var(--ks-orange-500);
+  }
+  .cam-selector input { display: none; }
+
+  /* Empty state spécifique */
+  .live-empty {
+    background: var(--surface); border: 1px dashed var(--border);
+    border-radius: 12px; padding: 40px 20px; text-align: center;
+    color: var(--text-dim);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+
+  {% if cameras %}
+  <div class="live-toolbar">
+    <strong style="font-size:12px"><i data-lucide="grid-3x3" style="width:13px;height:13px;vertical-align:-1px"></i> Grille</strong>
+    <div class="grid-toggle" id="grid-toggle">
+      <button class="grid-btn" data-cols="1">1×1</button>
+      <button class="grid-btn" data-cols="2">2×2</button>
+      <button class="grid-btn" data-cols="3">3×3</button>
+      <button class="grid-btn" data-cols="4">4×4</button>
+    </div>
+
+    <strong style="font-size:12px;margin-left:6px"><i data-lucide="film" style="width:13px;height:13px;vertical-align:-1px"></i> Caméras visibles</strong>
+    <div class="cam-selector" id="cam-selector">
+      {% for c in cameras %}
+        <label data-cam="{{ c.pk }}" class="is-selected">
+          <input type="checkbox" checked value="{{ c.pk }}">
+          {{ c.name }}
+        </label>
+      {% endfor %}
+    </div>
+
+    <span style="margin-left:auto;color:var(--text-dim);font-size:11px">
+      <i data-lucide="info" style="width:11px;height:11px;vertical-align:-1px"></i>
+      Chaque flux = 1 connexion RTSP. Limiter à ~6-8 caméras simultanées sur CPU.
+    </span>
+  </div>
+
+  <div class="live-grid" id="live-grid" style="--cols: {{ initial_grid }};">
+    {% for c in cameras %}
+    <div class="live-tile" data-cam="{{ c.pk }}">
+      <div class="tile-loading">
+        <i data-lucide="loader-2" style="width:20px;height:20px;animation: spin 1s linear infinite"></i>
+        <span>{{ c.name }}…</span>
+      </div>
+      <img data-src="/api/v1/devices/cameras/{{ c.pk }}/stream.mjpg" alt="{{ c.name }}">
+      <div class="tile-controls">
+        <button type="button" class="tile-ctrl-btn" data-action="reload" title="Recharger">
+          <i data-lucide="refresh-cw" style="width:14px;height:14px"></i>
+        </button>
+        <a class="tile-ctrl-btn" href="{% url 'admin-camera-detail' c.pk %}" title="Détail">
+          <i data-lucide="external-link" style="width:14px;height:14px"></i>
+        </a>
+        <button type="button" class="tile-ctrl-btn" data-action="fullscreen" title="Plein écran">
+          <i data-lucide="maximize-2" style="width:14px;height:14px"></i>
+        </button>
+        <button type="button" class="tile-ctrl-btn" data-action="hide" title="Masquer" style="color:#f87171">
+          <i data-lucide="x" style="width:14px;height:14px"></i>
+        </button>
+      </div>
+      <div class="tile-meta">
+        <div>
+          <span class="name">{{ c.name }}</span>
+          {% if c.site %}<span class="site">· {{ c.site.name }}</span>{% endif %}
+        </div>
+        <span style="font-size:10px;background:rgba(52,211,153,.2);padding:2px 6px;border-radius:999px;color:#34d399">LIVE</span>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="live-empty">
+    <i data-lucide="video-off" style="width:36px;height:36px;margin-bottom:10px"></i>
+    <div style="font-weight:600;color:var(--text)">Aucune caméra active à afficher</div>
+    <div style="margin-top:6px">
+      Ajoute des caméras dans le catalogue ou active-les pour les voir ici.
+    </div>
+    <a class="btn btn-primary" href="{% url 'admin-cameras' %}" style="margin-top:14px">
+      <i data-lucide="video" style="width:14px;height:14px"></i> Catalogue caméras
+    </a>
+  </div>
+  {% endif %}
+
+  <style>@keyframes spin { to { transform: rotate(360deg); } }</style>
+
+  <script>
+  (function(){
+    var grid = document.getElementById("live-grid");
+    if (!grid) return;
+
+    // ─── 1) Grid size toggle ────────────────────────────────────
+    var toggle = document.getElementById("grid-toggle");
+    function setCols(c) {
+      grid.style.setProperty("--cols", c);
+      toggle.querySelectorAll(".grid-btn").forEach(function(b){
+        b.classList.toggle("is-active", b.dataset.cols === String(c));
+      });
+      try { localStorage.setItem("ks.live.cols", c); } catch (e) {}
+    }
+    toggle.addEventListener("click", function(e){
+      var btn = e.target.closest(".grid-btn");
+      if (btn) setCols(btn.dataset.cols);
+    });
+    var saved = localStorage.getItem("ks.live.cols");
+    setCols(saved || "{{ initial_grid }}");
+
+    // ─── 2) Lazy-start flux MJPEG (évite N connexions au chargement) ───
+    // On démarre les images visibles via IntersectionObserver.
+    var tiles = grid.querySelectorAll(".live-tile");
+    var obs = new IntersectionObserver(function(entries){
+      entries.forEach(function(en){
+        if (en.isIntersecting) {
+          var tile = en.target;
+          var img = tile.querySelector("img");
+          if (img && img.dataset.src && !img.src) {
+            img.src = img.dataset.src;
+            img.addEventListener("load", function once(){
+              var loader = tile.querySelector(".tile-loading");
+              if (loader) loader.style.display = "none";
+              img.removeEventListener("load", once);
+            });
+            img.addEventListener("error", function(){
+              var loader = tile.querySelector(".tile-loading");
+              if (loader) {
+                loader.innerHTML = '<i data-lucide="alert-triangle" style="width:20px;height:20px;color:#f87171"></i><span style="color:#f87171">Flux indisponible</span>';
+                if (window.lucide) window.lucide.createIcons();
+              }
+            });
+            obs.unobserve(tile);
+          }
+        }
+      });
+    });
+    tiles.forEach(function(t){ obs.observe(t); });
+
+    // ─── 3) Sélection des caméras ───────────────────────────────
+    var selector = document.getElementById("cam-selector");
+    selector.addEventListener("change", function(e){
+      var input = e.target;
+      if (input.tagName !== "INPUT") return;
+      var lbl = input.closest("label");
+      lbl.classList.toggle("is-selected", input.checked);
+      var pk = lbl.dataset.cam;
+      var tile = grid.querySelector('.live-tile[data-cam="' + pk + '"]');
+      if (!tile) return;
+      if (input.checked) {
+        tile.style.display = "";
+        // Reprend le flux si masqué précédemment
+        var img = tile.querySelector("img");
+        if (img.dataset.src && !img.src) img.src = img.dataset.src;
+      } else {
+        tile.style.display = "none";
+        // Stoppe le flux pour libérer la connexion
+        var img = tile.querySelector("img");
+        img.src = "";
+      }
+    });
+
+    // ─── 4) Tile actions (reload / fullscreen / hide) ───────────
+    grid.addEventListener("click", function(e){
+      var btn = e.target.closest("[data-action]");
+      if (!btn) return;
+      var tile = btn.closest(".live-tile");
+      var img = tile.querySelector("img");
+      var action = btn.dataset.action;
+      if (action === "reload") {
+        // Force redémarrage du flux MJPEG
+        var src = img.dataset.src;
+        img.src = "";
+        setTimeout(function(){ img.src = src + "?t=" + Date.now(); }, 50);
+      } else if (action === "fullscreen") {
+        if (tile.requestFullscreen) tile.requestFullscreen();
+      } else if (action === "hide") {
+        tile.style.display = "none";
+        img.src = "";
+        // Décoche la case
+        var pk = tile.dataset.cam;
+        var input = selector.querySelector('label[data-cam="' + pk + '"] input');
+        if (input) {
+          input.checked = false;
+          input.closest("label").classList.remove("is-selected");
+        }
+      }
+    });
+
+    // ─── 5) Bouton plein écran global ───────────────────────────
+    var btnFs = document.getElementById("btn-fullscreen");
+    if (btnFs) btnFs.addEventListener("click", function(){
+      if (document.fullscreenElement) {
+        document.exitFullscreen();
+      } else {
+        grid.requestFullscreen();
+      }
+    });
+
+    // Re-render icons après mutations
+    if (window.lucide && typeof window.lucide.createIcons === "function") {
+      window.lucide.createIcons();
+    }
+  })();
+  </script>
+
+{% endblock %}

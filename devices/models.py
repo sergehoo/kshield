@@ -3,6 +3,7 @@ from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
 from django.db import models
 
+from core.fields import EncryptedCharField
 from core.models import TimeStampedModel, UUIDModel
 
 
@@ -395,3 +396,126 @@ class OTAUpdate(TimeStampedModel):
     started_at = models.DateTimeField(null=True, blank=True)
     finished_at = models.DateTimeField(null=True, blank=True)
     error_message = models.TextField(blank=True)
+
+
+# ---------------------------------------------------------------------------
+# Caméras IP — streaming temps réel + pipeline IA optionnel
+# ---------------------------------------------------------------------------
+class Camera(TimeStampedModel):
+    """Caméra IP (RTSP/HTTP) avec streaming + pipeline IA optionnel.
+
+    Le flux RTSP est consommé côté serveur via OpenCV (cv2.VideoCapture),
+    re-encodé en JPEG et servi en multipart/x-mixed-replace (MJPEG-over-HTTP)
+    pour être affiché dans n'importe quel navigateur via un simple <img src>.
+
+    Pour la prod multi-utilisateurs, voir docs/CAMERAS.md (passage à Channels
+    + relay Redis pour éviter d'ouvrir N connexions RTSP).
+    """
+
+    STATUS_CHOICES = [
+        ("online",   "En ligne"),
+        ("offline",  "Hors ligne"),
+        ("error",    "Erreur"),
+        ("disabled", "Désactivée"),
+    ]
+    CODEC_CHOICES = [
+        ("h264",  "H.264"),
+        ("h265",  "H.265 / HEVC"),
+        ("mjpeg", "MJPEG"),
+    ]
+    TRANSPORT_CHOICES = [
+        ("tcp", "TCP (fiable)"),
+        ("udp", "UDP (faible latence)"),
+    ]
+
+    # Identité
+    name = models.CharField(max_length=120, help_text="Nom affiché (ex: Portail Nord)")
+    site = models.ForeignKey(
+        "sites.Site", on_delete=models.CASCADE, related_name="cameras",
+        null=True, blank=True,
+    )
+    zone = models.ForeignKey(
+        "sites.Zone", on_delete=models.SET_NULL, related_name="cameras",
+        null=True, blank=True,
+    )
+    location_label = models.CharField(
+        max_length=120, blank=True,
+        help_text="Description libre de l'emplacement physique (ex: Mât SE, hauteur 4m)",
+    )
+
+    # Connexion flux principal
+    rtsp_url = models.CharField(
+        max_length=500,
+        help_text="URL RTSP/HTTP du flux. Ex: rtsp://user:pass@192.168.1.50:554/Streaming/Channels/101",
+    )
+    transport = models.CharField(max_length=4, choices=TRANSPORT_CHOICES, default="tcp")
+    codec = models.CharField(max_length=8, choices=CODEC_CHOICES, default="h264")
+    # Credentials séparés (optionnels si déjà dans l'URL)
+    username = models.CharField(max_length=120, blank=True)
+    password = EncryptedCharField(
+        max_length=512, blank=True,
+        help_text=("Chiffré Fernet au repos (cf. core/fields.py). En prod, "
+                    "définir FIELD_ENCRYPTION_KEY dans .env."),
+    )
+    # Resolution cible (downscale serveur-side avant MJPEG)
+    target_width = models.PositiveIntegerField(default=1280)
+    target_height = models.PositiveIntegerField(default=720)
+    target_fps = models.PositiveIntegerField(
+        default=10,
+        help_text="FPS de re-streaming JPEG côté serveur (5-15 conseillé).",
+    )
+    jpeg_quality = models.PositiveIntegerField(
+        default=75,
+        help_text="Qualité JPEG 1-100 du re-stream (compromis bande passante/qualité).",
+    )
+
+    # ONVIF — pour PTZ et auto-discovery
+    onvif_enabled = models.BooleanField(default=False)
+    onvif_host = models.CharField(max_length=120, blank=True)
+    onvif_port = models.PositiveIntegerField(default=80)
+
+    # Pipeline IA (à brancher progressivement)
+    enable_face_recognition = models.BooleanField(
+        default=False,
+        help_text="Exécute InsightFace sur chaque N-ième frame pour identifier les visages.",
+    )
+    enable_motion_detection = models.BooleanField(default=False)
+    enable_recording = models.BooleanField(
+        default=False,
+        help_text="Enregistre les segments vidéo (rolling buffer 24h).",
+    )
+
+    # État
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default="offline")
+    is_active = models.BooleanField(default=True, db_index=True)
+    last_seen_at = models.DateTimeField(null=True, blank=True)
+    last_error = models.TextField(blank=True)
+    last_snapshot = models.ImageField(
+        upload_to="cameras/snapshots/", null=True, blank=True,
+        help_text="Dernière vignette capturée (régénérée toutes les N minutes).",
+    )
+
+    class Meta:
+        ordering = ("name",)
+        indexes = [
+            models.Index(fields=["site", "status"]),
+            models.Index(fields=["is_active"]),
+        ]
+
+    def __str__(self):
+        return self.name
+
+    @property
+    def effective_rtsp_url(self) -> str:
+        """Reconstruit l'URL avec credentials séparés si fournis."""
+        if not self.username:
+            return self.rtsp_url
+        if "@" in self.rtsp_url and "://" in self.rtsp_url:
+            # Credentials déjà dans l'URL
+            return self.rtsp_url
+        if "://" not in self.rtsp_url:
+            return self.rtsp_url
+        scheme, rest = self.rtsp_url.split("://", 1)
+        from urllib.parse import quote
+        creds = f"{quote(self.username, safe='')}:{quote(self.password, safe='')}"
+        return f"{scheme}://{creds}@{rest}"

@@ -35,7 +35,7 @@
             <td><div class="row gap-2">
               <a class="icon-btn" href="{% url 'admin-company-detail' c.pk %}"><i data-lucide="eye"></i></a>
               <a class="icon-btn" href="{% url 'admin-company-update' c.pk %}"><i data-lucide="pencil"></i></a>
-              <a class="icon-btn" href="{% url 'admin-company-delete' c.pk %}" style="color:var(--danger)"><i data-lucide="trash-2"></i></a>
+              <a class="icon-btn" href="{% url 'admin-company-delete' c.pk %}" style="color:var(--danger)" onclick="return confirm('Supprimer cette filiale ? Cette action est irréversible et affectera tous les sites/employés liés.');"><i data-lucide="trash-2"></i></a>
             </div></td>
           </tr>
           {% endfor %}

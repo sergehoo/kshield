@@ -70,7 +70,7 @@
             <td>{% if c.document %}<a href="{{ c.document.url }}" target="_blank" class="icon-btn"><i data-lucide="file-down"></i></a>{% else %}—{% endif %}</td>
             <td><div class="row gap-2">
               <a class="icon-btn" href="{% url 'admin-workercert-update' c.pk %}"><i data-lucide="pencil"></i></a>
-              <a class="icon-btn" href="{% url 'admin-workercert-delete' c.pk %}" style="color:var(--danger)"><i data-lucide="trash-2"></i></a>
+              <a class="icon-btn" href="{% url 'admin-workercert-delete' c.pk %}" style="color:var(--danger)" onclick="return confirm('Supprimer cette certification ? Cette action est irréversible.');"><i data-lucide="trash-2"></i></a>
             </div></td>
           </tr>
           {% endfor %}
@@ -95,7 +95,7 @@
             <td>{% if crew.is_active %}<span class="pill pill-success">Active</span>{% else %}<span class="pill pill-muted">Inactive</span>{% endif %}</td>
             <td><div class="row gap-2">
               <a class="icon-btn" href="{% url 'admin-crew-update' crew.pk %}"><i data-lucide="pencil"></i></a>
-              <a class="icon-btn" href="{% url 'admin-crew-delete' crew.pk %}" style="color:var(--danger)"><i data-lucide="trash-2"></i></a>
+              <a class="icon-btn" href="{% url 'admin-crew-delete' crew.pk %}" style="color:var(--danger)" onclick="return confirm('Supprimer cette équipe ? Cette action est irréversible.');"><i data-lucide="trash-2"></i></a>
             </div></td>
           </tr>
           {% endfor %}
@@ -121,7 +121,7 @@
             <td>{% if a.is_active %}<span class="pill pill-success">Active</span>{% else %}<span class="pill pill-muted">Terminée</span>{% endif %}</td>
             <td><div class="row gap-2">
               <a class="icon-btn" href="{% url 'admin-workerassignment-update' a.pk %}"><i data-lucide="pencil"></i></a>
-              <a class="icon-btn" href="{% url 'admin-workerassignment-delete' a.pk %}" style="color:var(--danger)"><i data-lucide="trash-2"></i></a>
+              <a class="icon-btn" href="{% url 'admin-workerassignment-delete' a.pk %}" style="color:var(--danger)" onclick="return confirm('Supprimer cette affectation ? Cette action est irréversible.');"><i data-lucide="trash-2"></i></a>
             </div></td>
           </tr>
           {% endfor %}
@@ -146,7 +146,7 @@
             <td>{% if s.is_active %}<span class="pill pill-success">Actif</span>{% else %}<span class="pill pill-muted">Inactif</span>{% endif %}</td>
             <td><div class="row gap-2">
               <a class="icon-btn" href="{% url 'admin-subcontractor-update' s.pk %}"><i data-lucide="pencil"></i></a>
-              <a class="icon-btn" href="{% url 'admin-subcontractor-delete' s.pk %}" style="color:var(--danger)"><i data-lucide="trash-2"></i></a>
+              <a class="icon-btn" href="{% url 'admin-subcontractor-delete' s.pk %}" style="color:var(--danger)" onclick="return confirm('Supprimer ce sous-traitant ? Cette action est irréversible.');"><i data-lucide="trash-2"></i></a>
             </div></td>
           </tr>
           {% endfor %}

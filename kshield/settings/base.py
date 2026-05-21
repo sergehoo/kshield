@@ -22,6 +22,10 @@ SECRET_KEY = config("SECRET_KEY", default="django-insecure-change-me")
 DEBUG = config("DEBUG", default=False, cast=bool)
 ALLOWED_HOSTS = config("ALLOWED_HOSTS", default="localhost,127.0.0.1", cast=Csv())
 
+# Clé Fernet pour le chiffrement de champs sensibles (core.fields.EncryptedCharField).
+# Vide → fallback dérivé de SECRET_KEY via SHA-256 (dev OK, prod : générer une vraie clé).
+FIELD_ENCRYPTION_KEY = config("FIELD_ENCRYPTION_KEY", default="")
+
 # ---------------------------------------------------------------------------
 # Applications
 # ---------------------------------------------------------------------------
@@ -46,6 +50,8 @@ THIRD_PARTY_APPS = [
     "channels",
     "django_celery_beat",
     "django_celery_results",
+    "django_prometheus",   # exporter /metrics + métriques DB/cache auto
+    # SSO Keycloak — chargé conditionnellement plus bas si SSO_ENABLED
 ]
 
 LOCAL_APPS = [
@@ -65,6 +71,7 @@ LOCAL_APPS = [
     "mobile_sync",
     "ai_assistant",
     "administration",
+    "sso.apps.SSOConfig",  # Keycloak SSO — toujours installé pour les modèles
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -73,6 +80,7 @@ INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 # Middleware
 # ---------------------------------------------------------------------------
 MIDDLEWARE = [
+    "django_prometheus.middleware.PrometheusBeforeMiddleware",  # début monitor
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -81,9 +89,22 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "core.middleware.SecurityHeadersMiddleware",  # CSP + Permissions-Policy + COOP/CORP
     "core.middleware.TenantContextMiddleware",
     "audit.middleware.AuditContextMiddleware",
+    "django_prometheus.middleware.PrometheusAfterMiddleware",   # fin monitor
 ]
+
+# ---------------------------------------------------------------------------
+# Cookies : SameSite + HttpOnly explicites (en prod, Secure est forcé)
+# ---------------------------------------------------------------------------
+SESSION_COOKIE_SAMESITE = "Lax"
+SESSION_COOKIE_HTTPONLY = True
+CSRF_COOKIE_SAMESITE = "Lax"
+CSRF_COOKIE_HTTPONLY = False  # False car les requêtes JS récupèrent le token via cookie
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
+X_FRAME_OPTIONS = "DENY"
 
 ROOT_URLCONF = "kshield.urls"
 WSGI_APPLICATION = "kshield.wsgi.application"
@@ -203,6 +224,29 @@ CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 CELERY_TIMEZONE = config("TIME_ZONE", default="Africa/Abidjan")
 CELERY_TASK_ALWAYS_EAGER = config("CELERY_TASK_ALWAYS_EAGER", default=False, cast=bool)
 
+# ─── Celery Beat — défaut, surchargeable via DatabaseScheduler ─────────
+# DatabaseScheduler ignore ce dict (utilise django_celery_beat.models). Il sert
+# de fallback si on bascule sur PersistentScheduler / docs / dev local.
+from celery.schedules import crontab as _crontab  # noqa: E402
+
+CELERY_BEAT_SCHEDULE = {
+    # Refresh des gauges Prometheus toutes les 30s
+    "refresh_prometheus_gauges": {
+        "task": "core.refresh_prometheus_gauges",
+        "schedule": 30.0,
+    },
+    # Digest exécutif hebdomadaire — chaque lundi 07h00 Africa/Abidjan
+    "weekly_executive_digest": {
+        "task": "reports.generate_weekly_digest",
+        "schedule": _crontab(hour=7, minute=0, day_of_week="monday"),
+    },
+    # Digest exécutif mensuel — chaque 1er du mois 07h30
+    "monthly_executive_digest": {
+        "task": "reports.generate_monthly_digest",
+        "schedule": _crontab(hour=7, minute=30, day_of_month="1"),
+    },
+}
+
 # ---------------------------------------------------------------------------
 # Storage (MinIO / S3 compatible) — activé en prod
 # ---------------------------------------------------------------------------
@@ -266,4 +310,147 @@ KAYDAN_SHIELD = {
     "AI_PROVIDER": config("AI_PROVIDER", default="openai"),
     "AI_MODEL": config("AI_MODEL", default="gpt-4o-mini"),
     "OPENAI_API_KEY": config("OPENAI_API_KEY", default=""),
+    "SSO_OFFLINE_CACHE_TTL_HOURS": config(
+        "SSO_OFFLINE_CACHE_TTL_HOURS", default=24, cast=int),
+    "SMS": {
+        "backend": config("SMS_BACKEND", default="console"),
+        "from": config("SMS_FROM", default="KAYDAN"),
+    },
+    "WEBHOOKS": [],  # populé via .env JSON ou config code
+
+    # ─── Reconnaissance faciale → confirmation présence ───────────
+    # Le pipeline face NE CRÉE PAS de Punch RFID. Il enrichit avec une
+    # FaceCheckinConfirmation (max 2 par employé/jour : arrival + departure).
+    "FACE_PRESENCE": {
+        # Heure cut-off (locale) : avant = arrival, après = departure.
+        "ARRIVAL_DEPARTURE_CUTOFF_HOUR": config(
+            "FACE_PRESENCE_CUTOFF_HOUR", default=14, cast=int),
+        # Fenêtre face↔badge (heures) pour matcher un sighting à un Punch.
+        "MATCH_WINDOW_HOURS": config(
+            "FACE_PRESENCE_MATCH_WINDOW_H", default=4, cast=int),
+        # Ouvre une FraudAlert FACE_NO_BADGE si visage sans badge correspondant.
+        "ALERT_ON_FACE_WITHOUT_BADGE": config(
+            "FACE_PRESENCE_ALERT_FACE_ONLY", default=True, cast=bool),
+        "ALERT_SEVERITY": config("FACE_PRESENCE_ALERT_SEVERITY", default="medium"),
+    },
+    # ─── Reconnaissance faciale (InsightFace + SilentFace) ───
+    # Pipeline complet : RetinaFace (détection) → ArcFace (embedding 512D)
+    # → MiniFASNet (anti-spoofing). Défauts CPU-friendly ; bascule GPU via
+    # FACE_CTX_ID=0 + FACE_PROVIDERS="CUDAExecutionProvider,...".
+    "FACE": {
+        # Master switch — si False, l'engine renvoie une erreur explicite et
+        # la page admin retombe sur face-api.js client-only.
+        "ENABLED": config("FACE_ENGINE_ENABLED", default=True, cast=bool),
+        # Modèle InsightFace :
+        #   buffalo_l = IResNet100, 512D, precision (~280 Mo, ~220 ms CPU / ~25 ms GPU)
+        #   buffalo_s = MobileFaceNet, 512D, rapide   (~16 Mo,  ~95 ms CPU / ~10 ms GPU)
+        # En CPU on conseille buffalo_s pour les checkpoints temps-réel.
+        "MODEL_NAME": config("FACE_MODEL_NAME", default="buffalo_s"),
+        # ctx_id : 0 = première GPU CUDA, -1 = CPU. Défaut CPU (universel).
+        # Le moteur fallback CPU automatiquement si CUDA absent.
+        "CTX_ID": config("FACE_CTX_ID", default=-1, cast=int),
+        # Providers ONNX dans l'ordre. CPU par défaut, override pour GPU :
+        #   FACE_PROVIDERS="CUDAExecutionProvider,CPUExecutionProvider"
+        "PROVIDERS": config(
+            "FACE_PROVIDERS",
+            default="CPUExecutionProvider",
+            cast=lambda v: [p.strip() for p in v.split(",") if p.strip()],
+        ),
+        # Taille d'entrée du détecteur RetinaFace (px). 640 = équilibré ;
+        # baisser à 320 pour gagner 2× en CPU au prix de la détection à distance.
+        "DET_SIZE": config("FACE_DET_SIZE", default=640, cast=int),
+        # Score minimum de détection (0–1). En dessous, on rejette la capture.
+        "MIN_DET_SCORE": config("FACE_MIN_DET_SCORE", default=0.55, cast=float),
+        # Seuil par défaut de similarité cosinus pour valider un match (0–1).
+        # 0.40 = tolérant. 0.60 = sécurité (recommandé KAYDAN). Plancher dur 0.50.
+        "MATCH_THRESHOLD": config("FACE_MATCH_THRESHOLD", default=0.60, cast=float),
+        # Cache des poids ONNX InsightFace : par défaut ~/.insightface/models/.
+        "MODEL_ROOT": config("FACE_MODEL_ROOT", default=""),
+
+        # ─── Anti-spoofing (SilentFace / MiniFASNet) ───
+        # Désactivable pendant l'init si les poids sont absents (logué en warn).
+        # On bloque l'enrôlement si un spoof est détecté, mais le match retourne
+        # juste un score : c'est à l'app cliente de décider quoi faire.
+        "LIVENESS": {
+            "ENABLED": config("FACE_LIVENESS_ENABLED", default=True, cast=bool),
+            # Répertoire contenant les .onnx (cf. download_face_models).
+            # Défaut : <BASE_DIR>/models/silentface/
+            "MODEL_DIR": config(
+                "FACE_LIVENESS_MODEL_DIR",
+                default=str(BASE_DIR / "models" / "silentface"),
+            ),
+            # Ensemble SilentFace : 2 modèles à scales différentes, on moyenne
+            # les softmax puis on prend l'argmax pour la classe finale.
+            # Chaque entrée : (filename, scale d'expansion bbox)
+            "MODELS": [
+                ("2.7_80x80_MiniFASNetV2.onnx", 2.7),
+                ("4_0_0_80x80_MiniFASNetV1SE.onnx", 4.0),
+            ],
+            # Index de la classe "real" dans la sortie softmax (3 classes :
+            # 0=fake_2D, 1=real, 2=fake_3D — convention Silent-Face-Anti-Spoofing).
+            "REAL_CLASS_INDEX": config("FACE_LIVENESS_REAL_INDEX", default=1, cast=int),
+            # Seuil de score real (0–1) pour valider la vivacité.
+            # 0.85 = strict (rejette ~5 % de vrais visages mal cadrés).
+            # 0.70 = équilibré recommandé KAYDAN.
+            "THRESHOLD": config("FACE_LIVENESS_THRESHOLD", default=0.70, cast=float),
+            # Bloque l'enrôlement si spoof détecté. Le match retourne juste le score.
+            "BLOCK_ENROLL_ON_SPOOF": config(
+                "FACE_LIVENESS_BLOCK_ENROLL", default=True, cast=bool,
+            ),
+        },
+    },
 }
+
+# ---------------------------------------------------------------------------
+# SSO Keycloak (OpenID Connect) — feature flag SSO_ENABLED
+# ---------------------------------------------------------------------------
+SSO_ENABLED = config("SSO_ENABLED", default=False, cast=bool)
+SSO_AUTO_CREATE_USER = config("SSO_AUTO_CREATE_USER", default=True, cast=bool)
+SSO_SYNC_ROLES = config("SSO_SYNC_ROLES", default=True, cast=bool)
+SSO_DEFAULT_GROUP = config("SSO_DEFAULT_GROUP", default="kaydan-users")
+
+KEYCLOAK_BASE_URL = config("KEYCLOAK_BASE_URL", default="")
+KEYCLOAK_REALM = config("KEYCLOAK_REALM", default="kaydan")
+
+# Endpoints OIDC — si non fournis, déduit depuis KEYCLOAK_BASE_URL/REALM
+_kc_realm_url = (f"{KEYCLOAK_BASE_URL.rstrip('/')}/realms/{KEYCLOAK_REALM}"
+                  if KEYCLOAK_BASE_URL else "")
+OIDC_OP_ISSUER = config("OIDC_OP_ISSUER", default=_kc_realm_url)
+OIDC_OP_AUTHORIZATION_ENDPOINT = config(
+    "OIDC_OP_AUTHORIZATION_ENDPOINT",
+    default=f"{_kc_realm_url}/protocol/openid-connect/auth" if _kc_realm_url else "")
+OIDC_OP_TOKEN_ENDPOINT = config(
+    "OIDC_OP_TOKEN_ENDPOINT",
+    default=f"{_kc_realm_url}/protocol/openid-connect/token" if _kc_realm_url else "")
+OIDC_OP_USER_ENDPOINT = config(
+    "OIDC_OP_USER_ENDPOINT",
+    default=f"{_kc_realm_url}/protocol/openid-connect/userinfo" if _kc_realm_url else "")
+OIDC_OP_JWKS_ENDPOINT = config(
+    "OIDC_OP_JWKS_ENDPOINT",
+    default=f"{_kc_realm_url}/protocol/openid-connect/certs" if _kc_realm_url else "")
+OIDC_OP_LOGOUT_ENDPOINT = config(
+    "OIDC_OP_LOGOUT_ENDPOINT",
+    default=f"{_kc_realm_url}/protocol/openid-connect/logout" if _kc_realm_url else "")
+
+OIDC_RP_CLIENT_ID = config("OIDC_RP_CLIENT_ID", default="kaydan-shield-web")
+OIDC_RP_CLIENT_SECRET = config("OIDC_RP_CLIENT_SECRET", default="")
+OIDC_RP_SCOPES = config("OIDC_RP_SCOPES", default="openid profile email")
+OIDC_RP_SIGN_ALGO = "RS256"
+OIDC_VERIFY_SSL = config("OIDC_VERIFY_SSL", default=True, cast=bool)
+
+# Branchage mozilla-django-oidc
+OIDC_CALLBACK_CLASS = "sso.views.SSOCallbackView"
+OIDC_AUTHENTICATE_CLASS = "sso.views.SSOLoginView"
+OIDC_AUTHENTICATION_CALLBACK_URL = "sso:callback"
+OIDC_USERNAME_ALGO = "sso.utils.extract_user_claims"  # ignoré, fallback default
+LOGIN_REDIRECT_URL = "/"
+LOGOUT_REDIRECT_URL = "/auth/login/"
+
+# Authentication backends — ajoute le backend OIDC quand SSO_ENABLED
+AUTHENTICATION_BACKENDS = [
+    "django.contrib.auth.backends.ModelBackend",  # fallback local toujours dispo
+]
+if SSO_ENABLED:
+    AUTHENTICATION_BACKENDS.insert(0, "sso.backends.KaydanOIDCBackend")
+    THIRD_PARTY_APPS.append("mozilla_django_oidc")
+    INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS

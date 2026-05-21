@@ -1,0 +1,160 @@
+{% extends "layout/base.html" %}
+{% load static %}
+
+{% block title %}Présence face · KAYDAN SHIELD{% endblock %}
+{% block page_title %}Présence par reconnaissance faciale{% endblock %}
+{% block page_subtitle %}Confirmation visage ↔ badge RFID · {{ date_label }}{% endblock %}
+{% block breadcrumb %}Caméras · Présence face{% endblock %}
+
+{% block page_actions %}
+  <a class="btn btn-ghost" href="{% url 'admin-cameras' %}">
+    <i data-lucide="arrow-left" style="width:14px;height:14px"></i> Caméras
+  </a>
+  <form method="get" style="display:inline-flex;gap:6px;align-items:center">
+    <input type="date" name="date" value="{{ date }}"
+           style="background:var(--surface);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:8px;font-size:12.5px">
+    <button class="btn btn-ghost" type="submit"><i data-lucide="calendar" style="width:13px;height:13px"></i></button>
+  </form>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+  .fp-kpis { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; margin-bottom: 18px; }
+  @media (max-width: 1080px) { .fp-kpis { grid-template-columns: repeat(3, 1fr); } }
+  @media (max-width: 720px)  { .fp-kpis { grid-template-columns: repeat(2, 1fr); } }
+  .fp-kpi { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
+  .fp-kpi .v { font-size: 22px; font-weight: 700; line-height: 1; }
+  .fp-kpi .l { font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .04em; margin-top: 4px; }
+
+  .pill-conf { padding: 2px 8px; border-radius: 999px; font-size: 10.5px; font-weight: 600; }
+  .pill-confirmed     { background: rgba(52,211,153,.18); color: #34d399; }
+  .pill-face_only     { background: rgba(248,113,113,.20); color: #f87171; }
+  .pill-badge_only    { background: rgba(251,191,36,.20); color: #fbbf24; }
+  .pill-out_of_window { background: rgba(156,163,175,.20); color: #9ca3af; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+  {# KPIs #}
+  <section class="fp-kpis">
+    <div class="fp-kpi">
+      <div class="v">{{ total_sightings }}</div>
+      <div class="l"><i data-lucide="eye" style="width:10px;height:10px;vertical-align:-1px"></i> Sightings</div>
+    </div>
+    <div class="fp-kpi" style="border-color:rgba(52,211,153,.35)">
+      <div class="v" style="color:#34d399">{{ total_matched }}</div>
+      <div class="l"><i data-lucide="user-check" style="width:10px;height:10px;vertical-align:-1px"></i> Matchés</div>
+    </div>
+    <div class="fp-kpi" style="border-color:rgba(248,113,113,.35)">
+      <div class="v" style="color:#f87171">{{ total_unmatched }}</div>
+      <div class="l"><i data-lucide="user-x" style="width:10px;height:10px;vertical-align:-1px"></i> Non matchés</div>
+    </div>
+    <div class="fp-kpi" style="border-color:rgba(52,211,153,.35)">
+      <div class="v" style="color:#34d399">{{ count_confirmed }}</div>
+      <div class="l"><i data-lucide="check-circle-2" style="width:10px;height:10px;vertical-align:-1px"></i> Confirmés</div>
+    </div>
+    <div class="fp-kpi" style="border-color:rgba(248,113,113,.35)">
+      <div class="v" style="color:#f87171">{{ count_face_only }}</div>
+      <div class="l"><i data-lucide="alert-triangle" style="width:10px;height:10px;vertical-align:-1px"></i> Face sans badge</div>
+    </div>
+    <div class="fp-kpi" style="border-color:rgba(251,191,36,.35)">
+      <div class="v" style="color:#fbbf24">{{ count_badge_only }}</div>
+      <div class="l"><i data-lucide="id-card" style="width:10px;height:10px;vertical-align:-1px"></i> Badge sans face</div>
+    </div>
+  </section>
+
+  <div class="row" style="gap:14px;flex-wrap:wrap;align-items:flex-start">
+
+    {# ── Confirmations (vue agrégée par employé/jour) ── #}
+    <section class="card" style="flex:1;min-width:520px;padding:0">
+      <header style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+        <strong><i data-lucide="check-square" style="width:14px;height:14px;vertical-align:-2px"></i> Confirmations du jour</strong>
+        <span class="text-dim" style="font-size:11px">2 max par employé · arrivée + départ</span>
+      </header>
+      {% if confirmations %}
+      <div class="table-wrap" style="max-height:520px;overflow:auto">
+      <table class="table">
+        <thead><tr><th>Employé</th><th>Filiale</th><th>Kind</th><th>Statut</th><th>Face</th><th>Badge</th><th>Δ</th></tr></thead>
+        <tbody>
+          {% for c in confirmations %}
+          <tr>
+            <td><strong>{{ c.employee.first_name }} {{ c.employee.last_name }}</strong>
+                <div class="mono text-dim" style="font-size:10.5px">{{ c.employee.matricule }}</div></td>
+            <td>{{ c.employee.company.name|default:"—" }}</td>
+            <td>
+              {% if c.kind == 'arrival' %}
+                <span class="pill pill-info"><i data-lucide="sunrise" style="width:10px;height:10px;vertical-align:-1px"></i> Arrivée</span>
+              {% else %}
+                <span class="pill pill-muted"><i data-lucide="sunset" style="width:10px;height:10px;vertical-align:-1px"></i> Départ</span>
+              {% endif %}
+            </td>
+            <td><span class="pill-conf pill-{{ c.status }}">{{ c.get_status_display }}</span></td>
+            <td class="mono" style="font-size:11px">
+              {% if c.sighting %}{{ c.sighting.timestamp|date:"H:i:s" }}{% else %}—{% endif %}
+            </td>
+            <td class="mono" style="font-size:11px">
+              {% if c.punch %}{{ c.punch.timestamp|date:"H:i:s" }}{% else %}—{% endif %}
+            </td>
+            <td class="mono" style="font-size:11px">
+              {% if c.delta_seconds is not None %}
+                {% if c.delta_seconds < 0 %}-{% endif %}{{ c.delta_seconds }} s
+              {% else %}—{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      </div>
+      {% else %}
+        {% include "administration/_partials/empty_card.html" with icon="check-square" title="Aucune confirmation pour cette journée" %}
+      {% endif %}
+    </section>
+
+    {# ── Sightings bruts ── #}
+    <section class="card" style="flex:1;min-width:480px;padding:0">
+      <header style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+        <strong><i data-lucide="eye" style="width:14px;height:14px;vertical-align:-2px"></i> Sightings caméras</strong>
+        <span class="text-dim" style="font-size:11px">200 derniers · ordre antichrono</span>
+      </header>
+      {% if sightings %}
+      <div class="table-wrap" style="max-height:520px;overflow:auto">
+      <table class="table">
+        <thead><tr><th>Heure</th><th>Caméra</th><th>Employé</th><th>Score</th><th>Liveness</th></tr></thead>
+        <tbody>
+          {% for s in sightings %}
+          <tr>
+            <td class="mono" style="font-size:11px">{{ s.timestamp|date:"H:i:s" }}</td>
+            <td>{{ s.camera.name }}{% if s.site %}<div class="text-dim" style="font-size:10.5px">{{ s.site.name }}</div>{% endif %}</td>
+            <td>
+              {% if s.employee %}
+                <strong>{{ s.employee.first_name }} {{ s.employee.last_name }}</strong>
+                <div class="mono text-dim" style="font-size:10.5px">{{ s.employee.matricule }}</div>
+              {% else %}
+                <span class="text-dim" style="font-style:italic">Inconnu</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if s.matched %}
+                <span class="pill pill-success">{{ s.face_score|floatformat:2 }}</span>
+              {% else %}
+                <span class="pill pill-muted">{{ s.face_score|floatformat:2 }}</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if s.liveness_score %}
+                {{ s.liveness_score|floatformat:2 }}
+              {% else %}<span class="text-dim">—</span>{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      </div>
+      {% else %}
+        {% include "administration/_partials/empty_card.html" with icon="eye-off" title="Aucun sighting pour cette journée" %}
+      {% endif %}
+    </section>
+
+  </div>
+{% endblock %}

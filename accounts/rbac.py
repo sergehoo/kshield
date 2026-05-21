@@ -117,7 +117,8 @@ PERMISSION_CATALOG = [
         ("accounts.manage", "Créer / modifier / désactiver un user"),
         ("roles.manage", "Gérer rôles & permissions"),
         ("apikeys.manage", "Créer / révoquer les clés API IoT"),
-        ("companies.view", "Voir les filiales"),
+        ("companies.view", "Voir sa filiale"),
+        ("companies.view_all", "Voir TOUTES les filiales (super-admin groupe)"),
         ("companies.manage", "Gérer les filiales"),
         ("settings.manage", "Modifier paramètres KAYDAN"),
     ]),
@@ -157,3 +158,62 @@ class KshieldPermissionMixin(AccessMixin):
             from django.shortcuts import redirect
             return redirect("admin-dashboard")
         return super().dispatch(request, *args, **kwargs)
+
+
+# ─── DRF Permission (ViewSets / APIView) ────────────────────────────────
+SAFE_METHODS = ("GET", "HEAD", "OPTIONS")
+
+
+class HasKshieldPermission:
+    """DRF permission class qui map HTTP method → permission RBAC.
+
+    Usage sur un ViewSet :
+
+        class EmployeeViewSet(ModelViewSet):
+            permission_classes = [HasKshieldPermission]
+            kshield_perms = {
+                "read": "employees.view",
+                "write": "employees.manage",
+            }
+
+    - ``read``   : utilisé pour GET/HEAD/OPTIONS
+    - ``write``  : utilisé pour POST/PUT/PATCH/DELETE
+    - ``<action>`` : override par nom d'action DRF (ex. "batch_ingest")
+
+    Compatibilité : si le user a déjà été authentifié via HMAC (terminal IoT
+    avec ``request.user`` AnonymousUser + ``request.auth`` APIKey), on accepte
+    sans check RBAC (la signature HMAC est la garantie).
+    """
+
+    message = "Permission RBAC refusée."
+
+    def has_permission(self, request, view):
+        # Terminal IoT signé HMAC → auth via APIKey, déjà autorisé
+        if getattr(request, "auth", None) is not None and not (
+            request.user and request.user.is_authenticated
+        ):
+            return True
+        user = getattr(request, "user", None)
+        if not user or not user.is_authenticated:
+            return False
+        if user.is_superuser:
+            return True
+        perms_map = getattr(view, "kshield_perms", None) or {}
+        if not perms_map:
+            # Si pas configuré, on retombe sur IsAuthenticated
+            return True
+        # 1) action-spécifique
+        action = getattr(view, "action", None)
+        if action and action in perms_map:
+            return user_has_permission(user, perms_map[action])
+        # 2) sinon read/write
+        bucket = "read" if request.method in SAFE_METHODS else "write"
+        code = perms_map.get(bucket)
+        if not code:
+            return True
+        return user_has_permission(user, code)
+
+    def has_object_permission(self, request, view, obj):
+        # Per-object hooks possibles plus tard ; pour l'instant on délègue au
+        # check global.
+        return self.has_permission(request, view)

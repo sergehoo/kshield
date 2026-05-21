@@ -8,6 +8,7 @@ list / detail / create / update / delete avec un layout unifié.
 """
 from __future__ import annotations
 
+import logging
 from typing import Optional
 
 from django.contrib import messages
@@ -16,6 +17,8 @@ from django.urls import reverse, reverse_lazy
 from django.views.generic import CreateView, DeleteView, DetailView, UpdateView
 
 from . import forms as kforms
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -31,7 +34,8 @@ class InjectKaydanTenantMixin:
                 from core.services import get_kaydan_tenant
                 instance.tenant = get_kaydan_tenant()
             except Exception:
-                pass
+                logger.warning("Auto-affectation tenant KAYDAN échouée pour %s",
+                               type(instance).__name__, exc_info=True)
         return super().form_valid(form)
 
 
@@ -281,8 +285,11 @@ def make_crud(
                 # Préfère display() pour les choices fields (status, type, etc.)
                 getter = f"get_{fname}_display"
                 if hasattr(self.object, getter):
-                    try: val = getattr(self.object, getter)()
-                    except Exception: pass
+                    try:
+                        val = getattr(self.object, getter)()
+                    except Exception:
+                        logger.debug("display getter %s a levé pour %s", getter,
+                                      type(self.object).__name__, exc_info=True)
 
                 if hasattr(f, "verbose_name"):
                     label = str(f.verbose_name).capitalize()
@@ -477,14 +484,16 @@ def _company_detail_extras(view, ctx):
                     site__in=site_ids, holder_kind="worker",
                 ).values_list("holder_object_id", flat=True).distinct())
             except Exception:
-                pass
+                logger.warning("Lookup AccessEvent workers échoué (company=%s)",
+                                getattr(company, "pk", "?"), exc_info=True)
             try:
                 from devices.models import BadgeHelmetPairing
                 worker_ids |= set(BadgeHelmetPairing.objects.filter(
                     site__in=site_ids,
                 ).values_list("worker_id", flat=True).distinct())
             except Exception:
-                pass
+                logger.warning("Lookup BadgeHelmetPairing workers échoué (company=%s)",
+                                getattr(company, "pk", "?"), exc_info=True)
         wk_all = Worker.objects.filter(id__in=worker_ids) if worker_ids else Worker.objects.none()
         extras["workers_count"] = wk_all.count()
         extras["workers_active"] = wk_all.filter(status="active").count()
@@ -635,7 +644,7 @@ def _build_all():
     from audit.models import (ConformityRegister, DataExportRequest,
                                 LegalRetentionPolicy)
     from core.models import Company, FeatureFlag, SiteGateway, Tenant
-    from devices.models import (Badge, Device, DeviceMaintenance,
+    from devices.models import (Badge, Camera, Device, DeviceMaintenance,
                                    DeviceModel as DM, FirmwareVersion,
                                    Helmet, OTAUpdate)
     from employees.models import Employee
@@ -700,6 +709,10 @@ def _build_all():
         C("helmet", model=Helmet, form_class=kforms.HelmetForm,
           active_nav="badges", list_url_name="admin-badges",
           url_prefix="helmets", entity_label="Casque", entity_label_plural="Casques"),
+        C("camera", model=Camera, form_class=kforms.CameraForm,
+          active_nav="cameras", list_url_name="admin-cameras",
+          url_prefix="cameras-mng", entity_label="Caméra IP",
+          entity_label_plural="Caméras IP"),
         C("gateway", model=SiteGateway, form_class=kforms.SiteGatewayForm,
           active_nav="gateways", list_url_name="admin-gateways",
           url_prefix="gateways", entity_label="Gateway locale",

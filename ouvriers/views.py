@@ -1,3 +1,4 @@
+from django.db import models
 from drf_spectacular.utils import extend_schema, extend_schema_view
 from rest_framework import viewsets
 
@@ -49,11 +50,41 @@ class WorkerViewSet(viewsets.ModelViewSet):
     search_fields = ("matricule", "first_name", "last_name", "phone", "id_document_number")
     filterset_fields = ("tenant", "trade", "subcontractor", "status")
 
+    def get_queryset(self):
+        # Worker n'a pas de FK direct vers Company. On le rattache via
+        # assignments.site.company OU crews.site.company (un worker mobile
+        # sur plusieurs sites est visible si AU MOINS UN site est dans la filiale).
+        from accounts.scoping import get_user_company_ids
+        qs = super().get_queryset()
+        ids = get_user_company_ids(self.request.user)
+        if ids is None:
+            return qs  # accès global
+        if not ids:
+            return qs.none()
+        return qs.filter(
+            models.Q(assignments__site__company_id__in=ids)
+            | models.Q(crews__site__company_id__in=ids)
+        ).distinct()
+
 
 class WorkerCertificationViewSet(viewsets.ModelViewSet):
     queryset = WorkerCertification.objects.select_related("worker").all()
     serializer_class = WorkerCertificationSerializer
     filterset_fields = ("worker", "code")
+
+    def get_queryset(self):
+        # Certification visible si l'ouvrier est rattaché à un site de la filiale.
+        from accounts.scoping import get_user_company_ids
+        qs = super().get_queryset()
+        ids = get_user_company_ids(self.request.user)
+        if ids is None:
+            return qs
+        if not ids:
+            return qs.none()
+        return qs.filter(
+            models.Q(worker__assignments__site__company_id__in=ids)
+            | models.Q(worker__crews__site__company_id__in=ids)
+        ).distinct()
 
 
 class CrewViewSet(viewsets.ModelViewSet):
@@ -61,8 +92,16 @@ class CrewViewSet(viewsets.ModelViewSet):
     serializer_class = CrewSerializer
     filterset_fields = ("site", "is_active")
 
+    def get_queryset(self):
+        from accounts.scoping import scope_queryset_by_company
+        return scope_queryset_by_company(super().get_queryset(), self.request.user, "site__company")
+
 
 class WorkerAssignmentViewSet(viewsets.ModelViewSet):
     queryset = WorkerAssignment.objects.select_related("worker", "site", "crew").all()
     serializer_class = WorkerAssignmentSerializer
     filterset_fields = ("worker", "site", "crew", "is_active")
+
+    def get_queryset(self):
+        from accounts.scoping import scope_queryset_by_company
+        return scope_queryset_by_company(super().get_queryset(), self.request.user, "site__company")

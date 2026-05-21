@@ -1,0 +1,96 @@
+# =============================================================================
+# KAYDAN SHIELD — Image GPU pour le pipeline InsightFace (face recognition)
+# =============================================================================
+# Cette image est destinée au worker qui sert /api/v1/employees/face/* en
+# production. Elle embarque CUDA 12.x + cuDNN 9.x + onnxruntime-gpu.
+#
+# Usage (host avec GPU NVIDIA + nvidia-container-toolkit) :
+#
+#   docker build -f Dockerfile.gpu -t kaydan-shield-gpu:latest .
+#   docker run --gpus all -p 8000:8000 \
+#     -v insightface-models:/root/.insightface \
+#     -e FACE_ENGINE_ENABLED=true \
+#     -e FACE_CTX_ID=0 \
+#     kaydan-shield-gpu:latest
+#
+# Hosts CPU only : utiliser le Dockerfile principal (qui charge
+# onnxruntime au lieu d'onnxruntime-gpu — fallback automatique).
+# =============================================================================
+
+# Base CUDA 12.4 + cuDNN 9 (compatible onnxruntime-gpu 1.18+)
+FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    DEBIAN_FRONTEND=noninteractive \
+    LANG=C.UTF-8
+
+WORKDIR /app
+
+# ── OS deps : Python 3.11 + libs natives (OpenCV, PostGIS, Cairo) ─────
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    software-properties-common \
+    && add-apt-repository -y ppa:deadsnakes/ppa \
+    && apt-get update && apt-get install -y --no-install-recommends \
+        python3.11 \
+        python3.11-dev \
+        python3.11-distutils \
+        python3-pip \
+        build-essential \
+        gcc \
+        curl \
+        gettext \
+        libpq-dev \
+        binutils \
+        gdal-bin \
+        libgdal-dev \
+        libgeos-dev \
+        libproj-dev \
+        libcairo2 \
+        libcairo2-dev \
+        libpango-1.0-0 \
+        libpangocairo-1.0-0 \
+        libgdk-pixbuf-2.0-0 \
+        libffi-dev \
+        libglib2.0-0 \
+        libsm6 libxext6 libxrender1 libgl1 \
+        shared-mime-info \
+        fonts-dejavu-core \
+        poppler-utils \
+        tesseract-ocr \
+        tesseract-ocr-fra \
+        tesseract-ocr-eng \
+        ca-certificates \
+    && update-alternatives --install /usr/bin/python python /usr/bin/python3.11 1 \
+    && update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1 \
+    && curl -sS https://bootstrap.pypa.io/get-pip.py | python3.11 \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── Python deps ─────────────────────────────────────────────────────
+COPY requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir --upgrade pip wheel setuptools \
+    && pip install --no-cache-dir -r /app/requirements.txt
+
+# ── Pré-télécharge le pack buffalo_l au build (évite cold-start prod) ─
+# Si /root/.insightface est monté en volume au runtime, ce sera écrasé,
+# mais en l'absence de volume on a quand même le modèle dans l'image.
+RUN python3.11 -c "import insightface; insightface.app.FaceAnalysis(name='buffalo_l').prepare(ctx_id=-1, det_size=(640,640))" \
+    || echo "WARN: pré-téléchargement buffalo_l ignoré (offline build)."
+
+# ── Code applicatif ─────────────────────────────────────────────────
+COPY . /app/
+RUN mkdir -p /app/staticfiles /app/media /app/logs
+
+EXPOSE 8000
+
+# Healthcheck : interroge /api/v1/employees/face/status/ pour vérifier
+# que le moteur est dispo (renvoie 200 si init + 503 si désactivé).
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+  CMD curl -fsS http://localhost:8000/api/v1/employees/face/status/ \
+        | grep -q '"enabled":true' || exit 1
+
+CMD ["gunicorn", "kshield.asgi:application", \
+     "-k", "uvicorn.workers.UvicornWorker", \
+     "--bind", "0.0.0.0:8000", \
+     "--workers", "2", \
+     "--timeout", "120"]

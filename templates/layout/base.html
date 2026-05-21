@@ -1,4 +1,4 @@
-{% load static %}
+{% load static admin_filters %}
 <!doctype html>
 <html lang="fr" data-theme="dark">
 <head>
@@ -36,6 +36,10 @@
   {# ======== Optional: HTMX & Alpine ======== #}
   <script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
   <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+
+  {# ======== Tom Select — autocomplete sur tous les <select> ======== #}
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/css/tom-select.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/js/tom-select.complete.min.js" defer></script>
 
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><path d='M50 6 L88 22 V52 C88 74 70 90 50 96 C30 90 12 74 12 52 V22 Z' fill='%230B1B33'/><path d='M50 6 V96 C30 90 12 74 12 52 V22 Z' fill='%23F26B1F'/></svg>">
 
@@ -784,10 +788,154 @@
     .pill-danger { background: rgba(248,113,113,.12); color: var(--danger,#f87171); border-color: rgba(248,113,113,.25); }
     .pill-muted { background: var(--surface); color: var(--text-dim); border-color: var(--border); }
 
+    /* ─── Tom Select — theming KAYDAN (dark + light) ─── */
+    .ts-wrapper { font-family: inherit; }
+    .ts-wrapper .ts-control {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      padding: 7px 10px;
+      min-height: 36px;
+      font-size: 13px;
+      box-shadow: none;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    .ts-wrapper.focus .ts-control,
+    .ts-wrapper .ts-control:hover {
+      border-color: var(--ks-orange-500);
+      box-shadow: 0 0 0 3px rgba(242,107,31,.15);
+    }
+    .ts-wrapper .ts-control > input {
+      color: var(--text);
+      background: transparent;
+    }
+    .ts-wrapper .ts-control > input::placeholder {
+      color: var(--text-dim);
+      opacity: .7;
+    }
+    .ts-wrapper.disabled .ts-control { opacity: .5; cursor: not-allowed; }
+
+    /* Dropdown — fond OPAQUE pour éviter la translucidité de var(--surface) */
+    .ts-dropdown {
+      background: #14283f;                          /* dark fallback */
+      border: 1px solid rgba(255,255,255,.10);
+      border-radius: 8px;
+      color: var(--text);
+      box-shadow: 0 18px 50px rgba(0,0,0,.55);
+      margin-top: 4px;
+      /* Passe au-dessus de la topbar sticky, des cards et des modales légères.
+         Pour les <dialog> natifs en top-layer, le dropdown est rattaché au
+         dialog directement (cf. JS : dropdownParent), donc OK aussi. */
+      z-index: 100000 !important;
+    }
+    [data-theme="light"] .ts-dropdown {
+      background: #ffffff;
+      border-color: rgba(15,29,52,.12);
+      color: #0f1d34;
+      box-shadow: 0 18px 50px rgba(15,29,52,.18);
+    }
+    .ts-dropdown .ts-dropdown-content {
+      padding: 4px;
+    }
+    .ts-dropdown .option {
+      padding: 8px 10px;
+      border-radius: 6px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: background .1s;
+    }
+    .ts-dropdown .option:hover,
+    .ts-dropdown .option.active {
+      background: rgba(242,107,31,.18);
+      color: var(--text);
+    }
+    [data-theme="light"] .ts-dropdown .option:hover,
+    [data-theme="light"] .ts-dropdown .option.active {
+      background: rgba(242,107,31,.12);
+      color: #0f1d34;
+    }
+    .ts-dropdown .option.selected {
+      background: var(--ks-orange-500);
+      color: #fff;
+    }
+    .ts-dropdown .no-results,
+    .ts-dropdown .create {
+      padding: 10px;
+      font-size: 12px;
+      color: var(--text-dim);
+      font-style: italic;
+    }
+    .ts-dropdown .optgroup-header {
+      padding: 8px 10px 4px;
+      font-size: 10.5px;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      color: var(--text-dim);
+      font-weight: 600;
+    }
+    /* Multi-select : pills sélectionnées */
+    .ts-wrapper.multi .ts-control > div.item {
+      background: rgba(242,107,31,.18);
+      color: var(--ks-orange-500);
+      border: 1px solid rgba(242,107,31,.3);
+      border-radius: 5px;
+      padding: 2px 8px;
+      font-size: 12px;
+      margin: 1px 3px 1px 0;
+    }
+    .ts-wrapper.multi .ts-control > div.item.active {
+      background: var(--ks-orange-500);
+      color: #fff;
+    }
+    .ts-wrapper.single .ts-control:after {
+      /* arrow caret */
+      border-top-color: var(--text-dim);
+    }
+    /* Mode form-control compatibility — quand le <select> avait des classes */
+    .form-control + .ts-wrapper .ts-control,
+    select.form-control + .ts-wrapper .ts-control {
+      min-height: 36px;
+    }
+
     /* ─── Notif badge wrapper (topbar) ─── */
     .notif-wrap { position: relative; }
     .notif-wrap .icon-btn { position: relative; }
     [x-cloak] { display: none !important; }
+
+    /* Dropdown notifications : fond OPAQUE par thème (var(--surface) est translucide
+       et laissait passer le texte du dashboard derrière). */
+    .notif-dropdown {
+      position: absolute;
+      top: 50px;
+      right: 14px;
+      width: 360px;
+      max-height: 480px;
+      overflow: auto;
+      background: #14283f;                              /* dark fallback */
+      border: 1px solid rgba(255,255,255,.10);
+      border-radius: 12px;
+      box-shadow: 0 18px 50px rgba(0,0,0,.55);
+      z-index: 700;
+    }
+    [data-theme="light"] .notif-dropdown {
+      background: #ffffff;
+      border-color: rgba(15,29,52,.12);
+      box-shadow: 0 18px 50px rgba(15,29,52,.18);
+    }
+    .notif-dropdown header,
+    .notif-dropdown footer {
+      background: inherit;                              /* hérite du fond opaque */
+    }
+    .notif-dropdown .notif-item {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      font-size: 12.5px;
+      display: flex;
+      gap: 10px;
+    }
+    .notif-dropdown .notif-item.is-unread { background: rgba(242,107,31,.06); }
+    [data-theme="light"] .notif-dropdown .notif-item.is-unread { background: rgba(242,107,31,.08); }
 
     /* ─── KPI row + stat-card (réutilisé dashboard, detail filiale, etc.) ─── */
     .kpi-row {
@@ -901,87 +1049,156 @@
         </div>
       </div>
 
-      <div class="nav-section">Pilotage</div>
-      <a class="nav-item {% if active_nav == 'dashboard' %}active{% endif %}" href="{% url 'admin-dashboard' %}">
-        <i data-lucide="layout-dashboard" class="icon"></i>
-        <span class="label">Tableau de bord</span>
-      </a>
-      <a class="nav-item {% if active_nav == 'map' %}active{% endif %}" href="{% url 'admin-map' %}">
-        <i data-lucide="map" class="icon"></i>
-        <span class="label">Cartographie</span>
-      </a>
-      <a class="nav-item {% if active_nav == 'realtime' %}active{% endif %}" href="{% url 'admin-realtime' %}">
-        <i data-lucide="activity" class="icon"></i>
-        <span class="label">Flux temps réel</span>
-        <span class="badge">LIVE</span>
-      </a>
+      {# ─── Pilotage ─── #}
+      {% if user_perms|has_any_perm:"dashboard.view,map.view,realtime.view" %}
+        <div class="nav-section">Pilotage</div>
+        {% if user_perms|has_perm:"dashboard.view" %}
+        <a class="nav-item {% if active_nav == 'dashboard' %}active{% endif %}" href="{% url 'admin-dashboard' %}">
+          <i data-lucide="layout-dashboard" class="icon"></i>
+          <span class="label">Tableau de bord</span>
+        </a>
+        {% endif %}
+        {% if user_perms|has_perm:"map.view" %}
+        <a class="nav-item {% if active_nav == 'map' %}active{% endif %}" href="{% url 'admin-map' %}">
+          <i data-lucide="map" class="icon"></i>
+          <span class="label">Cartographie</span>
+        </a>
+        {% endif %}
+        {% if user_perms|has_perm:"realtime.view" %}
+        <a class="nav-item {% if active_nav == 'realtime' %}active{% endif %}" href="{% url 'admin-realtime' %}">
+          <i data-lucide="activity" class="icon"></i>
+          <span class="label">Flux temps réel</span>
+          <span class="badge">LIVE</span>
+        </a>
+        {% endif %}
+      {% endif %}
 
-      <div class="nav-section">Identités</div>
-      <a class="nav-item {% if active_nav == 'employees' %}active{% endif %}" href="{% url 'admin-employees' %}">
-        <i data-lucide="users" class="icon"></i><span class="label">Employés</span>
-      </a>
-      <a class="nav-item {% if active_nav == 'workers' %}active{% endif %}" href="{% url 'admin-workers' %}">
-        <i data-lucide="hard-hat" class="icon"></i><span class="label">Ouvriers</span>
-      </a>
-      <a class="nav-item {% if active_nav == 'visitors' %}active{% endif %}" href="{% url 'admin-visitors' %}">
-        <i data-lucide="user-plus" class="icon"></i><span class="label">Visiteurs</span>
-      </a>
+      {# ─── Identités ─── #}
+      {% if user_perms|has_any_perm:"employees.view,workers.view,visitors.view" %}
+        <div class="nav-section">Identités</div>
+        {% if user_perms|has_perm:"employees.view" %}
+        <a class="nav-item {% if active_nav == 'employees' %}active{% endif %}" href="{% url 'admin-employees' %}">
+          <i data-lucide="users" class="icon"></i><span class="label">Employés</span>
+        </a>
+        {% endif %}
+        {% if user_perms|has_perm:"workers.view" %}
+        <a class="nav-item {% if active_nav == 'workers' %}active{% endif %}" href="{% url 'admin-workers' %}">
+          <i data-lucide="hard-hat" class="icon"></i><span class="label">Ouvriers</span>
+        </a>
+        {% endif %}
+        {% if user_perms|has_perm:"visitors.view" %}
+        <a class="nav-item {% if active_nav == 'visitors' %}active{% endif %}" href="{% url 'admin-visitors' %}">
+          <i data-lucide="user-plus" class="icon"></i><span class="label">Visiteurs</span>
+        </a>
+        {% endif %}
+      {% endif %}
 
-      <div class="nav-section">Terrain</div>
-      <a class="nav-item {% if active_nav == 'sites' %}active{% endif %}" href="{% url 'admin-sites' %}">
-        <i data-lucide="map-pin" class="icon"></i><span class="label">Sites &amp; zones</span>
-      </a>
-      <a class="nav-item {% if active_nav == 'devices' %}active{% endif %}" href="{% url 'admin-devices' %}">
-        <i data-lucide="cpu" class="icon"></i><span class="label">Équipements</span>
-      </a>
-      <a class="nav-item {% if active_nav == 'badges' %}active{% endif %}" href="{% url 'admin-badges' %}">
-        <i data-lucide="id-card" class="icon"></i><span class="label">Badges &amp; casques</span>
-      </a>
-      <a class="nav-item {% if active_nav == 'gateways' %}active{% endif %}" href="{% url 'admin-gateways' %}">
-        <i data-lucide="router" class="icon"></i><span class="label">Gateways</span>
-      </a>
+      {# ─── Terrain ─── #}
+      {% if user_perms|has_any_perm:"sites.view,devices.view,badges.view,gateways.manage" %}
+        <div class="nav-section">Terrain</div>
+        {% if user_perms|has_perm:"sites.view" %}
+        <a class="nav-item {% if active_nav == 'sites' %}active{% endif %}" href="{% url 'admin-sites' %}">
+          <i data-lucide="map-pin" class="icon"></i><span class="label">Sites &amp; zones</span>
+        </a>
+        {% endif %}
+        {% if user_perms|has_perm:"devices.view" %}
+        <a class="nav-item {% if active_nav == 'devices' %}active{% endif %}" href="{% url 'admin-devices' %}">
+          <i data-lucide="cpu" class="icon"></i><span class="label">Équipements</span>
+        </a>
+        <a class="nav-item {% if active_nav == 'cameras' %}active{% endif %}" href="{% url 'admin-cameras' %}">
+          <i data-lucide="video" class="icon"></i><span class="label">Caméras IP</span>
+        </a>
+        {% endif %}
+        {% if user_perms|has_perm:"badges.view" %}
+        <a class="nav-item {% if active_nav == 'badges' %}active{% endif %}" href="{% url 'admin-badges' %}">
+          <i data-lucide="id-card" class="icon"></i><span class="label">Badges &amp; casques</span>
+        </a>
+        {% endif %}
+        {% if user_perms|has_perm:"gateways.manage" %}
+        <a class="nav-item {% if active_nav == 'gateways' %}active{% endif %}" href="{% url 'admin-gateways' %}">
+          <i data-lucide="router" class="icon"></i><span class="label">Gateways</span>
+        </a>
+        {% endif %}
+      {% endif %}
 
-      <div class="nav-section">Sécurité</div>
-      <a class="nav-item {% if active_nav == 'attendance' %}active{% endif %}" href="{% url 'admin-attendance' %}">
-        <i data-lucide="clock" class="icon"></i><span class="label">Pointage</span>
-      </a>
-      <a class="nav-item {% if active_nav == 'access' %}active{% endif %}" href="{% url 'admin-access-rules' %}">
-        <i data-lucide="shield" class="icon"></i><span class="label">Règles d'accès</span>
-      </a>
-      <a class="nav-item {% if active_nav == 'antifraud' %}active{% endif %}" href="{% url 'admin-antifraud' %}">
-        <i data-lucide="shield-alert" class="icon"></i><span class="label">Anti-fraude</span>
-        {% if open_alerts_count %}<span class="badge">{{ open_alerts_count }}</span>{% endif %}
-      </a>
-      <a class="nav-item {% if active_nav == 'audit' %}active{% endif %}" href="{% url 'admin-audit' %}">
-        <i data-lucide="file-search" class="icon"></i><span class="label">Audit</span>
-      </a>
+      {# ─── Sécurité ─── #}
+      {% if user_perms|has_any_perm:"attendance.view,access.view,antifraud.view,audit.view" %}
+        <div class="nav-section">Sécurité</div>
+        {% if user_perms|has_perm:"attendance.view" %}
+        <a class="nav-item {% if active_nav == 'attendance' %}active{% endif %}" href="{% url 'admin-attendance' %}">
+          <i data-lucide="clock" class="icon"></i><span class="label">Pointage</span>
+        </a>
+        {% endif %}
+        {% if user_perms|has_perm:"access.view" %}
+        <a class="nav-item {% if active_nav == 'access' %}active{% endif %}" href="{% url 'admin-access-rules' %}">
+          <i data-lucide="shield" class="icon"></i><span class="label">Règles d'accès</span>
+        </a>
+        {% endif %}
+        {% if user_perms|has_perm:"antifraud.view" %}
+        <a class="nav-item {% if active_nav == 'antifraud' %}active{% endif %}" href="{% url 'admin-antifraud' %}">
+          <i data-lucide="shield-alert" class="icon"></i><span class="label">Anti-fraude</span>
+          {% if open_alerts_count %}<span class="badge">{{ open_alerts_count }}</span>{% endif %}
+        </a>
+        {% endif %}
+        {% if user_perms|has_perm:"audit.view" %}
+        <a class="nav-item {% if active_nav == 'audit' %}active{% endif %}" href="{% url 'admin-audit' %}">
+          <i data-lucide="file-search" class="icon"></i><span class="label">Audit</span>
+        </a>
+        {% endif %}
+      {% endif %}
 
-      <div class="nav-section">Communication</div>
-      <a class="nav-item {% if active_nav == 'notifications' %}active{% endif %}" href="{% url 'admin-notifications' %}">
-        <i data-lucide="bell" class="icon"></i><span class="label">Notifications</span>
-      </a>
-      <a class="nav-item {% if active_nav == 'mobile' %}active{% endif %}" href="{% url 'admin-mobile' %}">
-        <i data-lucide="smartphone" class="icon"></i><span class="label">Mobile &amp; sync</span>
-      </a>
+      {# ─── Communication ─── #}
+      {% if user_perms|has_any_perm:"notifications.view,devices.view" %}
+        <div class="nav-section">Communication</div>
+        {% if user_perms|has_perm:"notifications.view" %}
+        <a class="nav-item {% if active_nav == 'notifications' %}active{% endif %}" href="{% url 'admin-notifications' %}">
+          <i data-lucide="bell" class="icon"></i><span class="label">Notifications</span>
+        </a>
+        {% endif %}
+        {% if user_perms|has_perm:"devices.view" %}
+        <a class="nav-item {% if active_nav == 'mobile' %}active{% endif %}" href="{% url 'admin-mobile' %}">
+          <i data-lucide="smartphone" class="icon"></i><span class="label">Mobile &amp; sync</span>
+        </a>
+        {% endif %}
+      {% endif %}
 
-      <div class="nav-section">Reporting</div>
-      <a class="nav-item {% if active_nav == 'reports' %}active{% endif %}" href="{% url 'admin-reports' %}">
-        <i data-lucide="bar-chart-3" class="icon"></i><span class="label">Rapports</span>
-      </a>
-      <a class="nav-item {% if active_nav == 'ai' %}active{% endif %}" href="{% url 'admin-ai' %}">
-        <i data-lucide="sparkles" class="icon"></i><span class="label">Assistant IA</span>
-      </a>
+      {# ─── Reporting ─── #}
+      {% if user_perms|has_any_perm:"reports.view,dashboard.view" %}
+        <div class="nav-section">Reporting</div>
+        {% if user_perms|has_perm:"reports.view" %}
+        <a class="nav-item {% if active_nav == 'reports' and not request.resolver_match.url_name|slice:":7" == 'digests' %}active{% endif %}" href="{% url 'admin-reports' %}">
+          <i data-lucide="bar-chart-3" class="icon"></i><span class="label">Rapports</span>
+        </a>
+        <a class="nav-item {% if 'digest' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'admin-digests' %}">
+          <i data-lucide="sparkles" class="icon"></i><span class="label">Digest IA</span>
+        </a>
+        {% endif %}
+        {% if user_perms|has_perm:"dashboard.view" %}
+        <a class="nav-item {% if active_nav == 'ai' %}active{% endif %}" href="{% url 'admin-ai' %}">
+          <i data-lucide="sparkles" class="icon"></i><span class="label">Assistant IA</span>
+        </a>
+        {% endif %}
+      {% endif %}
 
-      <div class="nav-section">Système</div>
-      <a class="nav-item {% if active_nav == 'accounts' %}active{% endif %}" href="{% url 'admin-accounts' %}">
-        <i data-lucide="user-cog" class="icon"></i><span class="label">Utilisateurs</span>
-      </a>
-      <a class="nav-item {% if active_nav == 'companies' %}active{% endif %}" href="{% url 'admin-companies' %}">
-        <i data-lucide="building-2" class="icon"></i><span class="label">Filiales</span>
-      </a>
-      <a class="nav-item {% if active_nav == 'settings' %}active{% endif %}" href="{% url 'admin-settings' %}">
-        <i data-lucide="settings" class="icon"></i><span class="label">Paramètres</span>
-      </a>
+      {# ─── Système ─── #}
+      {% if user_perms|has_any_perm:"accounts.view,companies.view,companies.manage,settings.manage" %}
+        <div class="nav-section">Système</div>
+        {% if user_perms|has_perm:"accounts.view" %}
+        <a class="nav-item {% if active_nav == 'accounts' %}active{% endif %}" href="{% url 'admin-accounts' %}">
+          <i data-lucide="user-cog" class="icon"></i><span class="label">Utilisateurs</span>
+        </a>
+        {% endif %}
+        {% if user_perms|has_any_perm:"companies.view,companies.manage" %}
+        <a class="nav-item {% if active_nav == 'companies' %}active{% endif %}" href="{% url 'admin-companies' %}">
+          <i data-lucide="building-2" class="icon"></i><span class="label">Filiales</span>
+        </a>
+        {% endif %}
+        {% if user_perms|has_perm:"settings.manage" %}
+        <a class="nav-item {% if active_nav == 'settings' %}active{% endif %}" href="{% url 'admin-settings' %}">
+          <i data-lucide="settings" class="icon"></i><span class="label">Paramètres</span>
+        </a>
+        {% endif %}
+      {% endif %}
 
       <div class="sidebar-footer" x-data="userMenuPanel()" @click.outside="close()">
         <button class="user-card" type="button" x-ref="userBtn" @click="toggle()"
@@ -1110,10 +1327,7 @@
                          border-radius:9px;min-width:16px;height:16px;font-size:10px;font-weight:700;
                          display:flex;align-items:center;justify-content:center;padding:0 4px"></span>
           </button>
-          <div class="notif-dropdown" x-show="open" x-transition.opacity x-cloak
-               style="position:absolute;top:50px;right:14px;width:360px;max-height:480px;overflow:auto;
-                      background:var(--surface);border:1px solid var(--border);border-radius:12px;
-                      box-shadow:0 12px 40px rgba(0,0,0,.18);z-index:700;">
+          <div class="notif-dropdown" x-show="open" x-transition.opacity x-cloak>
             <header style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
               <strong style="font-size:13px">Notifications</strong>
               <button class="text-dim" type="button" @click="markAllRead()"
@@ -1131,9 +1345,7 @@
               <div>Aucune notification</div>
             </div>
             <template x-for="n in notifications" :key="n.id">
-              <div :class="n.read ? '' : 'is-unread'"
-                   style="padding:12px 16px;border-bottom:1px solid var(--border);font-size:12.5px;display:flex;gap:10px"
-                   :style="!n.read ? 'background:rgba(242,107,31,.05)' : ''">
+              <div class="notif-item" :class="{ 'is-unread': !n.read }">
                 <div style="width:6px;height:6px;border-radius:50%;margin-top:6px;flex-shrink:0"
                      :style="n.severity === 'critical' ? 'background:#f87171' : n.severity === 'high' ? 'background:#fb923c' : 'background:#60a5fa'"></div>
                 <div style="flex:1;min-width:0">
@@ -1485,6 +1697,111 @@
       };
     }
     document.addEventListener("DOMContentLoaded", () => window.lucide && window.lucide.createIcons());
+  </script>
+
+  {# ======== Tom Select — auto-init sur tous les <select> ======== #}
+  <script>
+  (function() {
+    "use strict";
+
+    /**
+     * Convertit un <select> standard en Tom Select.
+     * - Skip les selects avec data-no-tomselect.
+     * - Skip les selects déjà initialisés (tomselected).
+     * - Skip les <select size="..."> (boîtes liste multi-lignes).
+     */
+    function enhanceSelect(el) {
+      if (!el || el.tagName !== "SELECT") return;
+      if (el.hasAttribute("data-no-tomselect")) return;
+      if (el.classList.contains("tomselected")) return;
+      if (el.size && el.size > 1) return; // listbox déjà multi-lignes
+      if (!window.TomSelect) return;
+
+      var isMulti = el.multiple;
+      var hasGroups = el.querySelectorAll("optgroup").length > 0;
+
+      // Si pas de placeholder explicite et 1ère option avec value vide → l'utiliser
+      var placeholder = el.getAttribute("data-placeholder") || "";
+      if (!placeholder) {
+        var first = el.querySelector("option");
+        if (first && (!first.value || first.value === "")) {
+          placeholder = first.textContent.trim();
+        }
+      }
+      if (!placeholder) {
+        placeholder = isMulti ? "Sélectionner…" : "Choisir…";
+      }
+
+      // ─── Détache le dropdown du DOM parent ─────────────────────
+      // Sans ça, n'importe quelle .card / section avec `overflow:hidden`
+      // ou un sibling au-dessus dans le stacking context clippe la liste.
+      // → si le select est dans un <dialog> ouvert, on rattache au dialog
+      //   (sinon il serait caché derrière le top-layer du dialog) ;
+      // → sinon, on rattache à <body> pour échapper aux cards parentes.
+      var parentDialog = el.closest("dialog");
+      var dropdownParent = (parentDialog && parentDialog.open) ? parentDialog : "body";
+
+      try {
+        new TomSelect(el, {
+          create: false,
+          allowEmptyOption: true,
+          plugins: isMulti ? ["remove_button"] : [],
+          placeholder: placeholder,
+          searchField: ["text"],
+          maxOptions: 500,        // évite que le dropdown explose sur très gros listes
+          dropdownParent: dropdownParent,
+          render: {
+            no_results: function(data, escape) {
+              return '<div class="no-results">Aucun résultat pour « ' +
+                     escape(data.input) + ' »</div>';
+            },
+            option_create: function(data, escape) {
+              return '<div class="create">Créer « <strong>' +
+                     escape(data.input) + '</strong> »…</div>';
+            },
+          },
+        });
+      } catch (e) {
+        console.warn("[TomSelect] init échec sur", el, e);
+      }
+    }
+
+    function enhanceAll(root) {
+      root = root || document;
+      root.querySelectorAll("select").forEach(enhanceSelect);
+    }
+
+    function initWhenReady() {
+      if (!window.TomSelect) {
+        // CDN pas encore prêt — retry court
+        setTimeout(initWhenReady, 100);
+        return;
+      }
+      enhanceAll();
+
+      // Observer les nouveaux <select> ajoutés dynamiquement (modales, HTMX, etc.)
+      var mo = new MutationObserver(function(mutations) {
+        for (var i = 0; i < mutations.length; i++) {
+          var m = mutations[i];
+          for (var j = 0; j < m.addedNodes.length; j++) {
+            var node = m.addedNodes[j];
+            if (node.nodeType !== 1) continue; // skip text nodes
+            if (node.tagName === "SELECT") enhanceSelect(node);
+            if (node.querySelectorAll) {
+              node.querySelectorAll("select").forEach(enhanceSelect);
+            }
+          }
+        }
+      });
+      mo.observe(document.body, { childList: true, subtree: true });
+    }
+
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", initWhenReady);
+    } else {
+      initWhenReady();
+    }
+  })();
   </script>
 
   {% block extra_js %}{% endblock %}

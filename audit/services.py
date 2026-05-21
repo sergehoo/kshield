@@ -70,7 +70,7 @@ def generate_export_zip(export_request) -> bool:
             export_request.status = "failed"
             export_request.save(update_fields=["status"])
         except Exception:
-            pass
+            logger.exception("Impossible de marquer l'export RGPD %s en 'failed'", export_request.id)
         return False
 
 

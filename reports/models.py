@@ -106,3 +106,66 @@ class DashboardWidget(TimeStampedModel):
     query = models.JSONField(default=dict, blank=True)
     options = models.JSONField(default=dict, blank=True)
     position = models.JSONField(default=dict, blank=True)  # x, y, w, h
+
+
+# ---------------------------------------------------------------------------
+# Digest hebdomadaire IA — résumé exécutif généré chaque lundi matin
+# ---------------------------------------------------------------------------
+class ExecutiveDigest(TimeStampedModel):
+    """Résumé exécutif hebdo généré par LLM (OpenAI, Mistral, etc).
+
+    Contenu :
+      - top_alerts : 5 alertes anti-fraude les plus critiques de la semaine
+      - kpi_deltas : variations clés vs semaine précédente
+      - anomalies : patterns inhabituels détectés par l'IA
+      - recommendations : 3-5 actions concrètes suggérées
+
+    Diffusé par email aux abonnés (rôles configurés) chaque lundi 07h.
+    """
+
+    PERIOD_CHOICES = [
+        ("weekly", "Hebdomadaire"),
+        ("monthly", "Mensuel"),
+        ("quarterly", "Trimestriel"),
+    ]
+    STATUS_CHOICES = [
+        ("queued", "En file"), ("generating", "Génération"),
+        ("ready", "Prêt"), ("failed", "Échec"),
+    ]
+
+    tenant = models.ForeignKey("core.Tenant", on_delete=models.CASCADE,
+                                 related_name="executive_digests")
+    period = models.CharField(max_length=12, choices=PERIOD_CHOICES, default="weekly")
+    period_start = models.DateField(db_index=True)
+    period_end = models.DateField()
+
+    status = models.CharField(max_length=12, choices=STATUS_CHOICES, default="queued")
+
+    raw_metrics = models.JSONField(default=dict, blank=True,
+        help_text="Snapshot des KPI utilisés pour générer le digest.")
+
+    title = models.CharField(max_length=240, blank=True)
+    executive_summary = models.TextField(blank=True,
+        help_text="2-3 paragraphes destinés au CEO/COO.")
+    top_alerts = models.JSONField(default=list, blank=True)
+    kpi_deltas = models.JSONField(default=list, blank=True)
+    anomalies = models.JSONField(default=list, blank=True)
+    recommendations = models.JSONField(default=list, blank=True)
+
+    model_used = models.CharField(max_length=80, blank=True)
+    tokens_used = models.IntegerField(default=0)
+    generation_seconds = models.FloatField(default=0.0)
+    error_message = models.TextField(blank=True)
+
+    sent_at = models.DateTimeField(null=True, blank=True)
+    sent_to = models.JSONField(default=list, blank=True)
+
+    class Meta:
+        ordering = ("-period_start",)
+        unique_together = ("tenant", "period", "period_start")
+        indexes = [
+            models.Index(fields=["status", "-period_start"]),
+        ]
+
+    def __str__(self):
+        return f"Digest {self.period} {self.period_start} ({self.status})"

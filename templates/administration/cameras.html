@@ -1,0 +1,935 @@
+{% extends "layout/base.html" %}
+{% load static %}
+
+{% block title %}Caméras IP · KAYDAN SHIELD{% endblock %}
+{% block page_title %}Caméras IP{% endblock %}
+{% block page_subtitle %}{{ count_total }} caméra(s) · {{ count_online }} en ligne · {{ count_offline }} hors ligne · {{ count_error }} en erreur{% endblock %}
+{% block breadcrumb %}Caméras IP{% endblock %}
+
+{% block page_actions %}
+  <a class="btn btn-ghost" href="{% url 'admin-face-presence' %}">
+    <i data-lucide="user-check" style="width:14px;height:14px"></i> Présence face
+  </a>
+  <a class="btn btn-ghost" href="{% url 'admin-cameras-live' %}">
+    <i data-lucide="play-circle" style="width:14px;height:14px"></i> Vue live
+  </a>
+  <button class="btn btn-ghost" type="button" id="btn-onvif-scan">
+    <i data-lucide="radar" style="width:14px;height:14px"></i> Scanner le réseau (ONVIF)
+  </button>
+  <button class="btn btn-ghost" type="button" id="btn-rtsp-probe">
+    <i data-lucide="globe" style="width:14px;height:14px"></i> Détecter depuis IP
+  </button>
+  <a class="btn btn-primary" href="{% url 'admin-camera-create' %}">
+    <i data-lucide="plus" style="width:14px;height:14px"></i> Ajouter une caméra
+  </a>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+  .cam-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 16px; }
+  .cam-kpi { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
+  .cam-kpi .v { font-size: 22px; font-weight: 700; line-height: 1; }
+  .cam-kpi .l { font-size: 10.5px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .04em; margin-top: 4px; }
+  @media (max-width: 720px) { .cam-kpis { grid-template-columns: repeat(2, 1fr); } }
+
+  .cam-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+  .cam-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; overflow: hidden;
+    transition: border-color .15s, transform .15s;
+    display: flex; flex-direction: column;
+  }
+  .cam-card:hover { border-color: var(--ks-orange-500); transform: translateY(-1px); }
+  .cam-thumb {
+    aspect-ratio: 16 / 9; background: #000;
+    position: relative; overflow: hidden;
+  }
+  .cam-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .cam-thumb-placeholder {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    color: #6b7280; gap: 8px;
+  }
+  .cam-thumb-badge {
+    position: absolute; top: 8px; left: 8px;
+    background: rgba(0,0,0,.65); backdrop-filter: blur(6px);
+    padding: 4px 8px; border-radius: 999px;
+    font-size: 10px; font-weight: 600; color: #fff;
+    display: inline-flex; align-items: center; gap: 5px;
+  }
+  .cam-thumb-badge .dot { width: 6px; height: 6px; border-radius: 50%; background: #9ca3af; }
+  .cam-thumb-badge.is-online .dot { background: #34d399; box-shadow: 0 0 8px #34d399; }
+  .cam-thumb-badge.is-offline .dot { background: #f87171; }
+  .cam-thumb-badge.is-error .dot { background: #fbbf24; }
+  .cam-body { padding: 12px 14px; }
+  .cam-name { font-weight: 700; font-size: 14px; line-height: 1.2; margin: 0; }
+  .cam-sub { font-size: 11.5px; color: var(--text-dim); margin-top: 2px; }
+  .cam-tags { display: flex; gap: 4px; margin-top: 8px; flex-wrap: wrap; }
+  .cam-actions {
+    display: flex; gap: 6px;
+    padding: 10px 14px;
+    border-top: 1px solid var(--border);
+    background: rgba(0,0,0,.08);
+  }
+  [data-theme="light"] .cam-actions { background: rgba(15,29,52,.025); }
+
+  .filter-bar {
+    display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+    margin-bottom: 14px;
+  }
+  .filter-bar input, .filter-bar select {
+    background: var(--surface); border: 1px solid var(--border);
+    color: var(--text); padding: 7px 10px; border-radius: 8px;
+    font-size: 12.5px;
+  }
+
+  /* ─── Modale ONVIF — fond opaque par thème ─── */
+  dialog#onvif-dialog {
+    border: 1px solid rgba(255,255,255,.10);
+    border-radius: 14px;
+    background: #14283f;                           /* dark fallback opaque */
+    color: var(--text);
+    padding: 0;
+    max-width: 720px;
+    width: min(720px, 92vw);
+    max-height: 85vh;
+    overflow: hidden;
+    box-shadow: 0 24px 64px rgba(0,0,0,.6);
+  }
+  [data-theme="light"] dialog#onvif-dialog {
+    background: #ffffff;
+    border-color: rgba(15,29,52,.12);
+    color: #0f1d34;
+    box-shadow: 0 24px 64px rgba(15,29,52,.25);
+  }
+  dialog#onvif-dialog::backdrop {
+    background: rgba(7,17,31,.65);
+    backdrop-filter: blur(4px);
+  }
+  dialog#onvif-dialog header {
+    background: rgba(0,0,0,.20);
+    color: var(--text);
+  }
+  [data-theme="light"] dialog#onvif-dialog header {
+    background: rgba(15,29,52,.04);
+  }
+  dialog#onvif-dialog input[type="text"],
+  dialog#onvif-dialog input[type="password"],
+  dialog#onvif-dialog input[type="number"] {
+    background: rgba(0,0,0,.25) !important;
+    border: 1px solid rgba(255,255,255,.12);
+    color: var(--text);
+  }
+  [data-theme="light"] dialog#onvif-dialog input[type="text"],
+  [data-theme="light"] dialog#onvif-dialog input[type="password"],
+  [data-theme="light"] dialog#onvif-dialog input[type="number"] {
+    background: #f8fafc !important;
+    border-color: rgba(15,29,52,.12);
+    color: #0f1d34;
+  }
+  dialog#onvif-dialog .onvif-body { padding: 14px 18px; overflow: auto; max-height: calc(85vh - 60px); }
+
+  /* ─── Modale Probe RTSP — même traitement opaque que ONVIF ─── */
+  dialog#probe-dialog {
+    border: 1px solid rgba(255,255,255,.10);
+    border-radius: 14px;
+    background: #14283f;                           /* dark fallback opaque */
+    color: var(--text);
+    padding: 0;
+    max-width: 560px;
+    width: min(560px, 92vw);
+    max-height: 90vh;
+    overflow: hidden;
+    box-shadow: 0 24px 64px rgba(0,0,0,.6);
+  }
+  [data-theme="light"] dialog#probe-dialog {
+    background: #ffffff;
+    border-color: rgba(15,29,52,.12);
+    color: #0f1d34;
+    box-shadow: 0 24px 64px rgba(15,29,52,.25);
+  }
+  dialog#probe-dialog::backdrop {
+    background: rgba(7,17,31,.65);
+    backdrop-filter: blur(4px);
+  }
+  dialog#probe-dialog header {
+    background: rgba(0,0,0,.20);
+    color: var(--text);
+  }
+  [data-theme="light"] dialog#probe-dialog header {
+    background: rgba(15,29,52,.04);
+  }
+  dialog#probe-dialog input[type="text"],
+  dialog#probe-dialog input[type="password"],
+  dialog#probe-dialog input[type="number"],
+  dialog#probe-dialog textarea {
+    background: rgba(0,0,0,.25) !important;
+    border: 1px solid rgba(255,255,255,.12);
+    color: var(--text);
+    font-family: inherit;
+  }
+  dialog#probe-dialog textarea {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace !important;
+    resize: vertical;
+  }
+  [data-theme="light"] dialog#probe-dialog input[type="text"],
+  [data-theme="light"] dialog#probe-dialog input[type="password"],
+  [data-theme="light"] dialog#probe-dialog input[type="number"],
+  [data-theme="light"] dialog#probe-dialog textarea {
+    background: #f8fafc !important;
+    border-color: rgba(15,29,52,.12);
+    color: #0f1d34;
+  }
+  dialog#probe-dialog code {
+    background: rgba(0,0,0,.30);
+    padding: 1px 5px;
+    border-radius: 4px;
+    color: var(--text);
+  }
+  [data-theme="light"] dialog#probe-dialog code {
+    background: rgba(15,29,52,.06);
+    color: #0f1d34;
+  }
+  dialog#probe-dialog table {
+    background: rgba(0,0,0,.15);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  [data-theme="light"] dialog#probe-dialog table {
+    background: #f8fafc;
+  }
+  dialog#probe-dialog table th {
+    background: rgba(0,0,0,.30);
+    font-weight: 600;
+    color: var(--text-dim);
+  }
+  [data-theme="light"] dialog#probe-dialog table th {
+    background: rgba(15,29,52,.06);
+    color: #5b6b85;
+  }
+
+  /* Cartes caméras dans la modale ONVIF */
+  .onvif-cam.is-clickable {
+    cursor: pointer;
+  }
+  .onvif-cam.is-clickable:hover {
+    border-color: var(--ks-orange-500) !important;
+    background: rgba(242,107,31,.06) !important;
+    transform: translateY(-1px);
+  }
+  .onvif-cam.is-clickable:active {
+    transform: translateY(0);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+
+  {# ── KPIs ── #}
+  <section class="cam-kpis">
+    <div class="cam-kpi">
+      <div class="v">{{ count_total }}</div>
+      <div class="l"><i data-lucide="video" style="width:11px;height:11px;vertical-align:-1px"></i> Total caméras</div>
+    </div>
+    <div class="cam-kpi" style="border-color:rgba(52,211,153,.35)">
+      <div class="v" style="color:#34d399">{{ count_online }}</div>
+      <div class="l"><i data-lucide="wifi" style="width:11px;height:11px;vertical-align:-1px"></i> En ligne</div>
+    </div>
+    <div class="cam-kpi" style="border-color:rgba(248,113,113,.35)">
+      <div class="v" style="color:#f87171">{{ count_offline }}</div>
+      <div class="l"><i data-lucide="wifi-off" style="width:11px;height:11px;vertical-align:-1px"></i> Hors ligne</div>
+    </div>
+    <div class="cam-kpi" style="border-color:rgba(217,70,239,.35)">
+      <div class="v" style="color:#d946ef">{{ count_face_ai }}</div>
+      <div class="l"><i data-lucide="scan-face" style="width:11px;height:11px;vertical-align:-1px"></i> IA visage active</div>
+    </div>
+  </section>
+
+  {# ── Barre filtres ── #}
+  <form method="get" class="filter-bar">
+    <input type="text" name="q" placeholder="Recherche nom / URL / emplacement…" value="{{ search_q }}">
+    <select name="site">
+      <option value="">— Tous les sites —</option>
+      {% for s in sites_for_filter %}
+        <option value="{{ s.id }}" {% if site_filter == s.id|stringformat:"s" %}selected{% endif %}>{{ s.name }}</option>
+      {% endfor %}
+    </select>
+    <select name="status">
+      <option value="">— Tous statuts —</option>
+      <option value="online"   {% if status_filter == 'online' %}selected{% endif %}>En ligne</option>
+      <option value="offline"  {% if status_filter == 'offline' %}selected{% endif %}>Hors ligne</option>
+      <option value="error"    {% if status_filter == 'error' %}selected{% endif %}>Erreur</option>
+      <option value="disabled" {% if status_filter == 'disabled' %}selected{% endif %}>Désactivée</option>
+    </select>
+    <button class="btn btn-ghost" type="submit"><i data-lucide="filter" style="width:13px;height:13px"></i> Filtrer</button>
+    {% if search_q or site_filter or status_filter %}
+      <a class="btn btn-ghost" href="{% url 'admin-cameras' %}">Reset</a>
+    {% endif %}
+  </form>
+
+  {# ── Grille caméras ── #}
+  {% if cameras %}
+  <div class="cam-grid">
+    {% for c in cameras %}
+    <div class="cam-card">
+      <div class="cam-thumb">
+        {% if c.last_snapshot %}
+          <img src="{{ c.last_snapshot.url }}" alt="{{ c.name }} snapshot" loading="lazy">
+        {% else %}
+          <div class="cam-thumb-placeholder">
+            <i data-lucide="video-off" style="width:32px;height:32px"></i>
+            <span style="font-size:11px">Aucun snapshot</span>
+          </div>
+        {% endif %}
+        <span class="cam-thumb-badge is-{{ c.status }}">
+          <span class="dot"></span> {{ c.get_status_display }}
+        </span>
+      </div>
+      <div class="cam-body">
+        <div class="cam-name">{{ c.name }}</div>
+        <div class="cam-sub">
+          {% if c.site %}<i data-lucide="map-pin" style="width:10px;height:10px;vertical-align:-1px"></i> {{ c.site.name }}{% endif %}
+          {% if c.location_label %} · {{ c.location_label }}{% endif %}
+        </div>
+        <div class="cam-tags">
+          <span class="pill pill-info">{{ c.get_codec_display }}</span>
+          <span class="pill pill-muted">{{ c.target_width }}×{{ c.target_height }} @ {{ c.target_fps }} fps</span>
+          {% if c.enable_face_recognition %}<span class="pill pill-warning">IA visage</span>{% endif %}
+          {% if c.enable_motion_detection %}<span class="pill pill-info">Motion</span>{% endif %}
+          {% if c.enable_recording %}<span class="pill pill-danger">REC</span>{% endif %}
+          {% if not c.is_active %}<span class="pill pill-muted">Désactivée</span>{% endif %}
+        </div>
+      </div>
+      <div class="cam-actions">
+        <a class="btn btn-ghost" href="{% url 'admin-cameras-live' %}?ids={{ c.pk }}" title="Voir en live" style="flex:1;justify-content:center">
+          <i data-lucide="play" style="width:13px;height:13px"></i> Live
+        </a>
+        <a class="icon-btn" href="{% url 'admin-camera-detail' c.pk %}" title="Détails"><i data-lucide="eye"></i></a>
+        <a class="icon-btn" href="{% url 'admin-camera-update' c.pk %}" title="Configurer"><i data-lucide="settings-2"></i></a>
+        <button class="icon-btn" type="button" data-test-cam="{{ c.pk }}" title="Tester connexion">
+          <i data-lucide="zap"></i>
+        </button>
+        <a class="icon-btn" href="{% url 'admin-camera-delete' c.pk %}"
+           style="color:var(--danger)"
+           onclick="return confirm('Supprimer cette caméra ? Cette action est irréversible.');"
+           title="Supprimer">
+          <i data-lucide="trash-2"></i>
+        </a>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% include "administration/_partials/pagination.html" %}
+  {% else %}
+    {% include "administration/_partials/empty_card.html" with icon="video" title="Aucune caméra configurée" cta_label="Ajouter une caméra" cta_url="/cameras-mng/new/" %}
+  {% endif %}
+
+  {# ── Modale scan ONVIF ── #}
+  <dialog id="onvif-dialog">
+    <header style="padding:14px 18px;border-bottom:1px solid var(--border);
+                    display:flex;justify-content:space-between;align-items:center;gap:10px">
+      <strong style="font-size:14px">
+        <i data-lucide="radar" style="width:15px;height:15px;vertical-align:-2px;color:var(--ks-orange-500)"></i>
+        Scanner le réseau (ONVIF WS-Discovery)
+      </strong>
+      <button type="button" class="icon-btn" id="onvif-close" aria-label="Fermer">
+        <i data-lucide="x" style="width:16px;height:16px"></i>
+      </button>
+    </header>
+    <div class="onvif-body">
+      <div class="row" style="gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:12px">
+        <label style="font-size:11.5px;display:flex;flex-direction:column;gap:3px;color:var(--text-dim)">
+          Login
+          <input type="text" id="onvif-user" placeholder="admin" autocomplete="off"
+                 style="padding:7px 10px;border-radius:7px;font-size:12.5px;width:130px">
+        </label>
+        <label style="font-size:11.5px;display:flex;flex-direction:column;gap:3px;color:var(--text-dim)">
+          Mot de passe
+          <input type="password" id="onvif-pass" autocomplete="off"
+                 style="padding:7px 10px;border-radius:7px;font-size:12.5px;width:170px">
+        </label>
+        <label style="font-size:11.5px;display:flex;flex-direction:column;gap:3px;color:var(--text-dim)">
+          Timeout (s)
+          <input type="number" id="onvif-timeout" value="5" min="3" max="15"
+                 style="padding:7px 10px;border-radius:7px;font-size:12.5px;width:70px">
+        </label>
+        <label style="font-size:11.5px;display:flex;flex-direction:column;gap:3px;color:var(--text-dim);flex:1;min-width:180px">
+          Site de destination
+          <select id="onvif-site"
+                  style="background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.12);
+                         color:var(--text);padding:7px 10px;border-radius:7px;font-size:12.5px">
+            <option value="">— Choisir un site —</option>
+            {% for s in sites_for_filter %}
+              <option value="{{ s.id }}">{{ s.name }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <button class="btn btn-primary" type="button" id="onvif-start">
+          <i data-lucide="radar" style="width:13px;height:13px"></i> Lancer le scan
+        </button>
+      </div>
+      <p class="text-dim" style="font-size:11.5px;margin:0 0 12px;line-height:1.5">
+        <i data-lucide="info" style="width:12px;height:12px;vertical-align:-1px"></i>
+        Sans login/mdp, on liste les caméras mais l'URL RTSP n'est pas récupérable.
+        Le scan utilise le multicast <code>239.255.255.250:3702</code> — le PC et les caméras
+        doivent être sur le même VLAN, et le firewall ne doit pas bloquer le multicast.
+      </p>
+      <div id="onvif-result"></div>
+    </div>
+  </dialog>
+
+  {# ── Modale : Détection RTSP depuis IP ── #}
+  <dialog id="probe-dialog">
+    <header style="padding:14px 18px;border-bottom:1px solid var(--border);
+                    display:flex;justify-content:space-between;align-items:center;gap:10px">
+      <strong style="font-size:14px">
+        <i data-lucide="globe" style="width:15px;height:15px;vertical-align:-2px;color:var(--ks-orange-500)"></i>
+        Détecter la caméra depuis son IP
+      </strong>
+      <button type="button" class="icon-btn" id="probe-close" aria-label="Fermer">
+        <i data-lucide="x" style="width:16px;height:16px"></i>
+      </button>
+    </header>
+    <div style="padding:14px 18px;overflow:auto;max-height:calc(90vh - 60px)">
+      <p class="text-dim" style="font-size:12px;line-height:1.55;margin:0 0 14px">
+        Saisissez une ou plusieurs adresses IP (une par ligne ou séparées par
+        virgule), et le login/mot de passe de la caméra.
+        Le système essaie d'abord ONVIF puis un dictionnaire de chemins RTSP
+        de tous les constructeurs courants (HikVision, Dahua, Axis, Reolink,
+        Tapo, Foscam, Hanwha, Bosch, Pelco, Uniview…).
+      </p>
+      <div style="display:grid;gap:10px">
+        <label style="font-size:11.5px;display:flex;flex-direction:column;gap:3px;color:var(--text-dim)">
+          Adresse(s) IP
+          <textarea id="probe-ips" rows="3" placeholder="192.168.1.50&#10;192.168.1.51"
+                    style="padding:8px 10px;border-radius:7px;font-size:13px"></textarea>
+        </label>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <label style="font-size:11.5px;display:flex;flex-direction:column;gap:3px;color:var(--text-dim);flex:1;min-width:140px">
+            Login
+            <input type="text" id="probe-user" placeholder="admin" autocomplete="off"
+                   style="padding:7px 10px;border-radius:7px;font-size:12.5px">
+          </label>
+          <label style="font-size:11.5px;display:flex;flex-direction:column;gap:3px;color:var(--text-dim);flex:1;min-width:140px">
+            Mot de passe
+            <input type="password" id="probe-pass" autocomplete="off"
+                   style="padding:7px 10px;border-radius:7px;font-size:12.5px">
+          </label>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <label style="font-size:11.5px;display:flex;flex-direction:column;gap:3px;color:var(--text-dim)">
+            Port RTSP
+            <input type="number" id="probe-rtsp-port" value="554" min="1" max="65535"
+                   style="padding:7px 10px;border-radius:7px;font-size:12.5px;width:90px">
+          </label>
+          <label style="font-size:11.5px;display:flex;flex-direction:column;gap:3px;color:var(--text-dim)">
+            Port ONVIF
+            <input type="number" id="probe-onvif-port" value="80" min="1" max="65535"
+                   style="padding:7px 10px;border-radius:7px;font-size:12.5px;width:90px">
+          </label>
+          <label style="font-size:11.5px;display:flex;flex-direction:column;gap:3px;color:var(--text-dim)">
+            Canal (NVR)
+            <input type="number" id="probe-channel" value="1" min="1" max="64"
+                   style="padding:7px 10px;border-radius:7px;font-size:12.5px;width:80px">
+          </label>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:6px">
+          <button class="btn btn-primary" type="button" id="probe-start">
+            <i data-lucide="search" style="width:13px;height:13px"></i> Lancer la détection
+          </button>
+        </div>
+      </div>
+      <div id="probe-result" style="margin-top:14px"></div>
+    </div>
+  </dialog>
+
+  {# ── JS test connexion (button "zap") + scan ONVIF ── #}
+  <script>
+  (function(){
+    function csrf(){ var m=document.cookie.match(/csrftoken=([^;]+)/); return m?m[1]:""; }
+
+    // Remplace l'icône Lucide d'un bouton.
+    // Après lucide.createIcons(), le <i data-lucide="..."> devient <svg>.
+    // On supporte les deux cas via innerHTML + re-createIcons.
+    function setIcon(btn, name) {
+      btn.innerHTML = '<i data-lucide="' + name + '" style="width:14px;height:14px"></i>';
+      if (window.lucide && window.lucide.createIcons) {
+        window.lucide.createIcons({ attrs: {}, nameAttr: "data-lucide", icons: window.lucide.icons });
+      }
+    }
+
+    // ─── 1-clic register depuis le scan ONVIF ──────────────────
+    async function quickAddCamera(idx, btn) {
+      console.log("[ONVIF] quickAddCamera idx=" + idx);
+      var cams = window.__onvifCameras || [];
+      var c = cams[idx];
+      if (!c) {
+        console.warn("[ONVIF] caméra introuvable à idx=" + idx, cams);
+        return;
+      }
+      if (!c.rtsp_url) {
+        console.warn("[ONVIF] pas d'URL RTSP pour cette caméra");
+        return;
+      }
+      var card = btn.closest(".onvif-cam");
+      var feedback = card.querySelector(".onvif-feedback");
+      var siteSelect = document.getElementById("onvif-site");
+      var siteId = parseInt(siteSelect ? siteSelect.value : "", 10);
+      console.log("[ONVIF] site sélectionné = " + siteId,
+                  siteSelect ? "(options: " + siteSelect.options.length + ")" : "(pas de select)");
+      if (!siteId) {
+        feedback.innerHTML = '<span style="color:#fbbf24;font-weight:600">' +
+          '⚠ Choisis d\'abord un site dans le sélecteur tout en haut de la modale.' +
+          '</span>';
+        // Highlight visuel du select
+        if (siteSelect) {
+          siteSelect.style.borderColor = "#fbbf24";
+          siteSelect.style.boxShadow = "0 0 0 2px rgba(251,191,36,.3)";
+          setTimeout(function(){
+            siteSelect.style.borderColor = "";
+            siteSelect.style.boxShadow = "";
+          }, 2000);
+        }
+        return;
+      }
+      btn.disabled = true;
+      btn.innerHTML = '<i data-lucide="loader-2" style="width:11px;height:11px;animation:spin 1s linear infinite"></i> …';
+      if (window.lucide) window.lucide.createIcons();
+
+      var locLabel = (c.manufacturer ? c.manufacturer + ' ' : '') +
+                       (c.model || '') + (c.ip ? ' (' + c.ip + ')' : '');
+      var payload = {
+        name: c.name || ('Cam ' + (c.ip || idx)),
+        site: siteId,
+        rtsp_url: c.rtsp_url,
+        username: document.getElementById("onvif-user").value || '',
+        password: document.getElementById("onvif-pass").value || '',
+        location_label: locLabel.trim(),
+        transport: "tcp",
+        codec: "h264",
+        target_width: 1280,
+        target_height: 720,
+        target_fps: 10,
+        jpeg_quality: 75,
+        onvif_enabled: true,
+        onvif_host: c.ip || '',
+        is_active: true,
+      };
+      try {
+        var res = await fetch("/api/v1/devices/cameras/", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: {"X-CSRFToken": csrf(), "Content-Type": "application/json"},
+          body: JSON.stringify(payload),
+        });
+        var data = await res.json();
+        if (res.ok) {
+          card.style.borderColor = "#34d399";
+          card.style.background = "rgba(52,211,153,.06)";
+          feedback.innerHTML = '<span style="color:#34d399">' +
+            '<i data-lucide="check-circle-2" style="width:11px;height:11px;vertical-align:-1px"></i> ' +
+            'Enregistrée (id #' + data.id + ') · ' +
+            '<a href="/cameras-mng/' + data.id + '/edit/" style="color:var(--ks-orange-400);text-decoration:underline">Configurer</a></span>';
+          btn.innerHTML = '<i data-lucide="check" style="width:11px;height:11px"></i> Ajoutée';
+          btn.classList.remove("btn-primary");
+          btn.classList.add("btn-ghost");
+          btn.style.color = "#34d399";
+        } else {
+          card.style.borderColor = "rgba(248,113,113,.5)";
+          var errMsg = "";
+          if (typeof data === "object") {
+            errMsg = Object.entries(data).map(function(e){
+              return e[0] + ': ' + (Array.isArray(e[1]) ? e[1].join(', ') : e[1]);
+            }).join(' · ');
+          }
+          feedback.innerHTML = '<span style="color:#f87171">' +
+            '<i data-lucide="alert-triangle" style="width:11px;height:11px;vertical-align:-1px"></i> ' +
+            (errMsg || ('Erreur ' + res.status)) + '</span>';
+          btn.disabled = false;
+          btn.innerHTML = '<i data-lucide="plus" style="width:11px;height:11px"></i> Réessayer';
+        }
+      } catch (e) {
+        feedback.innerHTML = '<span style="color:#f87171">Réseau : ' + e.message + '</span>';
+        btn.disabled = false;
+        btn.innerHTML = '<i data-lucide="plus" style="width:11px;height:11px"></i> Réessayer';
+      } finally {
+        if (window.lucide) window.lucide.createIcons();
+      }
+    }
+
+    // ─── ONVIF scan modal ──────────────────────────────────────
+    var dlg = document.getElementById("onvif-dialog");
+    var btnScan = document.getElementById("btn-onvif-scan");
+    var btnClose = document.getElementById("onvif-close");
+
+    // EVENT DELEGATION au niveau DOCUMENT — capture les clicks même dans la
+    // top-layer du <dialog> (où #onvif-result peut être inaccessible pour
+    // les listeners attachés en amont selon les navigateurs).
+    document.addEventListener("click", function(e){
+      // Ignore les clicks sur le lien "Config avancée" → laisse le <a> naviguer
+      if (e.target.closest(".onvif-config-link")) return;
+      // Détection : a-t-on cliqué sur une carte ONVIF clickable ?
+      var card = e.target.closest(".onvif-cam.is-clickable");
+      var btn = e.target.closest(".onvif-quick-add");
+      if (!card && !btn) return;
+      // Empêche la propagation pour éviter des doubles déclenchements
+      e.preventDefault();
+      e.stopPropagation();
+      var idx = parseInt((btn || card).dataset.idx, 10);
+      console.log("[ONVIF] Click capturé → idx=" + idx,
+                  "target:", e.target.tagName,
+                  "via:", btn ? "button" : "card");
+      if (isNaN(idx)) {
+        console.warn("[ONVIF] data-idx invalide");
+        return;
+      }
+      var quickBtn = btn || (card && card.querySelector(".onvif-quick-add"));
+      if (!quickBtn) {
+        console.warn("[ONVIF] bouton quick-add introuvable");
+        return;
+      }
+      if (quickBtn.disabled) return;
+      quickAddCamera(idx, quickBtn);
+    });
+
+    function openDialog() {
+      if (!dlg) return;
+      // Reset state à chaque ouverture
+      var resBox = document.getElementById("onvif-result");
+      if (resBox) resBox.innerHTML = '';
+      // Fallback si <dialog> pas supporté (très vieux navigateur)
+      if (typeof dlg.showModal === "function") {
+        try { dlg.showModal(); }
+        catch (e) { dlg.setAttribute("open", "open"); }
+      } else {
+        dlg.setAttribute("open", "open");
+      }
+    }
+    function closeDialog() {
+      if (!dlg) return;
+      if (typeof dlg.close === "function") {
+        try { dlg.close(); } catch (e) {}
+      }
+      dlg.removeAttribute("open");
+    }
+
+    if (btnScan && dlg) {
+      btnScan.addEventListener("click", openDialog);
+      if (btnClose) btnClose.addEventListener("click", closeDialog);
+      // Click sur le backdrop ferme la modale
+      dlg.addEventListener("click", function(e){
+        var rect = dlg.getBoundingClientRect();
+        var inDialog = (rect.top <= e.clientY && e.clientY <= rect.top + rect.height
+                         && rect.left <= e.clientX && e.clientX <= rect.left + rect.width);
+        if (!inDialog) closeDialog();
+      });
+
+      document.getElementById("onvif-start").addEventListener("click", async function(){
+        var btn = this;
+        var resBox = document.getElementById("onvif-result");
+        resBox.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-dim)">' +
+                            '<i data-lucide="loader-2" style="width:18px;height:18px;animation:spin 1s linear infinite"></i> ' +
+                            'Scan en cours…</div>';
+        if (window.lucide) window.lucide.createIcons();
+        btn.disabled = true;
+        try {
+          var res = await fetch("/api/v1/devices/cameras/discover/", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: {"X-CSRFToken": csrf(), "Content-Type": "application/json"},
+            body: JSON.stringify({
+              timeout: parseInt(document.getElementById("onvif-timeout").value, 10) || 5,
+              user: document.getElementById("onvif-user").value,
+              "pass": document.getElementById("onvif-pass").value,
+            }),
+          });
+          var data = await res.json();
+          if (!res.ok) {
+            // 503 = deps ONVIF manquantes
+            if (res.status === 503) {
+              resBox.innerHTML = '<div style="padding:18px;border:1px solid rgba(248,113,113,.40);' +
+                                  'background:rgba(248,113,113,.10);border-radius:10px;color:#fcd2d2">' +
+                                  '<strong style="display:block;margin-bottom:6px;color:#f87171">' +
+                                  '<i data-lucide="package-x" style="width:14px;height:14px;vertical-align:-2px"></i> ' +
+                                  'Bibliothèques ONVIF non installées</strong>' +
+                                  '<div style="font-size:12px;line-height:1.6;color:var(--text)">' +
+                                  '<code style="background:rgba(0,0,0,.3);padding:2px 6px;border-radius:4px">' +
+                                  'pip install wsdiscovery onvif-zeep</code><br>' +
+                                  '<span class="text-dim">Détail serveur : ' +
+                                  (data.detail || data.error || 'inconnu') + '</span></div></div>';
+              if (window.lucide) window.lucide.createIcons();
+              return;
+            }
+            resBox.innerHTML = '<div style="padding:14px;color:#f87171">' +
+                                'Erreur ' + res.status + ': ' + (data.detail || data.error || '') + '</div>';
+            return;
+          }
+          if (!data.cameras || data.cameras.length === 0) {
+            resBox.innerHTML = '<div class="text-dim" style="padding:14px">Aucune caméra ONVIF trouvée.</div>';
+            return;
+          }
+          var html = '<div style="font-size:12px;color:var(--text-dim);margin-bottom:8px">' +
+                      data.count + ' caméra(s) trouvée(s)</div>';
+          html += '<div style="font-size:11px;color:var(--text-dim);margin-bottom:8px">' +
+                    '<i data-lucide="mouse-pointer-click" style="width:11px;height:11px;vertical-align:-1px"></i> ' +
+                    'Clic sur une caméra pour l\'ajouter au site sélectionné.</div>';
+          html += '<div style="display:flex;flex-direction:column;gap:8px" id="onvif-cards">';
+          data.cameras.forEach(function(c, idx){
+            var safeName = (c.name || ('Cam ' + (c.ip || idx)));
+            var locLabel = (c.manufacturer ? c.manufacturer + ' ' : '') +
+                            (c.model || '') + (c.ip ? ' (' + c.ip + ')' : '');
+            var hasRtsp = !!c.rtsp_url;
+            // Toutes les cartes sont cliquables :
+            //   - hasRtsp → 1-clic enregistre via API
+            //   - sans rtsp → ouvre le formulaire pré-rempli pour saisie manuelle
+            html += '<div class="onvif-cam is-clickable' + (hasRtsp ? ' has-rtsp' : ' no-rtsp') +
+                    '" data-idx="' + idx + '"' +
+                    ' style="border:1px solid var(--border);padding:12px;border-radius:10px;' +
+                    'background:var(--bg);cursor:pointer;transition:all .15s">' +
+                      '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">' +
+                        '<div style="flex:1;min-width:0">' +
+                          '<strong style="font-size:13.5px">' + safeName + '</strong>' +
+                          ' <span class="text-dim mono" style="font-size:11px">@ ' + (c.ip || '?') + '</span>' +
+                          (c.manufacturer ? '<div class="text-dim" style="font-size:11px;margin-top:2px">' +
+                            c.manufacturer + ' ' + (c.model || '') + '</div>' : '') +
+                          (hasRtsp ? '<div class="mono" style="font-size:10.5px;margin-top:6px;word-break:break-all;color:var(--text-dim)">' +
+                            c.rtsp_url + '</div>' :
+                            '<div class="text-dim" style="font-size:11px;margin-top:6px;color:#fbbf24">' +
+                            '<i data-lucide="alert-triangle" style="width:11px;height:11px;vertical-align:-1px"></i> ' +
+                            'URL RTSP non récupérée (login/mdp ONVIF incorrects ou caméra non compatible). ' +
+                            '<strong>Clique pour saisir l\'URL manuellement.</strong>' +
+                            '</div>') +
+                          '<div class="onvif-feedback" style="margin-top:8px;font-size:11.5px"></div>' +
+                        '</div>' +
+                        '<div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0;align-items:flex-end">' +
+                          (hasRtsp ?
+                            '<button type="button" class="btn btn-primary onvif-quick-add" data-idx="' + idx +
+                              '" style="font-size:11.5px;padding:7px 12px;white-space:nowrap">' +
+                              '<i data-lucide="plus" style="width:12px;height:12px"></i> Enregistrer' +
+                            '</button>'
+                          :
+                            '<button type="button" class="btn btn-primary onvif-open-form" data-idx="' + idx +
+                              '" style="font-size:11.5px;padding:7px 12px;white-space:nowrap">' +
+                              '<i data-lucide="edit-3" style="width:12px;height:12px"></i> Configurer' +
+                            '</button>'
+                          ) +
+                          '<a class="onvif-config-link" href="/cameras-mng/new/' +
+                            (hasRtsp ? '?rtsp_url=' + encodeURIComponent(c.rtsp_url) + '&' : '?') +
+                            'name=' + encodeURIComponent(safeName) +
+                            '&username=' + encodeURIComponent(document.getElementById("onvif-user").value || '') +
+                            '&location_label=' + encodeURIComponent(locLabel) +
+                            '" style="font-size:10.5px;color:var(--text-dim);text-decoration:underline">' +
+                            (hasRtsp ? 'Config avancée…' : 'Formulaire complet…') +
+                          '</a>' +
+                        '</div>' +
+                      '</div></div>';
+          });
+          html += '</div>';
+          resBox.innerHTML = html;
+          // Stocke les datas brutes pour le 1-clic add
+          window.__onvifCameras = data.cameras;
+          console.log("[ONVIF] " + data.cameras.length + " caméra(s) rendue(s).");
+
+          // ── Listeners directs sur chaque carte + bouton ──
+          var cards = resBox.querySelectorAll(".onvif-cam.is-clickable");
+          console.log("[ONVIF] Cartes clickables détectées: " + cards.length);
+          cards.forEach(function(card, i){
+            var idx = parseInt(card.dataset.idx, 10);
+            var quickBtn = card.querySelector(".onvif-quick-add");   // si has-rtsp
+            var openBtn  = card.querySelector(".onvif-open-form");   // si no-rtsp
+            var configLink = card.querySelector(".onvif-config-link");
+            console.log("[ONVIF] Wiring card #" + i + " idx=" + idx
+                        + " has-rtsp=" + !!quickBtn
+                        + " open-form=" + !!openBtn);
+
+            // Action de la carte :
+            //  - has-rtsp → POST direct via quickAddCamera
+            //  - no-rtsp  → ouvre le formulaire (suit le href de configLink)
+            function triggerAction(ev) {
+              if (ev.target.closest(".onvif-config-link")) return; // laisse le <a>
+              ev.preventDefault();
+              ev.stopPropagation();
+              if (quickBtn) {
+                console.log("[ONVIF] >>> action: enregistre via API idx=" + idx);
+                if (!quickBtn.disabled) quickAddCamera(idx, quickBtn);
+              } else if (configLink) {
+                console.log("[ONVIF] >>> action: ouvre formulaire idx=" + idx);
+                window.location.href = configLink.href;
+              }
+            }
+
+            card.addEventListener("click", triggerAction, false);
+            if (quickBtn) quickBtn.addEventListener("click", triggerAction, false);
+            if (openBtn)  openBtn.addEventListener("click", triggerAction, false);
+          });
+
+          if (window.lucide) window.lucide.createIcons();
+        } catch (e) {
+          resBox.innerHTML = '<div style="padding:14px;color:#f87171">Erreur réseau : ' + e.message + '</div>';
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    }
+
+    document.querySelectorAll("[data-test-cam]").forEach(function(btn){
+      btn.addEventListener("click", async function(){
+        var pk = btn.dataset.testCam;
+        btn.disabled = true;
+        setIcon(btn, "loader-2");
+        try {
+          var res = await fetch("/api/v1/devices/cameras/" + pk + "/test/", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: {"X-CSRFToken": csrf(), "Content-Type": "application/json"},
+            body: "{}",
+          });
+          var data = await res.json();
+          if (data.ok) {
+            setIcon(btn, "check-circle-2");
+            btn.style.color = "#34d399";
+            setTimeout(function(){ location.reload(); }, 600);
+          } else {
+            setIcon(btn, "alert-circle");
+            btn.style.color = "#f87171";
+            alert("Erreur: " + (data.error || res.status));
+            btn.disabled = false;
+          }
+        } catch (e) {
+          setIcon(btn, "alert-circle");
+          btn.style.color = "#f87171";
+          alert("Réseau: " + e.message);
+          btn.disabled = false;
+        }
+      });
+    });
+
+    // ─── Détection RTSP depuis IP ──────────────────────────────
+    var probeDlg = document.getElementById("probe-dialog");
+    var btnProbe = document.getElementById("btn-rtsp-probe");
+    var btnProbeClose = document.getElementById("probe-close");
+
+    function openProbe() {
+      if (!probeDlg) return;
+      var r = document.getElementById("probe-result");
+      if (r) r.innerHTML = "";
+      if (typeof probeDlg.showModal === "function") {
+        try { probeDlg.showModal(); } catch (e) { probeDlg.setAttribute("open", "open"); }
+      } else { probeDlg.setAttribute("open", "open"); }
+    }
+    function closeProbe() {
+      if (!probeDlg) return;
+      if (typeof probeDlg.close === "function") { try { probeDlg.close(); } catch (e) {} }
+      probeDlg.removeAttribute("open");
+    }
+    if (btnProbe && probeDlg) {
+      btnProbe.addEventListener("click", openProbe);
+      if (btnProbeClose) btnProbeClose.addEventListener("click", closeProbe);
+      probeDlg.addEventListener("click", function(e){
+        var rect = probeDlg.getBoundingClientRect();
+        var inDialog = (rect.top <= e.clientY && e.clientY <= rect.top + rect.height
+                         && rect.left <= e.clientX && e.clientX <= rect.left + rect.width);
+        if (!inDialog) closeProbe();
+      });
+
+      document.getElementById("probe-start").addEventListener("click", async function(){
+        var btn = this;
+        var resBox = document.getElementById("probe-result");
+        var raw = (document.getElementById("probe-ips").value || "").trim();
+        if (!raw) { alert("Saisis au moins une adresse IP."); return; }
+        var ips = raw.split(/[\s,;]+/).filter(function(x){ return x.length > 0; });
+
+        var user = document.getElementById("probe-user").value;
+        var pass = document.getElementById("probe-pass").value;
+        var rtspPort = parseInt(document.getElementById("probe-rtsp-port").value, 10) || 554;
+        var onvifPort = parseInt(document.getElementById("probe-onvif-port").value, 10) || 80;
+        var channel = parseInt(document.getElementById("probe-channel").value, 10) || 1;
+
+        resBox.innerHTML = '<div style="padding:18px;text-align:center;color:var(--text-dim)">' +
+                          '<i data-lucide="loader-2" style="width:18px;height:18px;animation:spin 1s linear infinite"></i> ' +
+                          'Détection en cours sur ' + ips.length + ' IP(s)… ' +
+                          '<small>(peut prendre 30-60s pour les caméras lentes)</small></div>';
+        if (window.lucide) window.lucide.createIcons();
+        btn.disabled = true;
+
+        try {
+          var endpoint = ips.length === 1
+            ? "/api/v1/devices/cameras/probe-rtsp/"
+            : "/api/v1/devices/cameras/probe-rtsp-bulk/";
+          var body = ips.length === 1
+            ? {host: ips[0], user: user, pass: pass, rtsp_port: rtspPort,
+                onvif_port: onvifPort, channel: channel}
+            : {ips: ips, user: user, pass: pass};
+
+          var res = await fetch(endpoint, {
+            method: "POST", credentials: "same-origin",
+            headers: {"X-CSRFToken": csrf(), "Content-Type": "application/json"},
+            body: JSON.stringify(body),
+          });
+          var data = await res.json();
+          if (!res.ok) {
+            resBox.innerHTML = '<div style="padding:14px;color:#f87171">Erreur : ' +
+                                (data.error || res.status) + '</div>';
+            return;
+          }
+
+          // Normalise : single → wrap dans une liste pour traitement uniforme
+          var results = data.results || [{
+            ip: ips[0], rtsp_url: data.rtsp_url, brand: data.brand,
+            error: data.error, ok: data.ok,
+          }];
+
+          var html = '<table style="width:100%;border-collapse:collapse;font-size:12.5px">';
+          html += '<thead><tr style="border-bottom:1px solid var(--border);text-align:left">' +
+                    '<th style="padding:6px 8px">IP</th>' +
+                    '<th style="padding:6px 8px">Statut</th>' +
+                    '<th style="padding:6px 8px">Marque</th>' +
+                    '<th style="padding:6px 8px">URL / Erreur</th>' +
+                    '<th style="padding:6px 8px"></th>' +
+                  '</tr></thead><tbody>';
+
+          results.forEach(function(r){
+            var color = r.ok ? "#34d399" : "#f87171";
+            var icon = r.ok ? "check-circle" : "x-circle";
+            var label = r.ok ? "OK" : "Échec";
+            var content = r.ok
+              ? '<code style="font-size:11px;word-break:break-all">' +
+                  (r.rtsp_url || "").replace(/:[^:@]+@/, ":****@") + '</code>'
+              : '<span style="color:#f87171;font-size:11.5px">' + (r.error || "—") + '</span>';
+            var action = r.ok
+              ? '<a class="btn btn-primary btn-sm" href="' +
+                  '{% url "admin-camera-create" %}?' +
+                  'rtsp_url=' + encodeURIComponent(r.rtsp_url) +
+                  '&name=' + encodeURIComponent("Caméra " + r.ip) +
+                  '&username=' + encodeURIComponent(user) +
+                  '" style="font-size:11px;padding:4px 9px">Ajouter</a>'
+              : '';
+            html += '<tr style="border-bottom:1px solid var(--border)">' +
+                      '<td style="padding:8px;font-family:monospace">' + r.ip + '</td>' +
+                      '<td style="padding:8px;color:' + color + '">' +
+                        '<i data-lucide="' + icon + '" style="width:13px;height:13px;vertical-align:-2px"></i> ' +
+                        label + '</td>' +
+                      '<td style="padding:8px">' + (r.brand || "—") + '</td>' +
+                      '<td style="padding:8px">' + content + '</td>' +
+                      '<td style="padding:8px;text-align:right">' + action + '</td>' +
+                    '</tr>';
+          });
+          html += '</tbody></table>';
+          if (results.some(function(r){ return r.ok; })) {
+            html += '<p class="text-dim" style="font-size:11.5px;margin-top:10px">' +
+                    'Clique sur <strong>Ajouter</strong> pour pré-remplir le formulaire ' +
+                    'de création avec l\'URL détectée.</p>';
+          }
+          resBox.innerHTML = html;
+          if (window.lucide) window.lucide.createIcons();
+        } catch (e) {
+          resBox.innerHTML = '<div style="padding:14px;color:#f87171">Réseau : ' + e.message + '</div>';
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    }
+  })();
+  </script>
+
+{% endblock %}

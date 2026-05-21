@@ -6,13 +6,17 @@ on parcourt les FraudRule actives et on appelle le handler correspondant
 au code. Si le handler renvoie `True`, on crée une FraudAlert.
 
 Codes implémentés :
-    BADGE_LOAN          Le badge a été utilisé par 2 holders distincts
-                        sur la même journée.
-    BADGE_TWICE_IN      Plusieurs entrées consécutives sans sortie sur le
-                        même site dans les 60 minutes (badge prêté).
-    OUT_OF_HOURS        Scan en dehors des plages horaires autorisées
-                        (rule.parameters = {"start": "06:00", "end": "20:00"}).
-    GHOST_HELMET        Casque scanné sans badge associé (chantier).
+    BADGE_LOAN              Le badge a été utilisé par 2 holders distincts
+                            sur la même journée.
+    BADGE_TWICE_IN          Plusieurs entrées consécutives sans sortie sur le
+                            même site dans les 60 minutes (badge prêté).
+    OUT_OF_HOURS            Scan en dehors des plages horaires autorisées
+                            (rule.parameters = {"start": "06:00", "end": "20:00"}).
+    GHOST_HELMET            Casque scanné sans badge associé (chantier).
+    BADGE_WITHOUT_HELMET    Badge ouvrier scanné sans casque couplé (sécurité
+                            BTP — un ouvrier sur chantier doit porter son
+                            casque BLE pour être tracké).
+    OUTSIDE_GEOFENCE        Scan hors du polygone géographique du site.
 """
 from __future__ import annotations
 
@@ -87,8 +91,28 @@ def _handler_out_of_hours(event, rule) -> dict | None:
 
 
 def _handler_ghost_helmet(event, rule) -> dict | None:
+    """Casque détecté SANS badge → quelqu'un a un casque mais pas badgé."""
     if event.helmet_uid and not event.badge_uid:
         return {"helmet_uid": event.helmet_uid, "site_id": event.site_id}
+    return None
+
+
+def _handler_badge_without_helmet(event, rule) -> dict | None:
+    """Badge ouvrier scanné SANS casque couplé → ouvrier sur chantier non tracké.
+
+    Risque sécurité BTP : un ouvrier sans casque ne peut pas être détecté
+    par les beacons BLE en cas d'immobilité (malaise, chute, etc.) → alerte
+    obligatoire à acquitter par le superviseur.
+    """
+    if (event.holder_kind == "worker"
+            and event.badge_uid
+            and not event.helmet_uid):
+        return {
+            "badge_uid": event.badge_uid,
+            "holder_id": event.holder_object_id,
+            "site_id": event.site_id,
+            "denial_reason": event.denial_reason,
+        }
     return None
 
 
@@ -117,6 +141,7 @@ HANDLERS = {
     "BADGE_TWICE_IN": _handler_badge_twice_in,
     "OUT_OF_HOURS": _handler_out_of_hours,
     "GHOST_HELMET": _handler_ghost_helmet,
+    "BADGE_WITHOUT_HELMET": _handler_badge_without_helmet,
     "OUTSIDE_GEOFENCE": _handler_outside_geofence,
 }
 

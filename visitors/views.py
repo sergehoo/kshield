@@ -6,6 +6,8 @@ from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
+from accounts.rbac import HasKshieldPermission
+
 from .models import (
     VisitLog, VisitPurpose, VisitRequest, Visitor, VisitorIDDocument,
     VisitorInvitation, VisitorPass, Watchlist,
@@ -28,6 +30,8 @@ from .serializers import (
 class VisitPurposeViewSet(viewsets.ModelViewSet):
     queryset = VisitPurpose.objects.all(); serializer_class = VisitPurposeSerializer
     filterset_fields = ("is_active",)
+    permission_classes = [HasKshieldPermission]
+    kshield_perms = {"read": "visitors.view", "write": "visitors.manage"}
 
 
 @extend_schema_view(
@@ -45,11 +49,36 @@ class VisitorViewSet(viewsets.ModelViewSet):
     queryset = Visitor.objects.all(); serializer_class = VisitorSerializer
     search_fields = ("first_name", "last_name", "id_number", "phone", "email")
     filterset_fields = ("tenant", "id_type")
+    permission_classes = [HasKshieldPermission]
+    kshield_perms = {"read": "visitors.view", "write": "visitors.manage"}
+
+    def get_queryset(self):
+        # Visiteur visible si au moins une visite sur un site de la filiale du user
+        from accounts.scoping import get_user_company_ids
+        qs = super().get_queryset()
+        ids = get_user_company_ids(self.request.user)
+        if ids is None:
+            return qs
+        if not ids:
+            return qs.none()
+        return qs.filter(visit_requests__site__company_id__in=ids).distinct()
 
 
 class VisitorIDDocumentViewSet(viewsets.ModelViewSet):
     queryset = VisitorIDDocument.objects.all(); serializer_class = VisitorIDDocumentSerializer
     filterset_fields = ("visitor",)
+    permission_classes = [HasKshieldPermission]
+    kshield_perms = {"read": "visitors.view", "write": "visitors.manage"}
+
+    def get_queryset(self):
+        from accounts.scoping import get_user_company_ids
+        qs = super().get_queryset()
+        ids = get_user_company_ids(self.request.user)
+        if ids is None:
+            return qs
+        if not ids:
+            return qs.none()
+        return qs.filter(visitor__visit_requests__site__company_id__in=ids).distinct()
 
 
 class VisitRequestViewSet(viewsets.ModelViewSet):
@@ -58,6 +87,17 @@ class VisitRequestViewSet(viewsets.ModelViewSet):
     ).all()
     serializer_class = VisitRequestSerializer
     filterset_fields = ("status", "mode", "site", "host_employee", "tenant")
+    permission_classes = [HasKshieldPermission]
+    kshield_perms = {
+        "read": "visitors.view",
+        "write": "visitors.manage",
+        "walk_in": "visitors.checkin",
+        "check_out": "visitors.checkin",
+    }
+
+    def get_queryset(self):
+        from accounts.scoping import scope_queryset_by_company
+        return scope_queryset_by_company(super().get_queryset(), self.request.user, "site__company")
 
     @action(detail=False, methods=["post"], url_path="walk-in")
     def walk_in(self, request):
@@ -111,19 +151,35 @@ class VisitRequestViewSet(viewsets.ModelViewSet):
 class VisitorInvitationViewSet(viewsets.ModelViewSet):
     queryset = VisitorInvitation.objects.all(); serializer_class = VisitorInvitationSerializer
     filterset_fields = ("visit_request",)
+    permission_classes = [HasKshieldPermission]
+    kshield_perms = {"read": "visitors.view", "write": "visitors.manage"}
 
 
 class VisitorPassViewSet(viewsets.ModelViewSet):
     queryset = VisitorPass.objects.all(); serializer_class = VisitorPassSerializer
     filterset_fields = ("visit_request", "type")
+    permission_classes = [HasKshieldPermission]
+    kshield_perms = {"read": "visitors.view", "write": "visitors.manage"}
+
+    def get_queryset(self):
+        from accounts.scoping import scope_queryset_by_company
+        return scope_queryset_by_company(super().get_queryset(), self.request.user, "visit_request__site__company")
 
 
 class VisitLogViewSet(viewsets.ModelViewSet):
     queryset = VisitLog.objects.select_related("visit_request").all()
     serializer_class = VisitLogSerializer
+    permission_classes = [HasKshieldPermission]
+    kshield_perms = {"read": "visitors.view", "write": "visitors.checkin"}
+
+    def get_queryset(self):
+        from accounts.scoping import scope_queryset_by_company
+        return scope_queryset_by_company(super().get_queryset(), self.request.user, "visit_request__site__company")
 
 
 class WatchlistViewSet(viewsets.ModelViewSet):
     queryset = Watchlist.objects.all(); serializer_class = WatchlistSerializer
     filterset_fields = ("tenant", "site", "is_active")
     search_fields = ("full_name", "id_number")
+    permission_classes = [HasKshieldPermission]
+    kshield_perms = {"read": "visitors.view", "write": "visitors.manage"}

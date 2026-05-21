@@ -1,0 +1,53 @@
+# KAYDAN SHIELD — Configuration Prometheus
+#
+# À placer dans /etc/prometheus/prometheus.yml (ou monter via docker-compose).
+# Scrape /metrics toutes les 15s sur l'app Django + node_exporter + postgres_exporter.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 30s
+  external_labels:
+    cluster: kshield-prod
+    environment: production
+
+scrape_configs:
+  # ─── Application Django (django-prometheus) ────────────────────────
+  - job_name: 'kshield-app'
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['app:8000']
+        labels:
+          service: kshield-web
+
+  # ─── PostgreSQL ────────────────────────────────────────────────────
+  - job_name: 'kshield-postgres'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+        labels:
+          service: kshield-db
+
+  # ─── Redis ─────────────────────────────────────────────────────────
+  - job_name: 'kshield-redis'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+        labels:
+          service: kshield-redis
+
+  # ─── Node exporter (host metrics) ──────────────────────────────────
+  - job_name: 'kshield-node'
+    static_configs:
+      - targets: ['node-exporter:9100']
+        labels:
+          service: kshield-host
+
+  # ─── Caméras workers ───────────────────────────────────────────────
+  - job_name: 'kshield-camera-workers'
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['camera-worker:8000']
+        labels:
+          service: kshield-camera
+
+# ─── Alertes ─────────────────────────────────────────────────────────
+rule_files:
+  - /etc/prometheus/alerts/kshield_alerts.yml

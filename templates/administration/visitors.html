@@ -215,7 +215,7 @@
             <td class="mono" style="font-size:11px">{{ w.expires_at|date:"d/m/Y"|default:"—" }}</td>
             <td><div class="row gap-2">
               <a class="icon-btn" href="{% url 'admin-watchlist-update' w.pk %}"><i data-lucide="pencil"></i></a>
-              <a class="icon-btn" href="{% url 'admin-watchlist-delete' w.pk %}" style="color:var(--danger)"><i data-lucide="trash-2"></i></a>
+              <a class="icon-btn" href="{% url 'admin-watchlist-delete' w.pk %}" style="color:var(--danger)" onclick="return confirm('Retirer ce visiteur de la liste rouge ? Cette action est irréversible.');"><i data-lucide="trash-2"></i></a>
             </div></td>
           </tr>
           {% endfor %}
@@ -239,7 +239,7 @@
             <td>{% if p.is_active %}<span class="pill pill-success">Actif</span>{% else %}<span class="pill pill-muted">Inactif</span>{% endif %}</td>
             <td><div class="row gap-2">
               <a class="icon-btn" href="{% url 'admin-visitpurpose-update' p.pk %}"><i data-lucide="pencil"></i></a>
-              <a class="icon-btn" href="{% url 'admin-visitpurpose-delete' p.pk %}" style="color:var(--danger)"><i data-lucide="trash-2"></i></a>
+              <a class="icon-btn" href="{% url 'admin-visitpurpose-delete' p.pk %}" style="color:var(--danger)" onclick="return confirm('Supprimer ce motif de visite ? Cette action est irréversible.');"><i data-lucide="trash-2"></i></a>
             </div></td>
           </tr>
           {% endfor %}

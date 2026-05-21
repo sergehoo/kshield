@@ -87,10 +87,18 @@ class AccessEventViewSet(viewsets.ReadOnlyModelViewSet):
     filterset_fields = ("tenant", "site", "device", "decision", "method", "holder_kind", "direction")
     search_fields = ("badge_uid", "helmet_uid", "denial_reason")
 
+    def get_queryset(self):
+        from accounts.scoping import scope_queryset_by_company
+        return scope_queryset_by_company(super().get_queryset(), self.request.user, "site__company")
+
 
 class AccessRuleViewSet(viewsets.ModelViewSet):
     queryset = AccessRule.objects.all(); serializer_class = AccessRuleSerializer
     filterset_fields = ("tenant", "site", "type", "severity", "is_active")
+
+    def get_queryset(self):
+        from accounts.scoping import scope_queryset_by_company
+        return scope_queryset_by_company(super().get_queryset(), self.request.user, "site__company")
 
 
 class AccessDecisionViewSet(viewsets.ReadOnlyModelViewSet):

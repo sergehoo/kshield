@@ -282,7 +282,7 @@
             <td><div class="row gap-2">
               <a class="icon-btn" href="{% url 'admin-report-detail' r.pk %}"><i data-lucide="eye"></i></a>
               <a class="icon-btn" href="{% url 'admin-report-update' r.pk %}"><i data-lucide="pencil"></i></a>
-              <a class="icon-btn" href="{% url 'admin-report-delete' r.pk %}" style="color:var(--danger)"><i data-lucide="trash-2"></i></a>
+              <a class="icon-btn" href="{% url 'admin-report-delete' r.pk %}" style="color:var(--danger)" onclick="return confirm('Supprimer ce rapport ? Cette action est irréversible.');"><i data-lucide="trash-2"></i></a>
             </div></td>
           </tr>
           {% endfor %}
@@ -321,7 +321,7 @@
             <td>{% if s.is_active %}<span class="pill pill-success">Actif</span>{% else %}<span class="pill pill-muted">Inactif</span>{% endif %}</td>
             <td><div class="row gap-2">
               <a class="icon-btn" href="{% url 'admin-reportschedule-update' s.pk %}"><i data-lucide="pencil"></i></a>
-              <a class="icon-btn" href="{% url 'admin-reportschedule-delete' s.pk %}" style="color:var(--danger)"><i data-lucide="trash-2"></i></a>
+              <a class="icon-btn" href="{% url 'admin-reportschedule-delete' s.pk %}" style="color:var(--danger)" onclick="return confirm('Supprimer cette planification ? Cette action est irréversible.');"><i data-lucide="trash-2"></i></a>
             </div></td>
           </tr>
           {% endfor %}

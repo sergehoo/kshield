@@ -95,7 +95,7 @@
             <td>{% if m.is_active %}<span class="pill pill-success">Actif</span>{% else %}<span class="pill pill-muted">Inactif</span>{% endif %}</td>
             <td><div class="row gap-2">
               <a class="icon-btn" href="{% url 'admin-devicemodel-update' m.pk %}"><i data-lucide="pencil"></i></a>
-              <a class="icon-btn" href="{% url 'admin-devicemodel-delete' m.pk %}" style="color:var(--danger)"><i data-lucide="trash-2"></i></a>
+              <a class="icon-btn" href="{% url 'admin-devicemodel-delete' m.pk %}" style="color:var(--danger)" onclick="return confirm('Supprimer ce modèle de device ? Cette action est irréversible.');"><i data-lucide="trash-2"></i></a>
             </div></td>
           </tr>
           {% endfor %}
@@ -134,7 +134,7 @@
             <td>{{ m.cost|default:"—" }}</td>
             <td><div class="row gap-2">
               <a class="icon-btn" href="{% url 'admin-devicemaint-update' m.pk %}"><i data-lucide="pencil"></i></a>
-              <a class="icon-btn" href="{% url 'admin-devicemaint-delete' m.pk %}" style="color:var(--danger)"><i data-lucide="trash-2"></i></a>
+              <a class="icon-btn" href="{% url 'admin-devicemaint-delete' m.pk %}" style="color:var(--danger)" onclick="return confirm('Supprimer ce ticket maintenance ? Cette action est irréversible.');"><i data-lucide="trash-2"></i></a>
             </div></td>
           </tr>
           {% endfor %}
@@ -155,7 +155,7 @@
             <td>{% if f.file %}<a href="{{ f.file.url }}" class="icon-btn"><i data-lucide="download"></i></a>{% else %}—{% endif %}</td>
             <td><div class="row gap-2">
               <a class="icon-btn" href="{% url 'admin-firmware-update' f.pk %}"><i data-lucide="pencil"></i></a>
-              <a class="icon-btn" href="{% url 'admin-firmware-delete' f.pk %}" style="color:var(--danger)"><i data-lucide="trash-2"></i></a>
+              <a class="icon-btn" href="{% url 'admin-firmware-delete' f.pk %}" style="color:var(--danger)" onclick="return confirm('Supprimer ce firmware ? Cette action est irréversible.');"><i data-lucide="trash-2"></i></a>
             </div></td>
           </tr>
           {% endfor %}

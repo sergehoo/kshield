@@ -118,7 +118,7 @@ class HMACAPIKeyAuthentication(authentication.BaseAuthentication):
         try:
             APIKey.objects.filter(pk=api_key.pk).update(last_used_at=timezone.now())
         except Exception:
-            pass
+            logger.warning("Maj last_used_at APIKey %s impossible", api_key.pk, exc_info=True)
 
         # request.user reste anonyme ; request.auth contient l'APIKey
         from django.contrib.auth.models import AnonymousUser

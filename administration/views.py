@@ -1,6 +1,8 @@
 """KAYDAN SHIELD — Vues d'administration (back-office)."""
 from __future__ import annotations
 
+import logging
+
 from django.contrib import messages as dj_messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db.models import Q
@@ -12,6 +14,8 @@ from django.views import View
 from django.views.generic import (
     CreateView, DetailView, FormView, TemplateView, UpdateView,
 )
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -443,12 +447,15 @@ class EmployeesView(BaseAdminView):
         chip = self.request.GET.get("f", "all")
         company_filter = self.request.GET.get("company", "")
         try:
+            from accounts.scoping import scope_queryset_by_company
             from core.models import Company
             from devices.models import Badge
             from employees.models import Employee
 
             qs = Employee.objects.select_related("company", "department", "position")
             qs = apply_search(qs, q, ["first_name", "last_name", "matricule", "email"])
+            # RBAC : restreint aux filiales du user (sauf super-admin)
+            qs = scope_queryset_by_company(qs, self.request.user, "company")
 
             if company_filter and company_filter.isdigit():
                 qs = qs.filter(company_id=int(company_filter))
@@ -569,12 +576,23 @@ class WorkersView(BaseAdminView):
                       "count_subs", "expiring_soon"):
                 ctx[k] = 0
         try:
+            from accounts.scoping import get_user_company_ids
             from devices.models import Badge
             from ouvriers.models import Subcontractor, Worker
 
             qs = Worker.objects.select_related("trade", "subcontractor")
             qs = apply_search(qs, q, ["first_name", "last_name", "matricule",
                                        "phone", "id_document_number"])
+            # RBAC : restreint via crews/assignments aux filiales du user
+            company_ids = get_user_company_ids(self.request.user)
+            if company_ids is not None:
+                if not company_ids:
+                    qs = qs.none()
+                else:
+                    qs = qs.filter(
+                        Q(assignments__site__company_id__in=company_ids)
+                        | Q(crews__site__company_id__in=company_ids)
+                    ).distinct()
 
             if subcontractor_filter == "direct":
                 qs = qs.filter(subcontractor__isnull=True)
@@ -705,15 +723,32 @@ class VisitorsView(BaseAdminView):
                 ctx["page_obj"] = page_obj
                 ctx["purposes"] = page_qs
 
+            from accounts.scoping import get_user_company_ids
+
             qs = Visitor.objects.all()
             qs = apply_search(qs, q, ["first_name", "last_name", "email",
                                        "phone", "id_number", "company"])
 
+            # RBAC : visiteur visible si au moins une visite sur un site
+            # de la filiale du user. Pour super-admin → tout.
+            company_ids = get_user_company_ids(self.request.user)
+            if company_ids is not None:
+                if not company_ids:
+                    qs = qs.none()
+                else:
+                    qs = qs.filter(
+                        visit_requests__site__company_id__in=company_ids
+                    ).distinct()
+
             today = timezone.now().date()
-            on_site_ids = list(VisitRequest.objects.filter(
+            # Limite aussi VisitRequest comptages aux sites du user
+            vr_base = VisitRequest.objects.all()
+            if company_ids is not None and company_ids:
+                vr_base = vr_base.filter(site__company_id__in=company_ids)
+            on_site_ids = list(vr_base.filter(
                 status="checked_in",
             ).values_list("visitor_id", flat=True))
-            recent_ids = list(VisitRequest.objects.filter(
+            recent_ids = list(vr_base.filter(
                 created_at__gte=timezone.now() - timedelta(days=7),
             ).values_list("visitor_id", flat=True))
 
@@ -781,8 +816,11 @@ class SitesView(BaseAdminView):
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
         try:
+            from accounts.scoping import scope_queryset_by_company
             from sites.models import Site
             qs = Site.objects.all().order_by("name")
+            # RBAC : restreint à la/les filiale(s) du user
+            qs = scope_queryset_by_company(qs, self.request.user, "company")
             page_obj, page_qs = paginate(qs, self.request, per_page=25)
             ctx["page_obj"] = page_obj
             ctx["sites"] = page_qs
@@ -871,6 +909,150 @@ class DevicesView(BaseAdminView):
                       "count_maintenance", "count_firmwares", "count_ota",
                       "devices_offline"):
                 ctx[k] = 0
+        return ctx
+
+
+# ───────────────────────────────────────────────────────────────────────────
+# Caméras IP — liste/config + vue live multi-flux
+# ───────────────────────────────────────────────────────────────────────────
+class CamerasView(BaseAdminView):
+    """Liste + statut + actions de configuration des caméras IP."""
+    template_name = "administration/cameras.html"
+    active_nav = "cameras"
+    page_title = "Caméras IP"
+    page_subtitle = "Streaming temps réel + pipeline IA (visage, mouvement, recording)."
+    breadcrumb = "Caméras IP"
+    permission_required = "devices.view"
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        try:
+            from devices.models import Camera
+            qs = Camera.objects.select_related("site", "zone").order_by(
+                "-is_active", "name",
+            )
+            site_filter = self.request.GET.get("site") or ""
+            status_filter = self.request.GET.get("status") or ""
+            search = self.request.GET.get("q") or ""
+            if site_filter:
+                qs = qs.filter(site_id=site_filter)
+            if status_filter:
+                qs = qs.filter(status=status_filter)
+            if search:
+                qs = qs.filter(
+                    Q(name__icontains=search)
+                    | Q(location_label__icontains=search)
+                    | Q(rtsp_url__icontains=search),
+                )
+            page_obj, page_qs = paginate(qs, self.request, per_page=24)
+            ctx["page_obj"] = page_obj
+            ctx["cameras"] = page_qs
+            ctx["count_total"] = Camera.objects.count()
+            ctx["count_online"] = Camera.objects.filter(status="online", is_active=True).count()
+            ctx["count_offline"] = Camera.objects.filter(status="offline", is_active=True).count()
+            ctx["count_error"] = Camera.objects.filter(status="error").count()
+            ctx["count_face_ai"] = Camera.objects.filter(enable_face_recognition=True).count()
+            from sites.models import Site
+            ctx["sites_for_filter"] = Site.objects.order_by("name")
+            ctx["site_filter"] = site_filter
+            ctx["status_filter"] = status_filter
+            ctx["search_q"] = search
+        except Exception:
+            logger.warning("CamerasView ctx", exc_info=True)
+            ctx["cameras"] = []
+            ctx["page_obj"] = None
+            for k in ("count_total", "count_online", "count_offline",
+                       "count_error", "count_face_ai"):
+                ctx[k] = 0
+            ctx["sites_for_filter"] = []
+        return ctx
+
+
+class FacePresenceView(BaseAdminView):
+    """Liste des FaceSightingEvent + FaceCheckinConfirmation du jour."""
+    template_name = "administration/face_presence.html"
+    active_nav = "cameras"
+    page_title = "Présence par reconnaissance faciale"
+    page_subtitle = "Confirmation visage ↔ badge RFID · vue temps réel"
+    breadcrumb = "Caméras · Présence face"
+    permission_required = "attendance.view"
+
+    def get_context_data(self, **kwargs):
+        from datetime import timedelta
+        ctx = super().get_context_data(**kwargs)
+        try:
+            from accounts.scoping import scope_queryset_by_company
+            from attendance.models import (FaceCheckinConfirmation,
+                                              FaceSightingEvent)
+
+            now = timezone.now()
+            today = timezone.localdate()
+            day_param = self.request.GET.get("date") or ""
+            try:
+                if day_param:
+                    today = datetime.strptime(day_param, "%Y-%m-%d").date()
+            except ValueError:
+                pass
+
+            # Sightings du jour, scope filiale via camera.site.company
+            sightings = FaceSightingEvent.objects.select_related(
+                "camera", "site", "employee", "employee__company",
+            ).filter(timestamp__date=today).order_by("-timestamp")
+            sightings = scope_queryset_by_company(
+                sightings, self.request.user, "camera__site__company")
+            ctx["sightings"] = sightings[:200]
+
+            # Confirmations du jour
+            confs = FaceCheckinConfirmation.objects.select_related(
+                "employee", "employee__company", "punch", "sighting",
+            ).filter(date=today).order_by("-created_at")
+            confs = scope_queryset_by_company(confs, self.request.user, "employee__company")
+            ctx["confirmations"] = list(confs)
+
+            # KPIs
+            ctx["total_sightings"] = sightings.count()
+            ctx["total_matched"] = sightings.filter(matched=True).count()
+            ctx["total_unmatched"] = sightings.filter(matched=False).count()
+            ctx["count_confirmed"] = sum(1 for c in confs if c.status == "confirmed")
+            ctx["count_face_only"] = sum(1 for c in confs if c.status == "face_only")
+            ctx["count_badge_only"] = sum(1 for c in confs if c.status == "badge_only")
+            ctx["date"] = today.isoformat()
+            ctx["date_label"] = today.strftime("%d/%m/%Y")
+        except Exception:
+            logger.warning("FacePresenceView ctx", exc_info=True)
+            ctx["sightings"] = []
+            ctx["confirmations"] = []
+            for k in ("total_sightings", "total_matched", "total_unmatched",
+                       "count_confirmed", "count_face_only", "count_badge_only"):
+                ctx[k] = 0
+        return ctx
+
+
+class CamerasLiveView(BaseAdminView):
+    """Vue plein écran multi-flux MJPEG (grille 1×1 → 4×4)."""
+    template_name = "administration/cameras_live.html"
+    active_nav = "cameras"
+    page_title = "Live multi-caméras"
+    breadcrumb = "Caméras · Live"
+    permission_required = "devices.view"
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        try:
+            from devices.models import Camera
+            qs = Camera.objects.filter(is_active=True).select_related("site")
+            # Permet de pré-sélectionner certaines caméras via ?ids=1,2,3
+            sel = self.request.GET.get("ids", "")
+            if sel:
+                ids = [int(x) for x in sel.split(",") if x.strip().isdigit()]
+                if ids:
+                    qs = qs.filter(pk__in=ids)
+            ctx["cameras"] = list(qs.order_by("site__name", "name"))
+            ctx["initial_grid"] = self.request.GET.get("grid", "2")
+        except Exception:
+            logger.warning("CamerasLiveView ctx", exc_info=True)
+            ctx["cameras"] = []
+            ctx["initial_grid"] = "2"
         return ctx
 
 
@@ -1179,8 +1361,11 @@ class AntifraudView(BaseAdminView):
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
         try:
+            from accounts.scoping import scope_queryset_by_company
             from antifraud.models import FraudAlert, FraudRule
             qs = FraudAlert.objects.select_related("rule", "site").order_by("-detected_at")
+            # RBAC : restreint aux sites des filiales du user
+            qs = scope_queryset_by_company(qs, self.request.user, "site__company")
             page_obj, page_qs = paginate(qs, self.request, per_page=25)
             ctx["page_obj"] = page_obj
             ctx["alerts"] = page_qs
@@ -1517,6 +1702,28 @@ class FaceRecognitionTestView(BaseAdminView):
     page_title = "Test reconnaissance faciale"
     breadcrumb = "Employés · Test face"
 
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        try:
+            from employees.models import Employee, FaceProfile
+            ctx["employees_for_enroll"] = list(
+                Employee.objects.filter(status="active")
+                .order_by("last_name", "first_name")
+                .values("id", "matricule", "first_name", "last_name")[:500]
+            )
+            from django.db.models import Sum
+            ctx["face_profiles_count"] = FaceProfile.objects.filter(is_active=True).count()
+            ctx["face_matches_total"] = (
+                FaceProfile.objects.filter(is_active=True)
+                .aggregate(t=Sum("match_count"))["t"] or 0
+            )
+        except Exception:
+            logger.warning("FaceRecognitionTestView : récupération employés/profils échouée", exc_info=True)
+            ctx["employees_for_enroll"] = []
+            ctx["face_profiles_count"] = 0
+            ctx["face_matches_total"] = 0
+        return ctx
+
 
 class SettingsView(BaseAdminView):
     template_name = "administration/settings.html"
@@ -1813,7 +2020,7 @@ class MapDataAPIView(View):
                         "lat": lat, "lng": lng,
                     })
             except Exception:
-                pass
+                logger.debug("Cartographie: anomalies fraude — point ignoré", exc_info=True)
 
             from collections import Counter
             kind_counts = Counter(p["kind"] for p in people_payload)
@@ -2277,7 +2484,7 @@ class APIKeyCreateView(BaseAdminView):
             try:
                 instance.tenant = get_kaydan_tenant()
             except Exception:
-                pass
+                logger.warning("Auto-tenant KAYDAN sur APIKey échoué", exc_info=True)
         # Génération secret + public_id ; on stocke uniquement le hash
         public_id = secrets.token_urlsafe(12)[:32]
         raw_secret = APIKey.generate_secret()
@@ -2364,7 +2571,8 @@ class NotificationRecentView(View):
                         if a:
                             severity = a.severity or "medium"
                     except Exception:
-                        pass
+                        logger.debug("Severity lookup FraudAlert %s échoué",
+                                      payload.get("alert_id"), exc_info=True)
 
                 delta = now - n.created_at
                 if delta.total_seconds() < 60:
@@ -2439,7 +2647,7 @@ class VisitRequestActionView(View):
                 from notifications.services import notify_visit_status_change
                 notify_visit_status_change(vr, "approved")
             except Exception:
-                pass
+                logger.warning("Notification visite approuvée non envoyée (vr=%s)", vr.pk, exc_info=True)
             dj_messages.success(request, f"Demande de {vr.visitor} approuvée.")
 
         elif verb == "reject" and vr.status in ("pending", "draft"):
@@ -2468,7 +2676,7 @@ class VisitRequestActionView(View):
                 from notifications.services import notify_visit_status_change
                 notify_visit_status_change(vr, "checked_in")
             except Exception:
-                pass
+                logger.warning("Notification check-in visiteur non envoyée (vr=%s)", vr.pk, exc_info=True)
             dj_messages.success(request, f"{vr.visitor} a fait son check-in et reçu un pass.")
 
         elif verb == "check_out" and vr.status == "checked_in":
@@ -2569,7 +2777,8 @@ class KshieldLoginView(View):
                 reason="" if success else "Identifiants invalides ou compte désactivé",
             )
         except Exception:
-            pass
+            # On ne bloque PAS le login si l'audit échoue, mais on trace pour le SIEM.
+            logger.exception("LoginAttempt non persisté (email=%s, ok=%s)", email, success)
 
         if success:
             login(request, user)
@@ -2579,6 +2788,7 @@ class KshieldLoginView(View):
             try:
                 return redirect(next_url)
             except Exception:
+                logger.debug("Redirect next_url=%r invalide, fallback dashboard", next_url, exc_info=True)
                 return redirect("admin-dashboard")
 
         return render(request, self.template_name, {
@@ -2774,7 +2984,7 @@ class DataExportGenerateView(View):
                 from notifications.services import notify_export_ready
                 notify_export_ready(req)
             except Exception:
-                pass
+                logger.warning("Notification export RGPD non envoyée (req=%s)", req.pk, exc_info=True)
             dj_messages.success(request, f"Export RGPD généré ({req.file.name}).")
         else:
             dj_messages.error(request, "Échec de la génération — vérifiez les logs.")
@@ -2875,3 +3085,142 @@ class AccessRulesView(BaseAdminView):
             ctx["total"] = 0
             ctx["active_count"] = 0
         return ctx
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Point 5 — Digest exécutif IA
+# ─────────────────────────────────────────────────────────────────────
+class ExecutiveDigestListView(BaseAdminView):
+    """Liste des digests exécutifs générés (hebdo/mensuel/trim)."""
+    template_name = "administration/digests.html"
+    active_nav = "reports"
+    page_title = "Digest exécutif IA"
+    page_subtitle = ("Synthèses générées automatiquement chaque lundi par "
+                      "l'assistant IA : KPI, alertes, anomalies et "
+                      "recommandations.")
+    breadcrumb = "Reporting · Digest IA"
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        try:
+            from reports.models import ExecutiveDigest
+            qs = (ExecutiveDigest.objects.select_related("tenant")
+                  .order_by("-period_start", "-created_at"))
+            period = self.request.GET.get("period", "")
+            if period in ("weekly", "monthly", "quarterly"):
+                qs = qs.filter(period=period)
+            status = self.request.GET.get("status", "")
+            if status in ("queued", "generating", "ready", "failed"):
+                qs = qs.filter(status=status)
+            page_obj, page_qs = paginate(qs, self.request, per_page=20)
+            ctx["page_obj"] = page_obj
+            ctx["digests"] = page_qs
+
+            ctx["counts"] = {
+                "total": ExecutiveDigest.objects.count(),
+                "ready": ExecutiveDigest.objects.filter(status="ready").count(),
+                "failed": ExecutiveDigest.objects.filter(status="failed").count(),
+                "weekly": ExecutiveDigest.objects.filter(period="weekly").count(),
+                "monthly": ExecutiveDigest.objects.filter(period="monthly").count(),
+            }
+            ctx["filter_period"] = period
+            ctx["filter_status"] = status
+            ctx["last_ready"] = (ExecutiveDigest.objects
+                                  .filter(status="ready")
+                                  .order_by("-period_start").first())
+        except Exception:
+            logger.exception("ExecutiveDigestListView échec")
+            ctx["digests"] = []
+            ctx["page_obj"] = None
+            ctx["counts"] = {"total": 0, "ready": 0, "failed": 0,
+                              "weekly": 0, "monthly": 0}
+            ctx["last_ready"] = None
+        return ctx
+
+
+class ExecutiveDigestDetailView(BaseAdminView):
+    """Détail d'un digest exécutif : résumé, KPI, top alertes, recommandations."""
+    template_name = "administration/digest_detail.html"
+    active_nav = "reports"
+    page_title = "Digest exécutif"
+    breadcrumb = "Reporting · Digest"
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        try:
+            from reports.models import ExecutiveDigest
+            digest = get_object_or_404(ExecutiveDigest, pk=kwargs["pk"])
+            ctx["digest"] = digest
+            ctx["page_title"] = digest.title or "Digest exécutif"
+            ctx["breadcrumb"] = f"Reporting · {digest.get_period_display()} " \
+                                  f"{digest.period_start}"
+            # Pour l'affichage de l'email rendu (preview)
+            try:
+                from reports.services_digest import _render_digest_html
+                _, ctx["email_html"] = _render_digest_html(digest)
+            except Exception:
+                ctx["email_html"] = ""
+        except Exception:
+            logger.exception("ExecutiveDigestDetailView échec")
+            raise Http404("Digest introuvable")
+        return ctx
+
+
+class ExecutiveDigestActionView(LoginRequiredMixin, View):
+    """Actions sur un digest : regenerate, send, generate_now."""
+
+    def post(self, request, *args, **kwargs):
+        from reports.models import ExecutiveDigest
+        action_name = kwargs.get("verb", "")
+        pk = kwargs.get("pk")
+
+        if action_name == "generate":
+            # Trigger global : on-demand pour le tenant courant
+            from core.services import get_kaydan_tenant
+            try:
+                tenant = get_kaydan_tenant()
+            except Exception:
+                tenant = None
+            if not tenant:
+                dj_messages.error(request, "Tenant KAYDAN introuvable.")
+                return redirect("admin-digests")
+            period = request.POST.get("period", "weekly")
+            try:
+                from reports.tasks import generate_digest_for_tenant
+                # Synchrone si CELERY_TASK_ALWAYS_EAGER, async sinon
+                generate_digest_for_tenant.delay(
+                    int(tenant.id), period=period, send_email=False)
+                dj_messages.success(request,
+                    f"Génération du digest {period} déclenchée.")
+            except Exception as exc:
+                dj_messages.error(request, f"Échec : {exc}")
+            return redirect("admin-digests")
+
+        if not pk:
+            return redirect("admin-digests")
+
+        digest = get_object_or_404(ExecutiveDigest, pk=pk)
+
+        if action_name == "regenerate":
+            try:
+                from reports.tasks import regenerate_digest
+                regenerate_digest.delay(int(digest.id), send_email=False)
+                dj_messages.success(request,
+                    "Régénération du digest mise en file.")
+            except Exception as exc:
+                dj_messages.error(request, f"Échec : {exc}")
+
+        elif action_name == "send":
+            try:
+                from reports.services_digest import send_digest_email
+                n = send_digest_email(digest)
+                if n:
+                    dj_messages.success(request,
+                        f"Digest envoyé à {n} destinataire(s).")
+                else:
+                    dj_messages.warning(request,
+                        "Aucun destinataire ou envoi échoué.")
+            except Exception as exc:
+                dj_messages.error(request, f"Échec envoi : {exc}")
+
+        return redirect("admin-digest-detail", pk=digest.id)

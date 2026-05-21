@@ -1,0 +1,21 @@
+/* KAYDAN SHIELD — surcharge minimale Account theme (couleurs primaires) */
+
+:root {
+  --pf-v5-global--primary-color--100: #F26B1F !important;
+  --pf-v5-global--primary-color--200: #d95c14 !important;
+  --pf-v5-global--link--Color: #F26B1F !important;
+  --pf-v5-global--link--Color--hover: #d946ef !important;
+}
+
+/* Header KAYDAN sur la page account */
+.pf-v5-c-page__header,
+.pf-v5-c-masthead {
+  background: linear-gradient(135deg, #07111F 0%, #112742 60%) !important;
+  color: white !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.pf-v5-c-button.pf-m-primary {
+  background: linear-gradient(135deg, #F26B1F 0%, #d946ef 100%) !important;
+  border: none !important;
+}

@@ -10,7 +10,8 @@
   <a class="btn btn-ghost" href="{% url list_url_name %}">
     <i data-lucide="arrow-left" style="width:16px;height:16px"></i> Retour
   </a>
-  <a class="btn btn-ghost" href="{{ delete_url }}" style="color:var(--danger)">
+  <a class="btn btn-ghost" href="{{ delete_url }}" style="color:var(--danger)"
+     onclick="return confirm('Supprimer cet enregistrement ? Cette action est irréversible.');">
     <i data-lucide="trash-2" style="width:16px;height:16px"></i> Supprimer
   </a>
   <a class="btn btn-primary" href="{{ update_url }}">

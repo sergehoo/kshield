@@ -760,7 +760,7 @@ class BadgeThumbnailService:
                 draw.text(((cls.WIDTH - tw) // 2, info_y),
                           txt, fill=cls.WHITE, font=font_info)
             except Exception:
-                pass
+                log.debug("PDF badge: rendu date début échoué", exc_info=True)
         if phone:
             txt2 = f"Tél : {phone}"
             tw2 = cls._textwidth(draw, txt2, font_info)
@@ -911,7 +911,7 @@ class BadgeThumbnailService:
                               src if src.mode == "RGBA" else None)
                     return
                 except Exception:
-                    pass
+                    log.debug("PDF badge: logo filiale non rendu (fallback texte)", exc_info=True)
         if company:
             font_name = cls._font(22, bold=True)
             text = (company.name or "").upper()

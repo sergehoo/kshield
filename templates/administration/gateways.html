@@ -37,7 +37,7 @@
             <td><div class="row gap-2">
               <a class="icon-btn" href="{% url 'admin-gateway-detail' g.pk %}"><i data-lucide="eye"></i></a>
               <a class="icon-btn" href="{% url 'admin-gateway-update' g.pk %}"><i data-lucide="pencil"></i></a>
-              <a class="icon-btn" href="{% url 'admin-gateway-delete' g.pk %}" style="color:var(--danger)"><i data-lucide="trash-2"></i></a>
+              <a class="icon-btn" href="{% url 'admin-gateway-delete' g.pk %}" style="color:var(--danger)" onclick="return confirm('Supprimer cette gateway ? Cette action est irréversible.');"><i data-lucide="trash-2"></i></a>
             </div></td>
           </tr>
           {% endfor %}

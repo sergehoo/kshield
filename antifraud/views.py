@@ -21,6 +21,10 @@ class FraudAlertViewSet(viewsets.ModelViewSet):
     serializer_class = FraudAlertSerializer
     filterset_fields = ("tenant", "site", "status", "severity", "rule")
 
+    def get_queryset(self):
+        from accounts.scoping import scope_queryset_by_company
+        return scope_queryset_by_company(super().get_queryset(), self.request.user, "site__company")
+
     @action(detail=True, methods=["post"])
     def acknowledge(self, request, pk=None):
         alert = self.get_object()
@@ -62,8 +66,24 @@ class FraudInvestigationViewSet(viewsets.ModelViewSet):
     serializer_class = FraudInvestigationSerializer
     filterset_fields = ("tenant", "status")
 
+    def get_queryset(self):
+        # Investigation visible si au moins une alerte sur un site de la filiale.
+        from accounts.scoping import get_user_company_ids
+        qs = super().get_queryset()
+        ids = get_user_company_ids(self.request.user)
+        if ids is None:
+            return qs
+        if not ids:
+            return qs.none()
+        return qs.filter(alerts__site__company_id__in=ids).distinct()
+
 
 class FraudScoringViewSet(viewsets.ReadOnlyModelViewSet):
+    """Score de fraude par holder (employé/ouvrier/visiteur).
+
+    Pas de FK directe vers Company — scoping fait via le holder lui-même
+    quand pertinent. Actuellement on garde le filtrage tenant (filterset).
+    """
     queryset = FraudScoring.objects.all(); serializer_class = FraudScoringSerializer
     filterset_fields = ("tenant", "holder_kind")
 
@@ -72,3 +92,8 @@ class BLEStillnessSignalViewSet(viewsets.ModelViewSet):
     queryset = BLEStillnessSignal.objects.select_related("helmet", "zone").all()
     serializer_class = BLEStillnessSignalSerializer
     filterset_fields = ("helmet", "zone")
+
+    def get_queryset(self):
+        # Signal BLE rattaché à une zone → site → company
+        from accounts.scoping import scope_queryset_by_company
+        return scope_queryset_by_company(super().get_queryset(), self.request.user, "zone__site__company")

@@ -32,7 +32,7 @@
             <td><div class="row gap-2">
               <a class="icon-btn" href="{% url 'admin-site-detail' s.pk %}"><i data-lucide="eye"></i></a>
               <a class="icon-btn" href="{% url 'admin-site-update' s.pk %}"><i data-lucide="pencil"></i></a>
-              <a class="icon-btn" href="{% url 'admin-site-delete' s.pk %}" style="color:var(--danger)"><i data-lucide="trash-2"></i></a>
+              <a class="icon-btn" href="{% url 'admin-site-delete' s.pk %}" style="color:var(--danger)" onclick="return confirm('Supprimer ce site ? Cette action est irréversible.');"><i data-lucide="trash-2"></i></a>
             </div></td>
           </tr>
           {% endfor %}

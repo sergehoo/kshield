@@ -38,6 +38,17 @@ class AccessGatewayService:
 
         decision, reason = cls._evaluate(badge, helmet, site, holder)
 
+        # ─── Prometheus business metric ────────────────────────
+        try:
+            from core.metrics import scans_total
+            scans_total.labels(
+                decision=decision or "unknown",
+                method=payload.get("method", "nfc"),
+                site=site.code if site else "unknown",
+            ).inc()
+        except Exception:
+            pass
+
         event = AccessEvent.objects.create(
             timestamp=payload.get("timestamp") or timezone.now(),
             tenant_id=device.tenant_id if device else None,

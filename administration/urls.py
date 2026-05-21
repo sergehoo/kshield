@@ -35,6 +35,9 @@ urlpatterns = [
     # Terrain — listes
     path("sites/",            views.SitesView.as_view(),         name="admin-sites"),
     path("devices/",          views.DevicesView.as_view(),       name="admin-devices"),
+    path("cameras/",          views.CamerasView.as_view(),       name="admin-cameras"),
+    path("cameras/live/",     views.CamerasLiveView.as_view(),   name="admin-cameras-live"),
+    path("cameras/presence/", views.FacePresenceView.as_view(),  name="admin-face-presence"),
     path("badges/",           views.BadgesView.as_view(),        name="admin-badges"),
     path("badges/scan/",      views.BadgeScanView.as_view(),     name="admin-badge-scan"),
     path("gateways/",         views.GatewaysView.as_view(),      name="admin-gateways"),
@@ -50,6 +53,16 @@ urlpatterns = [
 
     # Reporting — listes
     path("reports/",          views.ReportsView.as_view(),       name="admin-reports"),
+    path("digests/",          views.ExecutiveDigestListView.as_view(),
+                                                                  name="admin-digests"),
+    path("digests/<int:pk>/", views.ExecutiveDigestDetailView.as_view(),
+                                                                  name="admin-digest-detail"),
+    path("digests/action/<str:verb>/",
+         views.ExecutiveDigestActionView.as_view(),
+                                                                  name="admin-digest-action"),
+    path("digests/<int:pk>/action/<str:verb>/",
+         views.ExecutiveDigestActionView.as_view(),
+                                                                  name="admin-digest-item-action"),
     path("ai/",               views.AIAssistantView.as_view(),   name="admin-ai"),
 
     # Système — listes
@@ -68,6 +81,7 @@ urlpatterns = [
     *crud_paths("zones",                "zone"),
     *crud_paths("devices-mng",          "device"),
     *crud_paths("device-models",        "devicemodel"),
+    *crud_paths("cameras-mng",          "camera"),
     *crud_paths("badges-mng",           "badge"),
     *crud_paths("helmets",              "helmet"),
     *crud_paths("gateways-mng",         "gateway"),
@@ -198,3 +212,34 @@ urlpatterns += [
     path("kaydan/<int:pk>/",       _tenant_crud.Detail.as_view(), name="admin-tenant-detail"),
     path("kaydan/<int:pk>/edit/",  _tenant_crud.Update.as_view(), name="admin-tenant-update"),
 ]
+
+
+# ===== Camera Create personnalisée — accepte ?rtsp_url=&name=... en query =====
+# Permet au "Scanner le réseau (ONVIF)" de pré-remplir le formulaire.
+# Doit être défini APRÈS la création de toutes les routes pour override.
+_camera_crud = _get_cruds()["camera"]
+
+
+class _CameraPrefillCreateView(_camera_crud.Create):
+    """CreateView qui pré-remplit le form depuis les query params URL."""
+
+    PREFILL_FIELDS = (
+        "rtsp_url", "name", "username", "location_label",
+        "transport", "codec",
+    )
+
+    def get_initial(self):
+        initial = super().get_initial()
+        for key in self.PREFILL_FIELDS:
+            v = self.request.GET.get(key)
+            if v:
+                initial[key] = v
+        return initial
+
+
+# Override : on insère AVANT les patterns existants pour qu'il gagne le matching
+urlpatterns.insert(0, path(
+    "cameras-mng/new/",
+    _CameraPrefillCreateView.as_view(),
+    name="admin-camera-create",
+))

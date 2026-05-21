@@ -1,0 +1,92 @@
+{
+  "annotations": {"list": []},
+  "title": "KAYDAN SHIELD — Operations",
+  "tags": ["kaydan-shield", "production"],
+  "timezone": "Africa/Abidjan",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {"from": "now-6h", "to": "now"},
+  "panels": [
+    {
+      "id": 1, "type": "stat", "title": "Scans / min (1h)",
+      "gridPos": {"x": 0, "y": 0, "w": 6, "h": 4},
+      "targets": [{
+        "expr": "sum(rate(kshield_scans_total[1m])) * 60",
+        "legendFormat": "scans/min"
+      }],
+      "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "thresholds"},
+        "thresholds": {"steps": [{"color": "green"}, {"color": "orange", "value": 100}]}}}
+    },
+    {
+      "id": 2, "type": "stat", "title": "Alertes anti-fraude (open)",
+      "gridPos": {"x": 6, "y": 0, "w": 6, "h": 4},
+      "targets": [{
+        "expr": "sum(kshield_fraud_alerts_open) by (severity)",
+        "legendFormat": "{{severity}}"
+      }],
+      "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "thresholds"},
+        "thresholds": {"steps": [{"color": "green"}, {"color": "red", "value": 1}]}}}
+    },
+    {
+      "id": 3, "type": "stat", "title": "Caméras en ligne",
+      "gridPos": {"x": 12, "y": 0, "w": 6, "h": 4},
+      "targets": [{"expr": "kshield_cameras_online", "legendFormat": "cameras"}]
+    },
+    {
+      "id": 4, "type": "stat", "title": "Casques actifs",
+      "gridPos": {"x": 18, "y": 0, "w": 6, "h": 4},
+      "targets": [{"expr": "kshield_helmets_active", "legendFormat": "casques"}]
+    },
+    {
+      "id": 10, "type": "timeseries", "title": "Scans par décision",
+      "gridPos": {"x": 0, "y": 4, "w": 12, "h": 8},
+      "targets": [{
+        "expr": "sum(rate(kshield_scans_total[5m])) by (decision)",
+        "legendFormat": "{{decision}}"
+      }],
+      "fieldConfig": {"defaults": {"custom": {"stacking": {"mode": "normal"}}}}
+    },
+    {
+      "id": 11, "type": "timeseries", "title": "Alertes anti-fraude levées",
+      "gridPos": {"x": 12, "y": 4, "w": 12, "h": 8},
+      "targets": [{
+        "expr": "sum(rate(kshield_fraud_alerts_raised_total[5m])) by (rule_code)",
+        "legendFormat": "{{rule_code}}"
+      }]
+    },
+    {
+      "id": 20, "type": "timeseries", "title": "Latence HTTP p95",
+      "gridPos": {"x": 0, "y": 12, "w": 12, "h": 8},
+      "targets": [{
+        "expr": "histogram_quantile(0.95, sum(rate(django_http_requests_latency_seconds_by_view_method_bucket[5m])) by (le, view))",
+        "legendFormat": "p95 {{view}}"
+      }],
+      "fieldConfig": {"defaults": {"unit": "s"}}
+    },
+    {
+      "id": 21, "type": "timeseries", "title": "Erreurs 5xx",
+      "gridPos": {"x": 12, "y": 12, "w": 12, "h": 8},
+      "targets": [{
+        "expr": "sum(rate(django_http_responses_total_by_status_total{status=~\"5..\"}[5m])) by (status)",
+        "legendFormat": "{{status}}"
+      }]
+    },
+    {
+      "id": 30, "type": "heatmap", "title": "Distribution scores face match",
+      "gridPos": {"x": 0, "y": 20, "w": 12, "h": 8},
+      "targets": [{
+        "expr": "sum(rate(kshield_face_match_score_bucket[5m])) by (le)",
+        "legendFormat": "{{le}}"
+      }]
+    },
+    {
+      "id": 31, "type": "timeseries", "title": "Visiteurs sur site",
+      "gridPos": {"x": 12, "y": 20, "w": 12, "h": 8},
+      "targets": [{
+        "expr": "sum(kshield_visitors_on_site) by (site)",
+        "legendFormat": "{{site}}"
+      }]
+    }
+  ]
+}

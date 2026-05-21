@@ -1,70 +1,1090 @@
 {% extends "layout/base.html" %}
+{% load static %}
 
 {% block title %}Test reconnaissance faciale · KAYDAN SHIELD{% endblock %}
 {% block page_title %}Test reconnaissance faciale{% endblock %}
-{% block page_subtitle %}Webcam + face-api.js : enrôlement et match d'employé.{% endblock %}
-{% block breadcrumb %}Employés · Test face{% endblock %}
+{% block page_subtitle %}Webcam · face-api.js · enrôlement et identification temps réel.{% endblock %}
+{% block breadcrumb %}Employés · Reconnaissance faciale{% endblock %}
 
 {% block page_actions %}
-  <a class="btn btn-ghost" href="{% url 'admin-employees' %}"><i data-lucide="arrow-left" style="width:14px;height:14px"></i> Retour employés</a>
+  <a class="btn btn-ghost" href="{% url 'admin-employees' %}">
+    <i data-lucide="arrow-left" style="width:14px;height:14px"></i> Retour employés
+  </a>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+  .face-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 360px;
+    gap: 18px;
+  }
+  @media (max-width: 1080px) {
+    .face-grid { grid-template-columns: 1fr; }
+  }
+
+  /* Stage caméra */
+  .face-stage {
+    position: relative;
+    border-radius: 14px;
+    overflow: hidden;
+    background: #000;
+    aspect-ratio: 4 / 3;
+    box-shadow: 0 12px 40px rgba(0,0,0,.35);
+  }
+  .face-stage video,
+  .face-stage canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .face-stage video { transform: scaleX(-1); } /* effet miroir naturel */
+  .face-stage canvas { transform: scaleX(-1); pointer-events: none; }
+
+  .face-stage-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    text-align: center;
+    background: linear-gradient(180deg, rgba(0,0,0,.4) 0%, rgba(0,0,0,.85) 100%);
+    z-index: 3;
+    padding: 24px;
+  }
+  .face-stage-overlay h3 { margin: 0 0 8px; font-size: 18px; }
+  .face-stage-overlay p  { margin: 0; opacity: .8; max-width: 420px; font-size: 13px; line-height: 1.5; }
+
+  .face-stage-badge {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    z-index: 2;
+    background: rgba(0,0,0,.55);
+    backdrop-filter: blur(6px);
+    color: #fff;
+    padding: 6px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .face-stage-badge .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: #9ca3af;
+  }
+  .face-stage-badge.is-live .dot {
+    background: #34d399;
+    box-shadow: 0 0 0 0 rgba(52,211,153,.5);
+    animation: ks-pulse 1.6s infinite;
+  }
+  .face-stage-badge.is-detected .dot { background: #f59e0b; }
+  @keyframes ks-pulse {
+    0%   { box-shadow: 0 0 0 0 rgba(52,211,153,.6); }
+    70%  { box-shadow: 0 0 0 10px rgba(52,211,153,0); }
+    100% { box-shadow: 0 0 0 0 rgba(52,211,153,0); }
+  }
+
+  /* Tabs Enrôler / Identifier */
+  .face-tabs {
+    display: flex;
+    gap: 4px;
+    padding: 4px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    margin-bottom: 14px;
+  }
+  .face-tab {
+    flex: 1;
+    background: transparent;
+    border: 0;
+    padding: 9px 12px;
+    border-radius: 7px;
+    color: var(--text-dim);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    transition: all .15s;
+  }
+  .face-tab:hover { color: var(--text); }
+  .face-tab.is-active {
+    background: linear-gradient(135deg, var(--ks-orange-500), #d946ef);
+    color: #fff;
+    box-shadow: 0 4px 12px rgba(242,107,31,.25);
+  }
+
+  /* Toolbar caméra */
+  .cam-toolbar {
+    display: flex;
+    gap: 8px;
+    margin-top: 14px;
+    flex-wrap: wrap;
+  }
+  .cam-toolbar .btn { flex: 1; min-width: 130px; }
+
+  /* KPI cards */
+  .face-kpis {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .face-kpi {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px;
+  }
+  .face-kpi .v { font-size: 22px; font-weight: 700; line-height: 1; }
+  .face-kpi .l { font-size: 10.5px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .04em; margin-top: 4px; }
+
+  /* Match result */
+  .match-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    margin-top: 12px;
+  }
+  .match-card.is-success {
+    border-color: rgba(52,211,153,.45);
+    background: linear-gradient(135deg, rgba(52,211,153,.08), rgba(52,211,153,.02));
+  }
+  .match-card.is-failure {
+    border-color: rgba(248,113,113,.4);
+    background: linear-gradient(135deg, rgba(248,113,113,.08), rgba(248,113,113,.02));
+  }
+
+  /* Gauge similarité */
+  .score-ring {
+    --score: 0;
+    width: 96px; height: 96px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: conic-gradient(
+      var(--score-color, var(--ks-orange-500)) calc(var(--score) * 1%),
+      rgba(255,255,255,.08) 0
+    );
+    position: relative;
+    flex-shrink: 0;
+  }
+  .score-ring::before {
+    content: "";
+    position: absolute;
+    inset: 8px;
+    border-radius: 50%;
+    background: var(--bg, #0b1426);
+  }
+  [data-theme="light"] .score-ring::before { background: #fff; }
+  .score-ring .score-val {
+    position: relative;
+    font-size: 20px;
+    font-weight: 800;
+    z-index: 1;
+  }
+
+  /* Capture preview */
+  .capture-thumb {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    border-radius: 10px;
+    object-fit: cover;
+    background: var(--surface);
+    border: 1px solid var(--border);
+  }
+
+  /* Log */
+  .face-log {
+    background: rgba(0,0,0,.25);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-family: ui-monospace, "JetBrains Mono", "Fira Code", Menlo, monospace;
+    font-size: 11px;
+    max-height: 180px;
+    overflow: auto;
+    line-height: 1.55;
+  }
+  [data-theme="light"] .face-log { background: #f8fafc; color: #1e293b; }
+  .face-log .ts { color: var(--text-dim); margin-right: 6px; }
+  .face-log .l-ok { color: #34d399; }
+  .face-log .l-warn { color: #fbbf24; }
+  .face-log .l-err { color: #f87171; }
+  .face-log .l-info { color: #60a5fa; }
+
+  /* Top candidates */
+  .candidate-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 7px 10px;
+    background: var(--surface);
+    border-radius: 6px;
+    margin-top: 6px;
+    font-size: 12px;
+  }
+  .candidate-row .bar {
+    flex: 1;
+    height: 4px;
+    margin: 0 10px;
+    background: rgba(255,255,255,.06);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .candidate-row .bar > span {
+    display: block;
+    height: 100%;
+    background: var(--ks-orange-500);
+    border-radius: 2px;
+  }
+
+  /* Sélecteur de moteur (Engine) */
+  .engine-bar {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 12px;
+    margin-bottom: 14px;
+    font-size: 12.5px;
+  }
+  .engine-pills {
+    display: inline-flex;
+    gap: 4px;
+    background: rgba(0,0,0,.18);
+    padding: 3px;
+    border-radius: 8px;
+  }
+  [data-theme="light"] .engine-pills { background: rgba(15,29,52,.06); }
+  .engine-pill {
+    border: 0;
+    background: transparent;
+    padding: 6px 12px;
+    border-radius: 6px;
+    color: var(--text-dim);
+    font-weight: 600;
+    font-size: 12px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    transition: all .15s;
+  }
+  .engine-pill:hover { color: var(--text); }
+  .engine-pill.is-active {
+    background: var(--ks-orange-500);
+    color: #fff;
+    box-shadow: 0 2px 8px rgba(242,107,31,.3);
+  }
+  .engine-status {
+    margin-left: auto;
+    color: var(--text-dim);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .engine-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: #9ca3af;
+  }
+  .engine-dot.is-ok    { background: #34d399; }
+  .engine-dot.is-warn  { background: #fbbf24; }
+  .engine-dot.is-down  { background: #f87171; }
+
+  /* Liveness pill — affichage dans le panneau match */
+  .liveness-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 10px;
+    background: rgba(255,255,255,.04);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-top: 10px;
+    font-size: 12px;
+  }
+  [data-theme="light"] .liveness-row { background: rgba(15,29,52,.03); }
+  .liveness-row.is-live    { border-color: rgba(52,211,153,.40); background: rgba(52,211,153,.08); }
+  .liveness-row.is-spoof   { border-color: rgba(248,113,113,.45); background: rgba(248,113,113,.10); }
+  .liveness-row.is-unknown { border-color: var(--border); }
+  .liveness-row .li-icon {
+    width: 28px; height: 28px; border-radius: 50%;
+    display: grid; place-items: center; flex-shrink: 0;
+  }
+  .liveness-row.is-live  .li-icon { background: rgba(52,211,153,.20); color: #34d399; }
+  .liveness-row.is-spoof .li-icon { background: rgba(248,113,113,.20); color: #f87171; }
+  .liveness-row .li-meta { flex: 1; min-width: 0; }
+  .liveness-row .li-title { font-weight: 700; line-height: 1.2; }
+  .liveness-row .li-sub { color: var(--text-dim); font-size: 11px; margin-top: 2px; }
+</style>
 {% endblock %}
 
 {% block content %}
-  <section class="card">
-    <h3 style="margin-top:0">Caméra</h3>
-    <div class="row" style="gap:24px;align-items:flex-start;flex-wrap:wrap">
-      <div style="flex:1;min-width:320px">
-        <video id="ks-face-video" autoplay muted playsinline
-               style="width:100%;max-width:480px;background:#000;border-radius:8px"></video>
-        <canvas id="ks-face-canvas" style="display:none"></canvas>
-        <div class="row gap-2 mt-2">
-          <button class="btn btn-ghost" id="ks-face-start"><i data-lucide="video" style="width:14px;height:14px"></i> Démarrer</button>
-          <button class="btn btn-ghost" id="ks-face-stop"><i data-lucide="video-off" style="width:14px;height:14px"></i> Arrêter</button>
-        </div>
-      </div>
-      <div style="flex:1;min-width:280px">
-        <h4 style="margin-top:0">Résultat</h4>
-        <div id="ks-face-status" class="text-dim">Prêt à démarrer la webcam.</div>
-        <pre id="ks-face-log" class="mono" style="background:rgba(0,0,0,.04);padding:12px;border-radius:6px;font-size:11px;max-height:240px;overflow:auto;margin-top:10px">—</pre>
-      </div>
+
+  {# ── KPIs en haut ── #}
+  <section class="face-kpis">
+    <div class="face-kpi">
+      <div class="v" id="kpi-enrolled">{{ face_profiles_count|default:0 }}</div>
+      <div class="l"><i data-lucide="user-check" style="width:11px;height:11px;vertical-align:-1px"></i> Visages enrôlés</div>
+    </div>
+    <div class="face-kpi">
+      <div class="v" id="kpi-matches">{{ face_matches_total|default:0 }}</div>
+      <div class="l"><i data-lucide="check-circle-2" style="width:11px;height:11px;vertical-align:-1px"></i> Identifications</div>
+    </div>
+    <div class="face-kpi">
+      <div class="v" id="kpi-model"><span class="pill pill-warning" style="font-size:11px">Init…</span></div>
+      <div class="l"><i data-lucide="cpu" style="width:11px;height:11px;vertical-align:-1px"></i> Modèle</div>
     </div>
   </section>
 
-  <section class="card mt-2" style="border:1px dashed var(--border)">
-    <h4 style="margin-top:0">Note d'intégration</h4>
-    <p class="text-dim" style="margin:0">
-      Cette page est conçue pour héberger <code>face-api.js</code> + les modèles téléchargés localement
-      sous <code>static/vendor/face-api/</code>. Si la bibliothèque n'est pas encore installée,
-      la webcam s'allume mais aucun descripteur n'est calculé.
-      Endpoints attendus côté API&nbsp;: <code>POST /api/v1/employees/face/enroll/</code> et
-      <code>POST /api/v1/employees/face/match/</code>.
-    </p>
-  </section>
+  {# ── Sélecteur de moteur (Engine) ── #}
+  <div class="engine-bar">
+    <strong style="font-size:12px"><i data-lucide="cpu" style="width:13px;height:13px;vertical-align:-1px"></i> Moteur</strong>
+    <div class="engine-pills" id="engine-pills">
+      <button class="engine-pill is-active" data-engine="client">
+        <i data-lucide="laptop" style="width:12px;height:12px"></i> face-api.js · 128D · navigateur
+      </button>
+      <button class="engine-pill" data-engine="insightface">
+        <i data-lucide="server" style="width:12px;height:12px"></i> InsightFace · 512D · serveur GPU
+      </button>
+    </div>
+    <span class="engine-status" id="engine-status">
+      <span class="engine-dot" id="engine-dot"></span>
+      <span id="engine-status-text">Vérification…</span>
+    </span>
+  </div>
 
+  {# ── Onglets Enrôler / Identifier ── #}
+  <div class="face-tabs" id="face-tabs">
+    <button class="face-tab is-active" data-tab="enroll">
+      <i data-lucide="user-plus" style="width:14px;height:14px"></i> Enrôler un employé
+    </button>
+    <button class="face-tab" data-tab="match">
+      <i data-lucide="scan-face" style="width:14px;height:14px"></i> Identifier un visage
+    </button>
+  </div>
+
+  {# ── Layout : caméra + panneau droite ── #}
+  <div class="face-grid">
+
+    {# ─────── Caméra ─────── #}
+    <section class="card" style="padding:14px">
+      <div class="face-stage" id="face-stage">
+        <span class="face-stage-badge" id="cam-badge">
+          <span class="dot"></span> <span id="cam-badge-text">Caméra hors ligne</span>
+        </span>
+        <video id="face-video" autoplay muted playsinline></video>
+        <canvas id="face-overlay"></canvas>
+        <div class="face-stage-overlay" id="cam-overlay">
+          <div>
+            <h3>Caméra inactive</h3>
+            <p>Cliquez sur <strong>Démarrer la caméra</strong> pour lancer la détection.
+               Les modèles face-api.js seront téléchargés au premier démarrage (~6 Mo).</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="cam-toolbar">
+        <button class="btn btn-primary" id="btn-start">
+          <i data-lucide="video" style="width:14px;height:14px"></i> Démarrer la caméra
+        </button>
+        <button class="btn btn-ghost" id="btn-capture" disabled>
+          <i data-lucide="aperture" style="width:14px;height:14px"></i> Capturer
+        </button>
+        <button class="btn btn-ghost" id="btn-stop" disabled style="color:var(--danger)">
+          <i data-lucide="video-off" style="width:14px;height:14px"></i> Arrêter
+        </button>
+      </div>
+
+      <div class="row mt-2" style="gap:14px;font-size:12px;color:var(--text-dim);flex-wrap:wrap">
+        <span><i data-lucide="info" style="width:12px;height:12px;vertical-align:-1px"></i>
+          Tiny Face Detector + Face Landmark + Face Recognition (128D).
+        </span>
+        <span>Seuil match&nbsp;:
+          <input type="range" id="threshold-slider" min="0.50" max="0.85" step="0.01" value="0.55"
+                 style="vertical-align:middle;width:120px">
+          <strong id="threshold-val">0.55</strong>
+        </span>
+      </div>
+    </section>
+
+    {# ─────── Panneau de droite ─────── #}
+    <aside>
+
+      {# ─── Mode ENROLL ─── #}
+      <section class="card" id="panel-enroll" style="padding:14px">
+        <h4 style="margin:0 0 10px;display:flex;align-items:center;gap:6px">
+          <i data-lucide="user-plus" style="width:16px;height:16px;color:var(--ks-orange-500)"></i>
+          Enrôler un visage
+        </h4>
+        <label for="emp-select" style="font-size:11.5px;color:var(--text-dim)">Employé cible</label>
+        <select id="emp-select" class="form-control" style="margin-top:4px;margin-bottom:10px">
+          <option value="">— Sélectionner un employé —</option>
+          {% for e in employees_for_enroll %}
+            <option value="{{ e.id }}">{{ e.last_name }} {{ e.first_name }} · {{ e.matricule }}</option>
+          {% endfor %}
+        </select>
+
+        <div id="enroll-preview-wrap" style="display:none;margin-bottom:10px">
+          <label style="font-size:11.5px;color:var(--text-dim)">Aperçu capture</label>
+          <img id="enroll-preview" class="capture-thumb" alt="Capture" style="margin-top:4px">
+          <div class="text-dim mt-1" style="font-size:11px">
+            Qualité: <strong id="enroll-quality">—</strong> ·
+            Embedding: <strong id="enroll-dim">—</strong>D
+          </div>
+        </div>
+
+        <button class="btn btn-primary" id="btn-enroll" disabled style="width:100%">
+          <i data-lucide="save" style="width:14px;height:14px"></i> Enrôler
+        </button>
+        <p class="text-dim mt-1" style="font-size:11px;margin-bottom:0">
+          Pour de meilleurs résultats : visage centré, bien éclairé, lunettes retirées si possible.
+        </p>
+      </section>
+
+      {# ─── Mode MATCH ─── #}
+      <section class="card" id="panel-match" style="padding:14px;display:none">
+        <h4 style="margin:0 0 10px;display:flex;align-items:center;gap:6px">
+          <i data-lucide="scan-face" style="width:16px;height:16px;color:var(--ks-orange-500)"></i>
+          Identifier un visage
+        </h4>
+
+        <div id="match-empty" class="text-dim" style="font-size:12px;padding:18px 0;text-align:center">
+          <i data-lucide="user-search" style="width:28px;height:28px;color:var(--text-dim);margin-bottom:6px"></i>
+          <div>Capturez un visage pour lancer la comparaison aux profils enrôlés.</div>
+        </div>
+
+        <div id="match-result" class="match-card" style="display:none">
+          <div class="row" style="gap:14px;align-items:center">
+            <div class="score-ring" id="score-ring">
+              <span class="score-val" id="score-val">—</span>
+            </div>
+            <div style="flex:1;min-width:0">
+              <div id="match-name" style="font-weight:700;font-size:15px;line-height:1.2">—</div>
+              <div id="match-matricule" class="mono text-dim" style="font-size:11px;margin-top:2px">—</div>
+              <div id="match-meta" class="text-dim" style="font-size:11px;margin-top:4px">—</div>
+              <div id="match-status-pill" style="margin-top:8px"></div>
+            </div>
+          </div>
+          <div id="liveness-row" class="liveness-row is-unknown" style="display:none">
+            <div class="li-icon"><i data-lucide="shield-alert" style="width:14px;height:14px"></i></div>
+            <div class="li-meta">
+              <div class="li-title" id="liveness-title">—</div>
+              <div class="li-sub" id="liveness-sub">—</div>
+            </div>
+          </div>
+        </div>
+
+        <div id="match-top3" style="margin-top:12px;display:none">
+          <div class="text-dim" style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">
+            Top 3 candidats
+          </div>
+          <div id="match-top3-list"></div>
+        </div>
+      </section>
+
+      {# ─── Log ─── #}
+      <section class="card mt-2" style="padding:14px">
+        <div class="row between" style="margin-bottom:8px">
+          <strong style="font-size:12px">Journal</strong>
+          <button class="text-dim" id="btn-clear-log" style="background:none;border:0;font-size:11px;cursor:pointer;color:var(--text-dim)">
+            Effacer
+          </button>
+        </div>
+        <div class="face-log" id="face-log">
+          <div><span class="ts">[init]</span> <span class="l-info">Page prête. Démarrez la caméra pour charger les modèles.</span></div>
+        </div>
+      </section>
+
+    </aside>
+  </div>
+
+  {# ─── Script face-api.js + logique app ─── #}
+  <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
   <script>
-    (function () {
-      const video = document.getElementById("ks-face-video");
-      const status = document.getElementById("ks-face-status");
-      const log = document.getElementById("ks-face-log");
-      let stream = null;
-      document.getElementById("ks-face-start").addEventListener("click", async () => {
-        try {
-          stream = await navigator.mediaDevices.getUserMedia({ video: true });
-          video.srcObject = stream;
-          status.textContent = "Webcam active.";
-          log.textContent = "Webcam démarrée à " + new Date().toLocaleTimeString();
-        } catch (e) {
-          status.textContent = "Erreur webcam : " + e.message;
+  (function () {
+    "use strict";
+
+    // ─── DOM refs ───────────────────────────────────────────────
+    const $ = (id) => document.getElementById(id);
+    const video        = $("face-video");
+    const overlay      = $("face-overlay");
+    const camOverlay   = $("cam-overlay");
+    const camBadge     = $("cam-badge");
+    const camBadgeText = $("cam-badge-text");
+    const btnStart     = $("btn-start");
+    const btnStop      = $("btn-stop");
+    const btnCapture   = $("btn-capture");
+    const btnEnroll    = $("btn-enroll");
+    const btnClearLog  = $("btn-clear-log");
+    const empSelect    = $("emp-select");
+    const log          = $("face-log");
+    const panelEnroll  = $("panel-enroll");
+    const panelMatch   = $("panel-match");
+    const threshSlider = $("threshold-slider");
+    const threshVal    = $("threshold-val");
+
+    // ─── State ──────────────────────────────────────────────────
+    const MODELS_URL = "https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.13/model";
+    let stream = null;
+    let detectLoop = null;
+    let modelsReady = false;
+    let lastDescriptor = null;
+    let lastCaptureDataUrl = null;
+    let mode = "enroll";   // enroll | match
+    let engine = "client"; // client | insightface
+
+    // ─── Engine selector ────────────────────────────────────────
+    async function probeEngine() {
+      const dot = $("engine-dot");
+      const text = $("engine-status-text");
+      try {
+        const res = await fetch("/api/v1/employees/face/status/", { credentials: "same-origin" });
+        const data = await res.json();
+        if (data.enabled === false) {
+          dot.className = "engine-dot is-down";
+          text.textContent = "InsightFace désactivé (FACE_ENGINE_ENABLED=False)";
+          return false;
+        }
+        if (res.ok) {
+          dot.className = data.ready ? "engine-dot is-ok" : "engine-dot is-warn";
+          const provider = (data.provider_used || data.providers?.[0] || "?").replace("ExecutionProvider", "");
+          text.textContent = `InsightFace ${data.model} · ${provider} ${data.ready ? "prêt" : "(init au 1er appel)"}`;
+          return true;
+        }
+        dot.className = "engine-dot is-down";
+        text.textContent = "InsightFace indisponible (deps manquantes)";
+        return false;
+      } catch (e) {
+        dot.className = "engine-dot is-down";
+        text.textContent = "InsightFace indisponible";
+        return false;
+      }
+    }
+
+    document.querySelectorAll(".engine-pill").forEach((b) => {
+      b.addEventListener("click", () => {
+        document.querySelectorAll(".engine-pill").forEach((x) => x.classList.remove("is-active"));
+        b.classList.add("is-active");
+        engine = b.dataset.engine;
+        logLine(`Moteur → ${engine === "client" ? "face-api.js (128D, navigateur)" : "InsightFace (512D, serveur GPU)"}`, "info");
+        const kpi = $("kpi-model");
+        if (engine === "insightface") {
+          kpi.innerHTML = '<span class="pill pill-info" style="font-size:11px">InsightFace · 512D · serveur</span>';
+        } else if (modelsReady) {
+          kpi.innerHTML = '<span class="pill pill-success" style="font-size:11px">TinyFace · 128D · client</span>';
         }
       });
-      document.getElementById("ks-face-stop").addEventListener("click", () => {
-        if (stream) {
-          stream.getTracks().forEach(t => t.stop());
-          stream = null;
-          video.srcObject = null;
-          status.textContent = "Webcam arrêtée.";
-        }
+    });
+
+    // ─── Utilities ──────────────────────────────────────────────
+    function csrfToken() {
+      const m = document.cookie.match(/csrftoken=([^;]+)/);
+      return m ? m[1] : "";
+    }
+
+    function logLine(msg, level = "info") {
+      const ts = new Date().toLocaleTimeString();
+      const row = document.createElement("div");
+      row.innerHTML = `<span class="ts">[${ts}]</span> <span class="l-${level}">${msg}</span>`;
+      log.appendChild(row);
+      log.scrollTop = log.scrollHeight;
+    }
+
+    function setBadge(state, text) {
+      camBadge.classList.remove("is-live", "is-detected");
+      if (state === "live")     camBadge.classList.add("is-live");
+      if (state === "detected") camBadge.classList.add("is-detected");
+      camBadgeText.textContent = text;
+    }
+
+    // ─── Tabs ───────────────────────────────────────────────────
+    document.querySelectorAll(".face-tab").forEach((b) => {
+      b.addEventListener("click", () => {
+        document.querySelectorAll(".face-tab").forEach((x) => x.classList.remove("is-active"));
+        b.classList.add("is-active");
+        mode = b.dataset.tab;
+        panelEnroll.style.display = mode === "enroll" ? "block" : "none";
+        panelMatch.style.display  = mode === "match"  ? "block" : "none";
+        // Reset visuels du panneau match au switch
+        const livRow = document.getElementById("liveness-row");
+        if (livRow) livRow.style.display = "none";
+        logLine(`Mode → ${mode === "enroll" ? "Enrôler" : "Identifier"}`, "info");
       });
-    })();
+    });
+
+    // ─── Threshold slider ───────────────────────────────────────
+    threshSlider.addEventListener("input", () => {
+      threshVal.textContent = parseFloat(threshSlider.value).toFixed(2);
+    });
+
+    btnClearLog.addEventListener("click", () => {
+      log.innerHTML = "";
+      logLine("Journal effacé.", "info");
+    });
+
+    // ─── Load face-api models ──────────────────────────────────
+    async function loadModels() {
+      if (modelsReady) return true;
+      if (typeof faceapi === "undefined") {
+        logLine("face-api.js indisponible (CDN bloqué ?). Vérifier la CSP.", "err");
+        return false;
+      }
+      try {
+        $("kpi-model").innerHTML = '<span class="pill pill-warning" style="font-size:11px">Téléchargement…</span>';
+        logLine("Téléchargement des modèles TensorFlow (~6 Mo)…", "info");
+        await faceapi.nets.tinyFaceDetector.loadFromUri(MODELS_URL);
+        await faceapi.nets.faceLandmark68Net.loadFromUri(MODELS_URL);
+        await faceapi.nets.faceRecognitionNet.loadFromUri(MODELS_URL);
+        modelsReady = true;
+        $("kpi-model").innerHTML = '<span class="pill pill-success" style="font-size:11px">TinyFace · 128D</span>';
+        logLine("Modèles chargés. Détection prête.", "ok");
+        return true;
+      } catch (e) {
+        $("kpi-model").innerHTML = '<span class="pill pill-danger" style="font-size:11px">Erreur</span>';
+        logLine("Échec chargement modèles: " + (e.message || e), "err");
+        return false;
+      }
+    }
+
+    // ─── Start / stop camera ───────────────────────────────────
+    btnStart.addEventListener("click", async () => {
+      try {
+        btnStart.disabled = true;
+        setBadge(null, "Démarrage…");
+        camOverlay.style.display = "flex";
+        camOverlay.querySelector("h3").textContent = "Chargement…";
+        camOverlay.querySelector("p").textContent  = "Initialisation de la caméra et des modèles IA.";
+
+        // Permission webcam
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: "user" },
+        });
+        video.srcObject = stream;
+        await video.play().catch(() => {});
+        logLine("Caméra active (" + (stream.getVideoTracks()[0]?.label || "default") + ")", "ok");
+
+        // Modèles
+        const ok = await loadModels();
+        if (!ok) {
+          logLine("Pas de modèles — vous pouvez toujours capturer une photo brute.", "warn");
+        }
+
+        // Resize overlay au format vidéo
+        const resize = () => {
+          overlay.width = video.videoWidth || 640;
+          overlay.height = video.videoHeight || 480;
+        };
+        resize();
+        video.addEventListener("loadedmetadata", resize);
+
+        camOverlay.style.display = "none";
+        btnStop.disabled = false;
+        btnCapture.disabled = false;
+        setBadge("live", "Direct");
+
+        // Boucle détection
+        if (modelsReady) startDetectLoop();
+
+      } catch (e) {
+        logLine("Erreur caméra: " + (e.message || e), "err");
+        setBadge(null, "Erreur");
+        btnStart.disabled = false;
+        camOverlay.querySelector("h3").textContent = "Caméra refusée";
+        camOverlay.querySelector("p").textContent = e.message || "Permission requise pour accéder à la webcam.";
+      }
+    });
+
+    btnStop.addEventListener("click", stopCamera);
+    function stopCamera() {
+      if (detectLoop) { cancelAnimationFrame(detectLoop); detectLoop = null; }
+      if (stream) {
+        stream.getTracks().forEach((t) => t.stop());
+        stream = null;
+      }
+      video.srcObject = null;
+      const ctx = overlay.getContext("2d");
+      if (ctx) ctx.clearRect(0, 0, overlay.width, overlay.height);
+      btnStop.disabled = true;
+      btnCapture.disabled = true;
+      btnEnroll.disabled = true;
+      btnStart.disabled = false;
+      setBadge(null, "Caméra hors ligne");
+      camOverlay.style.display = "flex";
+      camOverlay.querySelector("h3").textContent = "Caméra arrêtée";
+      camOverlay.querySelector("p").textContent = "Cliquez sur Démarrer pour relancer le flux.";
+      logLine("Caméra arrêtée.", "info");
+    }
+
+    // ─── Detection loop (overlay + state) ──────────────────────
+    async function startDetectLoop() {
+      const ctx = overlay.getContext("2d");
+      const opts = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.55 });
+
+      let lastTick = 0;
+      async function tick(now) {
+        if (!stream) return;
+        if (now - lastTick > 200) {  // ~5 Hz suffit pour l'overlay
+          lastTick = now;
+          try {
+            const det = await faceapi.detectSingleFace(video, opts);
+            ctx.clearRect(0, 0, overlay.width, overlay.height);
+            if (det) {
+              const b = det.box;
+              ctx.strokeStyle = "#F26B1F";
+              ctx.lineWidth = 3;
+              ctx.strokeRect(b.x, b.y, b.width, b.height);
+              ctx.fillStyle = "rgba(242,107,31,.85)";
+              ctx.font = "12px system-ui,Segoe UI,sans-serif";
+              ctx.fillText("Visage " + Math.round(det.score * 100) + "%", b.x + 6, b.y - 6);
+              setBadge("detected", "Visage détecté");
+            } else {
+              setBadge("live", "Direct · aucun visage");
+            }
+          } catch (e) { /* silencieux pour ne pas spammer */ }
+        }
+        detectLoop = requestAnimationFrame(tick);
+      }
+      detectLoop = requestAnimationFrame(tick);
+    }
+
+    // ─── Capture + embedding ───────────────────────────────────
+    btnCapture.addEventListener("click", async () => {
+      if (!stream) return;
+      btnCapture.disabled = true;
+      logLine("Capture en cours…", "info");
+
+      // 1) Snapshot photo (canvas hors-écran)
+      const snap = document.createElement("canvas");
+      snap.width = video.videoWidth;
+      snap.height = video.videoHeight;
+      const sctx = snap.getContext("2d");
+      // Annule l'effet miroir : on enregistre l'image dans son orientation native
+      sctx.drawImage(video, 0, 0, snap.width, snap.height);
+      lastCaptureDataUrl = snap.toDataURL("image/jpeg", 0.88);
+
+      // ─── Mode SERVEUR (InsightFace) : pas d'embedding côté client ───
+      // On envoie juste la photo, le serveur fait tout (détection + 512D).
+      if (engine === "insightface") {
+        lastDescriptor = null; // forcé en server-side
+        logLine("Capture envoyée au serveur (InsightFace 512D)…", "info");
+        if (mode === "enroll") {
+          showEnrollPreview(null); // qualité calculée serveur-side après enroll
+        } else {
+          await doMatchServer();
+        }
+        btnCapture.disabled = false;
+        return;
+      }
+
+      // ─── Mode CLIENT (face-api.js) ───
+      if (!modelsReady) {
+        logLine("Modèles face-api non chargés — capture brute uniquement.", "warn");
+        showEnrollPreview(0);
+        btnCapture.disabled = false;
+        return;
+      }
+      try {
+        const result = await faceapi
+          .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions({ inputSize: 320 }))
+          .withFaceLandmarks()
+          .withFaceDescriptor();
+        if (!result) {
+          logLine("Aucun visage détecté dans la capture.", "warn");
+          btnCapture.disabled = false;
+          return;
+        }
+        lastDescriptor = Array.from(result.descriptor);
+        const quality = result.detection.score;
+        logLine(`Embedding calculé (${lastDescriptor.length}D) · qualité ${(quality*100).toFixed(0)}%`, "ok");
+
+        if (mode === "enroll") {
+          showEnrollPreview(quality);
+        } else {
+          await doMatch(lastDescriptor);
+        }
+      } catch (e) {
+        logLine("Erreur embedding: " + (e.message || e), "err");
+      }
+      btnCapture.disabled = false;
+    });
+
+    function showEnrollPreview(quality) {
+      const wrap = $("enroll-preview-wrap");
+      const img = $("enroll-preview");
+      img.src = lastCaptureDataUrl;
+      wrap.style.display = "block";
+      if (quality === null) {
+        // Mode serveur : qualité connue après POST
+        $("enroll-quality").textContent = "—";
+        $("enroll-dim").textContent = "512";
+      } else {
+        $("enroll-quality").textContent = quality ? (quality*100).toFixed(0) + "%" : "—";
+        $("enroll-dim").textContent = lastDescriptor ? lastDescriptor.length : "—";
+      }
+      // En mode serveur, on a juste besoin de la photo + l'employé sélectionné.
+      const readyToEnroll = engine === "insightface"
+        ? !!(empSelect.value && lastCaptureDataUrl)
+        : !!(empSelect.value && lastDescriptor);
+      btnEnroll.disabled = !readyToEnroll;
+    }
+
+    empSelect.addEventListener("change", () => {
+      const readyToEnroll = engine === "insightface"
+        ? !!(empSelect.value && lastCaptureDataUrl)
+        : !!(empSelect.value && lastDescriptor);
+      btnEnroll.disabled = !readyToEnroll;
+    });
+
+    // ─── POST enroll (gère les 2 moteurs) ──────────────────────
+    btnEnroll.addEventListener("click", async () => {
+      if (!empSelect.value) return;
+      if (engine === "client" && !lastDescriptor) return;
+      if (engine === "insightface" && !lastCaptureDataUrl) return;
+      btnEnroll.disabled = true;
+      logLine(`Envoi enrôlement (${engine})…`, "info");
+
+      const body = {
+        employee_id: parseInt(empSelect.value, 10),
+        engine: engine,
+        source_image: lastCaptureDataUrl,
+      };
+      if (engine === "client") {
+        body.embedding = lastDescriptor;
+        body.quality = parseFloat($("enroll-quality").textContent) / 100 || 0;
+        body.model = "facenet_v1";
+      }
+
+      try {
+        const res = await fetch("/api/v1/employees/face/enroll/", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json", "X-CSRFToken": csrfToken() },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          let label = `Enrôlé : ${data.employee.name} · ${data.embedding_dim}D`;
+          if (data.engine_meta?.provider) label += ` · ${data.engine_meta.provider}`;
+          if (data.quality != null) label += ` · qualité ${(data.quality*100).toFixed(0)}%`;
+          const liv = data.engine_meta?.liveness;
+          if (liv?.is_live === true) label += ` · liveness ${(liv.real_score*100).toFixed(0)}% ✓`;
+          logLine(label, "ok");
+          const kpi = $("kpi-enrolled");
+          kpi.textContent = parseInt(kpi.textContent, 10) + 1;
+          $("enroll-preview-wrap").style.display = "none";
+          lastDescriptor = null;
+          lastCaptureDataUrl = null;
+          empSelect.value = "";
+        } else if (res.status === 403 && data.liveness) {
+          // Spoof bloqué par le serveur : message dédié + affichage liveness
+          const cls = data.liveness.predicted_class;
+          const label = cls === 0 ? "photo/écran" : cls === 2 ? "masque 3D" : "spoof";
+          logLine(`⚠ Enrôlement refusé — spoof détecté (${label}, real_score ${(data.liveness.real_score*100).toFixed(0)}%)`, "err");
+          // Affiche le verdict dans le panneau match (même row pour cohérence visuelle)
+          panelMatch.style.display = "block";
+          panelEnroll.style.display = "none";
+          $("match-empty").style.display = "none";
+          $("match-result").style.display = "block";
+          $("match-result").className = "match-card is-failure";
+          $("score-val").textContent = "—";
+          $("match-name").textContent = "Enrôlement refusé";
+          $("match-matricule").textContent = "Anti-spoofing a détecté un visage non vivant.";
+          $("match-meta").textContent = "";
+          $("match-status-pill").innerHTML =
+            `<span class="pill pill-danger">Spoof bloqué (${label})</span>`;
+          renderLiveness(data.liveness);
+        } else {
+          logLine("Échec enrôlement: " + (data.error || res.status), "err");
+        }
+      } catch (e) {
+        logLine("Erreur réseau: " + (e.message || e), "err");
+      } finally {
+        btnEnroll.disabled = false;
+      }
+    });
+
+    // ─── POST match (client face-api) ──────────────────────────
+    async function doMatch(embedding) {
+      await _doMatch({
+        engine: "client",
+        embedding: embedding,
+        threshold: parseFloat(threshSlider.value),
+      });
+    }
+
+    // ─── POST match (serveur InsightFace) ──────────────────────
+    async function doMatchServer() {
+      await _doMatch({
+        engine: "insightface",
+        source_image: lastCaptureDataUrl,
+        threshold: parseFloat(threshSlider.value),
+      });
+    }
+
+    async function _doMatch(body) {
+      $("match-empty").style.display = "none";
+      logLine(`Comparaison (${body.engine})…`, "info");
+      try {
+        const res = await fetch("/api/v1/employees/face/match/", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json", "X-CSRFToken": csrfToken() },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          logLine(`Erreur ${res.status}: ${data.error || "—"}`, "err");
+          return;
+        }
+        renderMatch(data);
+        // Log liveness séparément (le match ne bloque pas dessus, mais on alerte)
+        const liv = data.engine_meta?.liveness;
+        if (liv?.is_live === false) {
+          const cls = liv.predicted_class;
+          const lbl = cls === 0 ? "photo/écran" : cls === 2 ? "masque 3D" : "spoof";
+          logLine(`⚠ Spoof détecté (${lbl}, real_score ${(liv.real_score*100).toFixed(0)}%) — match poursuivi mais à valider`, "warn");
+        } else if (liv?.is_live === true) {
+          logLine(`✓ Vivacité confirmée (${(liv.real_score*100).toFixed(0)}%)`, "ok");
+        }
+        if (data.matched) {
+          let line = `✓ Match: ${data.employee.name} (${(data.score*100).toFixed(1)}%)`;
+          if (data.engine_meta?.provider) line += ` · ${data.engine_meta.provider}`;
+          logLine(line, "ok");
+          const kpi = $("kpi-matches");
+          kpi.textContent = parseInt(kpi.textContent, 10) + 1;
+        } else {
+          logLine(`✗ Aucun match (meilleur ${(data.best_score*100 || 0).toFixed(1)}% < seuil ${(data.threshold*100).toFixed(0)}% sur ${data.candidates_compared} profils ${data.embedding_dim}D)`, "warn");
+        }
+      } catch (e) {
+        logLine("Erreur match: " + (e.message || e), "err");
+      }
+    }
+
+    function renderLiveness(liv) {
+      const row = $("liveness-row");
+      const title = $("liveness-title");
+      const sub = $("liveness-sub");
+      if (!liv) {
+        row.style.display = "none";
+        return;
+      }
+      row.style.display = "flex";
+      row.classList.remove("is-live", "is-spoof", "is-unknown");
+      // Cas : moteur liveness indisponible (poids absents / désactivé)
+      if (liv.available === false || liv.is_live === null) {
+        row.classList.add("is-unknown");
+        title.textContent = "Anti-spoofing indisponible";
+        sub.textContent = liv.reason || "Modèles MiniFASNet non chargés.";
+        return;
+      }
+      const pct = Math.round((liv.real_score || 0) * 100);
+      const thr = Math.round((liv.threshold || 0.7) * 100);
+      if (liv.is_live === true) {
+        row.classList.add("is-live");
+        title.textContent = `Vivacité confirmée — ${pct}% real`;
+        sub.textContent = `seuil ${thr}% · ${liv.per_model?.length || 0} modèle(s) MiniFASNet`;
+        const dot = row.querySelector(".li-icon i");
+        if (dot) dot.setAttribute("data-lucide", "shield-check");
+      } else {
+        row.classList.add("is-spoof");
+        const cls = liv.predicted_class;
+        const label = cls === 0 ? "fake 2D (photo/écran)" : cls === 2 ? "fake 3D (masque)" : "spoof";
+        title.textContent = `⚠ Spoof détecté — ${label}`;
+        sub.textContent = `real_score ${pct}% < seuil ${thr}%`;
+        const dot = row.querySelector(".li-icon i");
+        if (dot) dot.setAttribute("data-lucide", "shield-x");
+      }
+      if (window.lucide?.createIcons) window.lucide.createIcons();
+    }
+
+    function renderMatch(data) {
+      const card = $("match-result");
+      card.style.display = "block";
+      card.classList.remove("is-success", "is-failure");
+
+      const score = (data.matched ? data.score : (data.best_score || 0));
+      const pct = Math.round(score * 100);
+
+      // Ring color : vert si match, orange si proche, rouge si faible
+      let color = "#f87171";
+      if (data.matched)          color = "#34d399";
+      else if (pct >= 45)        color = "#fbbf24";
+
+      const ring = $("score-ring");
+      ring.style.setProperty("--score", pct);
+      ring.style.setProperty("--score-color", color);
+      $("score-val").textContent = pct + "%";
+
+      if (data.matched && data.employee) {
+        card.classList.add("is-success");
+        $("match-name").textContent = data.employee.name || "—";
+        $("match-matricule").textContent = data.employee.matricule || "—";
+        const meta = [data.employee.company, data.employee.department].filter(Boolean).join(" · ");
+        $("match-meta").textContent = meta || "—";
+        $("match-status-pill").innerHTML =
+          `<span class="pill pill-success">Match validé · seuil ${(data.threshold*100).toFixed(0)}%</span>`;
+      } else {
+        card.classList.add("is-failure");
+        $("match-name").textContent = "Aucune correspondance fiable";
+        $("match-matricule").textContent = data.candidates_compared
+          ? `${data.candidates_compared} profil(s) comparé(s)`
+          : "Aucun profil enrôlé";
+        $("match-meta").textContent = "";
+        $("match-status-pill").innerHTML =
+          `<span class="pill pill-warning">Sous le seuil ${(data.threshold*100).toFixed(0)}%</span>`;
+      }
+
+      // ─── Liveness (anti-spoofing) ───
+      renderLiveness(data.engine_meta?.liveness);
+
+      // Top 3
+      const top3wrap = $("match-top3");
+      const list = $("match-top3-list");
+      list.innerHTML = "";
+      if (data.top3 && data.top3.length) {
+        top3wrap.style.display = "block";
+        data.top3.forEach((c) => {
+          const row = document.createElement("div");
+          row.className = "candidate-row";
+          const sc = Math.round(c.score * 100);
+          row.innerHTML = `
+            <span style="min-width:120px;font-weight:600">${c.name}</span>
+            <div class="bar"><span style="width:${sc}%"></span></div>
+            <strong class="mono" style="font-size:11px">${sc}%</strong>
+          `;
+          list.appendChild(row);
+        });
+      } else {
+        top3wrap.style.display = "none";
+      }
+    }
+
+    // Stop caméra avant unload (libère hardware)
+    window.addEventListener("beforeunload", stopCamera);
+
+    // Lucide icons re-render
+    if (window.lucide && typeof window.lucide.createIcons === "function") {
+      window.lucide.createIcons();
+    }
+
+    // Probe InsightFace status (non-bloquant)
+    probeEngine();
+
+    logLine("Interface prête. Choisir un moteur, un mode et démarrer la caméra.", "info");
+  })();
   </script>
+
 {% endblock %}

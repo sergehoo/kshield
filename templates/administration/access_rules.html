@@ -59,7 +59,7 @@
             <td><div class="row gap-2">
               <a class="icon-btn" href="{% url 'admin-accessrule-detail' r.pk %}"><i data-lucide="eye"></i></a>
               <a class="icon-btn" href="{% url 'admin-accessrule-update' r.pk %}"><i data-lucide="pencil"></i></a>
-              <a class="icon-btn" href="{% url 'admin-accessrule-delete' r.pk %}" style="color:var(--danger)"><i data-lucide="trash-2"></i></a>
+              <a class="icon-btn" href="{% url 'admin-accessrule-delete' r.pk %}" style="color:var(--danger)" onclick="return confirm('Supprimer cette règle d’accès ? Cette action est irréversible.');"><i data-lucide="trash-2"></i></a>
             </div></td>
           </tr>
           {% endfor %}

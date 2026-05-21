@@ -1,0 +1,413 @@
+/* ==========================================================================
+   KAYDAN SHIELD — Theme Keycloak (v2 / Keycloak 26)
+   Style custom appliqué par-dessus le CSS de base login.css
+   ========================================================================== */
+
+:root {
+  --ks-bg:           #07111F;
+  --ks-bg-grad:      linear-gradient(135deg, #07111F 0%, #112742 60%, #1a1f3a 100%);
+  --ks-surface:      #112742;
+  --ks-surface-2:    #1a3251;
+  --ks-border:       rgba(255, 255, 255, 0.08);
+  --ks-text:         #e2e8f0;
+  --ks-text-dim:     #94a3b8;
+  --ks-text-muted:   #cbd5e1;
+  --ks-orange:       #F26B1F;
+  --ks-orange-dark:  #d95c14;
+  --ks-fuchsia:      #d946ef;
+  --ks-grad-brand:   linear-gradient(135deg, #F26B1F 0%, #d946ef 100%);
+  --ks-success:      #2dd4bf;
+  --ks-danger:       #f87171;
+  --ks-radius:       12px;
+  --ks-radius-sm:    8px;
+  --ks-shadow:       0 20px 60px rgba(0, 0, 0, 0.45);
+  --ks-shadow-glow:  0 8px 24px rgba(242, 107, 31, 0.35);
+}
+
+/* ─── Reset général ─── */
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  background: var(--ks-bg-grad);
+  color: var(--ks-text);
+  -webkit-font-smoothing: antialiased;
+}
+
+body.login-pf {
+  background: var(--ks-bg-grad) !important;
+}
+
+/* Effet ambient — taches lumineuses en arrière-plan */
+body::before {
+  content: "";
+  position: fixed;
+  top: -200px; left: -200px;
+  width: 600px; height: 600px;
+  background: radial-gradient(circle, rgba(242, 107, 31, 0.12) 0%, transparent 60%);
+  filter: blur(40px);
+  pointer-events: none;
+  z-index: 0;
+}
+body::after {
+  content: "";
+  position: fixed;
+  bottom: -200px; right: -200px;
+  width: 700px; height: 700px;
+  background: radial-gradient(circle, rgba(217, 70, 239, 0.10) 0%, transparent 60%);
+  filter: blur(50px);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ─── Layout principal ─── */
+.login-pf-page,
+.login-pf-page-header,
+.login-pf-page-side-image,
+.login-pf-page-side-image-wr {
+  background: transparent !important;
+}
+
+.login-pf-page .container,
+.pf-c-page__main,
+.kc-pf-page__main,
+#kc-container,
+#kc-container-wrapper {
+  position: relative;
+  z-index: 1;
+}
+
+#kc-content,
+#kc-content-wrapper,
+.login-pf-page #kc-content,
+.kc-login-card,
+.pf-c-login__main {
+  max-width: 440px !important;
+  margin: 60px auto !important;
+  padding: 36px 32px !important;
+  background: var(--ks-surface) !important;
+  border: 1px solid var(--ks-border);
+  border-radius: 16px;
+  box-shadow: var(--ks-shadow);
+  position: relative;
+  z-index: 1;
+}
+
+/* ─── Logo + brand ─── */
+#kc-header,
+.login-pf-page-header,
+.pf-c-login__header {
+  text-align: center;
+  margin-bottom: 28px !important;
+  padding: 0 !important;
+}
+
+#kc-header-wrapper,
+.login-pf-brand,
+.pf-c-login__header-brand {
+  background: none !important;
+  padding: 0 !important;
+  border: none !important;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+/* On remplace le texte par notre logo via background-image */
+.login-pf-brand img,
+.pf-c-login__header-brand img {
+  display: none;
+}
+
+#kc-header-wrapper::before,
+.pf-c-login__header-brand::before {
+  content: "";
+  display: block;
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+  background: var(--ks-grad-brand);
+  background-image: url("../img/logo-kaydan.svg");
+  background-size: 36px 36px;
+  background-repeat: no-repeat;
+  background-position: center;
+  box-shadow: var(--ks-shadow-glow);
+}
+
+#kc-header-wrapper {
+  font-family: 'Sora', 'Inter', sans-serif;
+  font-weight: 800;
+  font-size: 18px;
+  color: #fff !important;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+#kc-header-wrapper::after {
+  content: "Contrôle d'accès intelligent";
+  display: block;
+  font-family: 'Inter', sans-serif;
+  font-size: 11px;
+  text-transform: none;
+  font-weight: 400;
+  color: var(--ks-text-dim);
+  letter-spacing: normal;
+  margin-top: 2px;
+}
+
+/* ─── Page title ─── */
+#kc-page-title,
+h1#kc-page-title,
+.pf-c-login__main-header h1 {
+  font-family: 'Inter', sans-serif !important;
+  font-size: 22px !important;
+  font-weight: 700 !important;
+  color: var(--ks-text) !important;
+  margin: 0 0 8px !important;
+  text-align: left;
+}
+
+#kc-info-message,
+.kc-feedback-text,
+.pf-c-alert {
+  color: var(--ks-text-dim) !important;
+  font-size: 13px !important;
+  text-align: left;
+}
+
+/* ─── Form fields ─── */
+.form-group {
+  margin-bottom: 14px !important;
+}
+
+label,
+.pf-c-form__label,
+.pf-c-form__label-text {
+  color: var(--ks-text-muted) !important;
+  font-size: 11.5px !important;
+  font-weight: 600 !important;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 6px !important;
+}
+
+input[type="text"],
+input[type="password"],
+input[type="email"],
+.form-control,
+.pf-c-form-control {
+  width: 100% !important;
+  padding: 12px 14px !important;
+  background: var(--ks-surface-2) !important;
+  border: 1px solid var(--ks-border) !important;
+  border-radius: var(--ks-radius-sm) !important;
+  color: var(--ks-text) !important;
+  font-size: 14px !important;
+  transition: border-color 0.15s, box-shadow 0.15s !important;
+  box-shadow: none !important;
+}
+
+input[type="text"]:focus,
+input[type="password"]:focus,
+input[type="email"]:focus,
+.form-control:focus,
+.pf-c-form-control:focus {
+  outline: none !important;
+  border-color: var(--ks-orange) !important;
+  box-shadow: 0 0 0 3px rgba(242, 107, 31, 0.15) !important;
+}
+
+/* Placeholder */
+::placeholder { color: rgba(148, 163, 184, 0.5) !important; }
+
+/* ─── Boutons ─── */
+.btn,
+input[type="submit"],
+.pf-c-button {
+  border-radius: var(--ks-radius-sm) !important;
+  font-weight: 600 !important;
+  font-size: 14px !important;
+  padding: 12px 18px !important;
+  border: none !important;
+  cursor: pointer;
+  transition: opacity 0.15s, transform 0.05s;
+}
+
+.btn-primary,
+.btn-lg.btn-primary,
+input.btn-primary,
+input.kc-login,
+input[type="submit"].kc-login,
+.pf-c-button.pf-m-primary {
+  background: var(--ks-grad-brand) !important;
+  color: #fff !important;
+  width: 100% !important;
+  box-shadow: var(--ks-shadow-glow) !important;
+}
+
+.btn-primary:hover {
+  opacity: 0.94;
+  transform: translateY(-1px);
+}
+
+.btn-default,
+.btn-secondary,
+.pf-c-button.pf-m-secondary {
+  background: var(--ks-surface-2) !important;
+  color: var(--ks-text) !important;
+  border: 1px solid var(--ks-border) !important;
+}
+
+/* ─── Liens ─── */
+a {
+  color: var(--ks-orange) !important;
+  text-decoration: none !important;
+  font-weight: 500;
+}
+a:hover { text-decoration: underline !important; }
+
+#kc-registration a,
+#kc-registration-container a {
+  color: var(--ks-orange) !important;
+}
+
+/* ─── Form options (Remember me + forgot password) ─── */
+#kc-form-options,
+.checkbox label,
+.kc-form-options {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12.5px;
+  color: var(--ks-text-dim) !important;
+  margin: 12px 0;
+}
+
+input[type="checkbox"] {
+  accent-color: var(--ks-orange);
+  margin-right: 6px;
+}
+
+/* ─── Social providers (Microsoft Entra, etc.) ─── */
+#kc-social-providers,
+.kc-social-providers-list {
+  margin-top: 24px !important;
+  padding-top: 20px;
+  border-top: 1px solid var(--ks-border);
+}
+
+#kc-social-providers ul,
+.kc-social-providers-list ul {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+#kc-social-providers li a,
+#kc-social-providers a.zocial,
+.kc-social-providers-list a {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 11px 14px !important;
+  background: var(--ks-surface-2) !important;
+  border: 1px solid var(--ks-border) !important;
+  border-radius: var(--ks-radius-sm) !important;
+  color: var(--ks-text) !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  text-decoration: none !important;
+  transition: background 0.15s, border-color 0.15s !important;
+}
+
+#kc-social-providers li a:hover {
+  background: var(--ks-surface) !important;
+  border-color: var(--ks-orange) !important;
+}
+
+/* ─── Feedback messages (success / error / warning) ─── */
+.alert-success,
+.pf-c-alert.pf-m-success {
+  background: rgba(45, 212, 191, 0.10) !important;
+  color: var(--ks-success) !important;
+  border-left: 3px solid var(--ks-success) !important;
+  border-radius: 8px !important;
+  padding: 10px 14px !important;
+}
+
+.alert-error,
+.alert-danger,
+.pf-c-alert.pf-m-danger {
+  background: rgba(248, 113, 113, 0.10) !important;
+  color: var(--ks-danger) !important;
+  border-left: 3px solid var(--ks-danger) !important;
+  border-radius: 8px !important;
+  padding: 10px 14px !important;
+}
+
+.alert-warning,
+.pf-c-alert.pf-m-warning {
+  background: rgba(251, 146, 60, 0.10) !important;
+  color: #fb923c !important;
+  border-left: 3px solid #fb923c !important;
+  border-radius: 8px !important;
+  padding: 10px 14px !important;
+}
+
+/* ─── Footer KAYDAN ─── */
+.kaydan-footer {
+  text-align: center;
+  margin-top: 24px;
+  font-size: 11.5px;
+  color: var(--ks-text-dim);
+}
+.kaydan-footer a { color: var(--ks-text-muted); }
+
+/* ─── Spinner ─── */
+.kc-spinner,
+.pf-c-spinner {
+  border-color: var(--ks-orange) transparent transparent transparent !important;
+}
+
+/* ─── Sélecteur de locale ─── */
+#kc-locale,
+.kc-locale {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 5;
+}
+
+#kc-locale-dropdown ul {
+  background: var(--ks-surface) !important;
+  border: 1px solid var(--ks-border);
+  border-radius: var(--ks-radius-sm);
+}
+
+#kc-locale-dropdown a {
+  color: var(--ks-text) !important;
+  padding: 8px 14px;
+}
+
+/* ─── Responsive ─── */
+@media (max-width: 540px) {
+  #kc-content,
+  #kc-content-wrapper,
+  .pf-c-login__main {
+    margin: 20px 16px !important;
+    padding: 28px 22px !important;
+  }
+}
+
+/* ─── Light mode (utilisateur préfère light) ─── */
+@media (prefers-color-scheme: light) {
+  /* On garde le thème dark par défaut pour le login Keycloak — image marque */
+}
