@@ -1,6 +1,9 @@
 # ==============================================================================
 # KAYDAN SHIELD — Docker Compose
 # ==============================================================================
+# Tous les noms de services sont préfixés `shield` pour éviter les collisions
+# avec d'autres stacks sur le même hôte (ex. `web`, `db`, `redis` génériques).
+#
 # Prérequis serveur :
 #   - Traefik v2/v3 déjà installé sur l'hôte, exposé en 80/443
 #     (NE PAS redéployer Traefik ici — on s'y raccroche via le réseau externe)
@@ -27,8 +30,7 @@ networks:
   proxy:
     external: true
 
-# Volumes préfixés `kshield_` pour éviter toute collision avec d'autres stacks
-# présentes sur le même hôte (smitci, nakoa, etc.).
+# Volumes préfixés `kshield_` pour éviter toute collision avec d'autres stacks.
 volumes:
   kshield_pgdata:
     name: kshield_pgdata
@@ -68,10 +70,10 @@ services:
   # ===========================================================================
   # PostgreSQL + PostGIS — non exposé publiquement
   # ===========================================================================
-  db:
+  shielddb:
     image: postgis/postgis:16-3.4
     container_name: kshield_db
-    hostname: db
+    hostname: shielddb
     restart: unless-stopped
     environment:
       TZ: Africa/Abidjan
@@ -91,10 +93,10 @@ services:
   # ===========================================================================
   # Redis (Channels + Celery broker) — non exposé publiquement
   # ===========================================================================
-  redis:
+  shieldredis:
     image: redis:7-alpine
     container_name: kshield_redis
-    hostname: redis
+    hostname: shieldredis
     restart: unless-stopped
     environment:
       TZ: Africa/Abidjan
@@ -121,10 +123,10 @@ services:
   # ===========================================================================
   # MinIO (S3 compatible) — exposé via Traefik (API + console)
   # ===========================================================================
-  minio:
+  shieldminio:
     image: minio/minio:latest
     container_name: kshield_minio
-    hostname: minio
+    hostname: shieldminio
     restart: unless-stopped
     environment:
       TZ: Africa/Abidjan
@@ -164,10 +166,10 @@ services:
   # ===========================================================================
   # API Django (HTTP / REST + admin) — gunicorn / uvicorn
   # ===========================================================================
-  web:
+  shieldweb:
     <<: *django-base
     container_name: kshield_web
-    hostname: web
+    hostname: shieldweb
     command: >
       sh -c "
       python manage.py migrate --noinput &&
@@ -185,9 +187,9 @@ services:
       - kshield_media:/app/media:rw
       - kshield_logs:/app/logs:rw
     depends_on:
-      db:
+      shielddb:
         condition: service_healthy
-      redis:
+      shieldredis:
         condition: service_healthy
     networks: [kshield_network, proxy]
     labels:
@@ -222,10 +224,10 @@ services:
   # ===========================================================================
   # WebSockets / Channels (ASGI) — uvicorn
   # ===========================================================================
-  daphne:
+  shieldws:
     <<: *django-base
-    container_name: kshield_daphne
-    hostname: daphne
+    container_name: kshield_ws
+    hostname: shieldws
     command: >
       uvicorn kshield.asgi:application
       --host 0.0.0.0 --port 8001
@@ -234,9 +236,9 @@ services:
       --workers 2
       --log-level info
     depends_on:
-      db:
+      shielddb:
         condition: service_healthy
-      redis:
+      shieldredis:
         condition: service_healthy
     networks: [kshield_network, proxy]
     labels:
@@ -261,10 +263,10 @@ services:
   # ===========================================================================
   # Celery worker — non exposé publiquement
   # ===========================================================================
-  celery_worker:
+  shieldworker:
     <<: *django-base
-    container_name: kshield_celery_worker
-    hostname: celery_worker
+    container_name: kshield_worker
+    hostname: shieldworker
     command: >
       celery -A kshield worker
       --loglevel=info
@@ -276,9 +278,9 @@ services:
       - kshield_media:/app/media:rw
       - kshield_logs:/app/logs:rw
     depends_on:
-      db:
+      shielddb:
         condition: service_healthy
-      redis:
+      shieldredis:
         condition: service_healthy
     networks: [kshield_network]
     healthcheck:
@@ -290,36 +292,36 @@ services:
   # ===========================================================================
   # Celery beat (scheduler) — non exposé publiquement
   # ===========================================================================
-  celery_beat:
+  shieldbeat:
     <<: *django-base
-    container_name: kshield_celery_beat
-    hostname: celery_beat
+    container_name: kshield_beat
+    hostname: shieldbeat
     command: >
       celery -A kshield beat
       --loglevel=info
       --scheduler django_celery_beat.schedulers:DatabaseScheduler
       --pidfile=/tmp/celerybeat.pid
     depends_on:
-      db:
+      shielddb:
         condition: service_healthy
-      redis:
+      shieldredis:
         condition: service_healthy
     networks: [kshield_network]
 
   # ===========================================================================
   # Adminer (admin DB) — exposé via Traefik, protégé par basic auth
   # ===========================================================================
-  adminer:
+  shieldadminer:
     image: adminer:4
     container_name: kshield_adminer
-    hostname: adminer
+    hostname: shieldadminer
     restart: unless-stopped
     environment:
       TZ: Africa/Abidjan
-      ADMINER_DEFAULT_SERVER: db
+      ADMINER_DEFAULT_SERVER: shielddb
       ADMINER_DESIGN: dracula
     depends_on:
-      db:
+      shielddb:
         condition: service_healthy
     networks: [kshield_network, proxy]
     labels:
