@@ -15,7 +15,7 @@
 #       adminer.shield.datarium-dev.com    (admin DB, protégé basic auth)
 #
 # Lancement :
-#   docker compose -f docker_compose.yml --env-file .env up -d
+#   docker compose --env-file .env up -d --build
 # ==============================================================================
 
 name: kshield
@@ -220,17 +220,19 @@ services:
       - traefik.http.middlewares.kshield-api-rl.ratelimit.burst=500
 
   # ===========================================================================
-  # WebSockets / Channels (ASGI) — daphne
+  # WebSockets / Channels (ASGI) — uvicorn
   # ===========================================================================
   daphne:
     <<: *django-base
     container_name: kshield_daphne
     hostname: daphne
     command: >
-      daphne -b 0.0.0.0 -p 8001
+      uvicorn kshield.asgi:application
+      --host 0.0.0.0 --port 8001
       --proxy-headers
-      --access-log -
-      kshield.asgi:application
+      --forwarded-allow-ips=*
+      --workers 2
+      --log-level info
     depends_on:
       db:
         condition: service_healthy
