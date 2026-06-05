@@ -1,18 +1,80 @@
+# =============================================================================
+# KAYDAN SHIELD — Python dependencies
+# =============================================================================
+# Pins volontairement larges pour supporter Python 3.10 → 3.14.
+# Build avec :  pip install -r requirements.txt
+# =============================================================================
+
+# ─── Django core ───
+Django==6.0.5
+asgiref==3.11.1
+sqlparse==0.5.5
+tzdata==2026.2
+tzlocal==5.3.1
+python-dateutil==2.9.0.post0
+python-decouple==3.8
+python-dotenv==1.2.2
+six==1.17.0
+
+# ─── DB (PostgreSQL/PostGIS via Django GIS) ───
+psycopg-binary==3.3.4
+dj-database-url>=2.2,<3
+
+# ─── DRF + auth ───
+djangorestframework==3.17.1
+djangorestframework_simplejwt==5.5.1
+django-filter==25.2
+drf-spectacular>=0.27,<1
+django-cors-headers>=4.4,<5
+
+# ─── Channels (WebSockets) ───
+channels>=4.1,<5
+channels-redis>=4.2,<5
+
+# ─── Servers (ASGI/WSGI) ───
+gunicorn>=22.0,<24
+uvicorn[standard]>=0.30,<1
+daphne>=4.1,<5
+whitenoise>=6.7,<7
+
+# ─── Stockage S3 / MinIO ───
+django-storages[s3]>=1.14,<2
+boto3>=1.34,<2
+
+# ─── Cache Redis ───
+redis==7.4.0
+django-redis>=5.4,<6
+
+# ─── Celery ───
+celery==5.6.3
+amqp==5.3.1
+billiard==4.2.4
+kombu==5.6.2
+vine==5.1.0
+django-celery-beat>=2.7,<3
+django-celery-results>=2.5,<3
+click==8.3.3
+click-didyoumean==0.3.1
+click-plugins==1.1.1.2
+click-repl==0.3.0
+prompt_toolkit==3.0.52
+wcwidth==0.7.0
+
 # ─── SSO Keycloak (OpenID Connect) ───
 mozilla-django-oidc>=4.0,<5
 PyJWT[crypto]>=2.8,<3
 cryptography>=42.0
 requests>=2.31
 
-# ─── Monitoring (Prometheus exporter) ───
+# ─── Génération QR codes / badges PDF ───
+qrcode[pil]>=7.4,<9
+reportlab>=4.2,<5
+pillow==12.2.0
+
+# ─── Monitoring (Prometheus + Sentry) ───
 django-prometheus>=2.3,<3
 prometheus-client>=0.20
-
-# ─── Tests (dev) ───
-pytest>=8.0
-pytest-django>=4.7
-pytest-cov>=4.1
-pytest-mock>=3.12
+sentry-sdk[django,celery]>=2.10,<3
 
 # ─── Reconnaissance faciale (InsightFace + SilentFace) ───
 # Pipeline universel CPU. Pour activer GPU sur un host avec NVIDIA :
@@ -20,50 +82,31 @@ pytest-mock>=3.12
 #   pip install "onnxruntime-gpu>=1.18,<2"
 # Puis FACE_CTX_ID=0 + FACE_PROVIDERS=CUDAExecutionProvider,CPUExecutionProvider.
 #
-# Note : pins volontairement larges pour supporter Python 3.10 → 3.14.
 # - onnxruntime 1.24+ : Python 3.13 / 3.14
 # - onnxruntime 1.18-1.20 : Python 3.10-3.12
 # - numpy 2.x requis sur Python 3.13+ (1.x n'a pas de wheel py313+)
 # - opencv-python-headless 4.10+ pour py313+
 insightface>=0.7.3
-onnxruntime>=1.18,<2          # CPU par défaut (cf. doc pour passer en GPU)
+onnxruntime>=1.18,<2
 opencv-python-headless>=4.10
 numpy>=1.26
 
-amqp==5.3.1
-asgiref==3.11.1
-billiard==4.2.4
-black==26.3.1
-celery==5.6.3
-click==8.3.3
-click-didyoumean==0.3.1
-click-plugins==1.1.1.2
-click-repl==0.3.0
-Django==6.0.5
+# ─── Dev tooling ───
 django-debug-toolbar==6.3.0
-django-filter==25.2
-djangorestframework==3.17.1
-djangorestframework_simplejwt==5.5.1
+black==26.3.1
 isort==8.0.1
-kombu==5.6.2
-mypy_extensions==1.1.0
-packaging==26.2
-pathspec==1.1.1
-pillow==12.2.0
-platformdirs==4.9.6
-prompt_toolkit==3.0.52
-psycopg-binary==3.3.4
-PyJWT==2.12.1
-python-dateutil==2.9.0.post0
-python-decouple==3.8
-python-dotenv==1.2.2
-pytokens==0.4.1
-redis==7.4.0
-rest-framework-simplejwt==0.0.2
 ruff==0.15.12
-six==1.17.0
-sqlparse==0.5.5
-tzdata==2026.2
-tzlocal==5.3.1
-vine==5.1.0
-wcwidth==0.7.0
+mypy_extensions==1.1.0
+pathspec==1.1.1
+platformdirs==4.9.6
+packaging==26.2
+pytokens==0.4.1
+
+# ─── Tests ───
+pytest>=8.0
+pytest-django>=4.7
+pytest-cov>=4.1
+pytest-mock>=3.12
+
+# ─── Removed (paquet inexistant / doublon) ───
+# rest-framework-simplejwt==0.0.2   (faux paquet — utiliser djangorestframework_simplejwt)
