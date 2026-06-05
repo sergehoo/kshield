@@ -1,119 +1,341 @@
+# ==============================================================================
+# KAYDAN SHIELD — Docker Compose
+# ==============================================================================
+# Prérequis serveur :
+#   - Traefik v2/v3 déjà installé sur l'hôte, exposé en 80/443
+#     (NE PAS redéployer Traefik ici — on s'y raccroche via le réseau externe)
+#   - Réseau Docker externe "proxy" déjà créé :
+#       docker network create proxy
+#   - Certresolver Let's Encrypt nommé "lets" déjà configuré dans Traefik
+#   - DNS A/AAAA pointant vers le serveur pour :
+#       api.shield.datarium-dev.com        (API Django + admin)
+#       ws.shield.datarium-dev.com         (WebSockets Channels)
+#       minio.shield.datarium-dev.com      (MinIO API S3)
+#       minio-console.shield.datarium-dev.com (console MinIO)
+#       adminer.shield.datarium-dev.com    (admin DB, protégé basic auth)
+#
+# Lancement :
+#   docker compose -f docker_compose.yml --env-file .env up -d
+# ==============================================================================
+
+name: kshield
+
+networks:
+  kshield_network:
+    name: kshield_network
+    driver: bridge
+  proxy:
+    external: true
+
+# Volumes préfixés `kshield_` pour éviter toute collision avec d'autres stacks
+# présentes sur le même hôte (smitci, nakoa, etc.).
+volumes:
+  kshield_pgdata:
+    name: kshield_pgdata
+  kshield_redis_data:
+    name: kshield_redis_data
+  kshield_minio_data:
+    name: kshield_minio_data
+  kshield_static:
+    name: kshield_static
+  kshield_media:
+    name: kshield_media
+  kshield_logs:
+    name: kshield_logs
+
+x-logging-rotated: &logging_rotated
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-django-base: &django-base
+  build:
+    context: .
+    dockerfile: Dockerfile
+  image: kshield/backend:${VERSION:-latest}
+  env_file: [.env]
+  environment:
+    TZ: Africa/Abidjan
+    DJANGO_SETTINGS_MODULE: kshield.settings.prod
+    PYTHONUNBUFFERED: "1"
+    FORWARDED_ALLOW_IPS: "*"
+  restart: unless-stopped
+  logging: *logging_rotated
+
 services:
+
+  # ===========================================================================
+  # PostgreSQL + PostGIS — non exposé publiquement
+  # ===========================================================================
+  db:
+    image: postgis/postgis:16-3.4
+    container_name: kshield_db
+    hostname: db
+    restart: unless-stopped
+    environment:
+      TZ: Africa/Abidjan
+      POSTGRES_DB: ${POSTGRES_DB:-kaydan_shield}
+      POSTGRES_USER: ${POSTGRES_USER:-kshield}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - kshield_pgdata:/var/lib/postgresql/data
+    networks: [kshield_network]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB -h 127.0.0.1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 10
+    logging: *logging_rotated
+
+  # ===========================================================================
+  # Redis (Channels + Celery broker) — non exposé publiquement
+  # ===========================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: kshield_redis
+    hostname: redis
+    restart: unless-stopped
+    environment:
+      TZ: Africa/Abidjan
+    command:
+      - "redis-server"
+      - "--appendonly"
+      - "yes"
+      - "--appendfsync"
+      - "everysec"
+      - "--maxmemory"
+      - "512mb"
+      - "--maxmemory-policy"
+      - "allkeys-lru"
+    volumes:
+      - kshield_redis_data:/data
+    networks: [kshield_network]
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -h 127.0.0.1 ping | grep PONG >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 10
+    logging: *logging_rotated
+
+  # ===========================================================================
+  # MinIO (S3 compatible) — exposé via Traefik (API + console)
+  # ===========================================================================
+  minio:
+    image: minio/minio:latest
+    container_name: kshield_minio
+    hostname: minio
+    restart: unless-stopped
+    environment:
+      TZ: Africa/Abidjan
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-kaydan_minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_BROWSER_REDIRECT_URL: https://minio-console.shield.datarium-dev.com
+    command: server /data --console-address ":9001"
+    volumes:
+      - kshield_minio_data:/data
+    networks: [kshield_network, proxy]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 5s
+      retries: 10
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=proxy
+
+      # API S3 (port 9000)
+      - traefik.http.routers.kshield-minio.rule=Host(`minio.shield.datarium-dev.com`)
+      - traefik.http.routers.kshield-minio.entrypoints=websecure
+      - traefik.http.routers.kshield-minio.tls=true
+      - traefik.http.routers.kshield-minio.tls.certresolver=lets
+      - traefik.http.routers.kshield-minio.service=kshield-minio-svc
+      - traefik.http.services.kshield-minio-svc.loadbalancer.server.port=9000
+
+      # Console (port 9001)
+      - traefik.http.routers.kshield-minio-console.rule=Host(`minio-console.shield.datarium-dev.com`)
+      - traefik.http.routers.kshield-minio-console.entrypoints=websecure
+      - traefik.http.routers.kshield-minio-console.tls=true
+      - traefik.http.routers.kshield-minio-console.tls.certresolver=lets
+      - traefik.http.routers.kshield-minio-console.service=kshield-minio-console-svc
+      - traefik.http.services.kshield-minio-console-svc.loadbalancer.server.port=9001
+    logging: *logging_rotated
+
+  # ===========================================================================
+  # API Django (HTTP / REST + admin) — gunicorn / uvicorn
+  # ===========================================================================
   web:
-    build: .
-    container_name: kaydan_shield_web
-    restart: always
+    <<: *django-base
+    container_name: kshield_web
+    hostname: web
     command: >
       sh -c "
-      python manage.py migrate &&
+      python manage.py migrate --noinput &&
       python manage.py collectstatic --noinput &&
-      gunicorn config.asgi:application
+      gunicorn kshield.asgi:application
       -k uvicorn.workers.UvicornWorker
       --bind 0.0.0.0:8000
       --workers 3
+      --timeout 120
+      --forwarded-allow-ips='*'
+      --access-logfile - --error-logfile -
       "
-    env_file:
-      - .env
     volumes:
-      - .:/app
-      - static_volume:/app/staticfiles
-      - media_volume:/app/media
+      - kshield_static:/app/staticfiles:rw
+      - kshield_media:/app/media:rw
+      - kshield_logs:/app/logs:rw
     depends_on:
-      - db
-      - redis
-      - minio
-    ports:
-      - "8000:8000"
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks: [kshield_network, proxy]
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=proxy
 
-  db:
-    image: postgis/postgis:16-3.4
-    container_name: kaydan_shield_db
-    restart: always
-    environment:
-      POSTGRES_DB: kaydan_shield
-      POSTGRES_USER: kaydan_user
-      POSTGRES_PASSWORD: kaydan_password
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
+      - traefik.http.routers.kshield-api.rule=Host(`api.shield.datarium-dev.com`)
+      - traefik.http.routers.kshield-api.entrypoints=websecure
+      - traefik.http.routers.kshield-api.tls=true
+      - traefik.http.routers.kshield-api.tls.certresolver=lets
+      - traefik.http.routers.kshield-api.service=kshield-api-svc
 
-  redis:
-    image: redis:7-alpine
-    container_name: kaydan_shield_redis
-    restart: always
-    ports:
-      - "6379:6379"
+      - traefik.http.services.kshield-api-svc.loadbalancer.server.port=8000
+      - traefik.http.services.kshield-api-svc.loadbalancer.server.scheme=http
 
-  celery_worker:
-    build: .
-    container_name: kaydan_shield_celery_worker
-    restart: always
-    command: celery -A config worker -l info
-    env_file:
-      - .env
-    volumes:
-      - .:/app
-      - media_volume:/app/media
-    depends_on:
-      - web
-      - redis
-      - db
+      - traefik.http.routers.kshield-api.middlewares=kshield-sec-headers@docker,kshield-compress@docker,kshield-api-rl@docker
 
-  celery_beat:
-    build: .
-    container_name: kaydan_shield_celery_beat
-    restart: always
-    command: celery -A config beat -l info
-    env_file:
-      - .env
-    volumes:
-      - .:/app
-    depends_on:
-      - web
-      - redis
-      - db
+      # Middlewares partagés
+      - traefik.http.middlewares.kshield-sec-headers.headers.stsSeconds=31536000
+      - traefik.http.middlewares.kshield-sec-headers.headers.stsIncludeSubdomains=true
+      - traefik.http.middlewares.kshield-sec-headers.headers.stsPreload=true
+      - traefik.http.middlewares.kshield-sec-headers.headers.contentTypeNosniff=true
+      - traefik.http.middlewares.kshield-sec-headers.headers.frameDeny=true
+      - traefik.http.middlewares.kshield-sec-headers.headers.referrerPolicy=strict-origin-when-cross-origin
+      - traefik.http.middlewares.kshield-sec-headers.headers.customRequestHeaders.X-Forwarded-Proto=https
+      - traefik.http.middlewares.kshield-compress.compress=true
 
+      # Rate limit API (uploads visiteurs, webhooks reconnaissance faciale)
+      - traefik.http.middlewares.kshield-api-rl.ratelimit.average=300
+      - traefik.http.middlewares.kshield-api-rl.ratelimit.burst=500
+
+  # ===========================================================================
+  # WebSockets / Channels (ASGI) — daphne
+  # ===========================================================================
   daphne:
-    build: .
-    container_name: kaydan_shield_daphne
-    restart: always
-    command: daphne -b 0.0.0.0 -p 8001 config.asgi:application
-    env_file:
-      - .env
-    volumes:
-      - .:/app
+    <<: *django-base
+    container_name: kshield_daphne
+    hostname: daphne
+    command: >
+      daphne -b 0.0.0.0 -p 8001
+      --proxy-headers
+      --access-log -
+      kshield.asgi:application
     depends_on:
-      - redis
-      - db
-    ports:
-      - "8001:8001"
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks: [kshield_network, proxy]
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=proxy
 
-  minio:
-    image: minio/minio:latest
-    container_name: kaydan_shield_minio
-    restart: always
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: kaydan_minio
-      MINIO_ROOT_PASSWORD: kaydan_minio_password
+      - traefik.http.routers.kshield-ws.rule=Host(`ws.shield.datarium-dev.com`)
+      - traefik.http.routers.kshield-ws.entrypoints=websecure
+      - traefik.http.routers.kshield-ws.tls=true
+      - traefik.http.routers.kshield-ws.tls.certresolver=lets
+      - traefik.http.routers.kshield-ws.service=kshield-ws-svc
+
+      - traefik.http.services.kshield-ws-svc.loadbalancer.server.port=8001
+      - traefik.http.services.kshield-ws-svc.loadbalancer.server.scheme=http
+      - traefik.http.services.kshield-ws-svc.loadbalancer.sticky.cookie=true
+      - traefik.http.services.kshield-ws-svc.loadbalancer.sticky.cookie.name=kshield_ws
+      - traefik.http.services.kshield-ws-svc.loadbalancer.sticky.cookie.httpOnly=true
+      - traefik.http.services.kshield-ws-svc.loadbalancer.sticky.cookie.secure=true
+
+      - traefik.http.routers.kshield-ws.middlewares=kshield-sec-headers@docker,kshield-compress@docker
+
+  # ===========================================================================
+  # Celery worker — non exposé publiquement
+  # ===========================================================================
+  celery_worker:
+    <<: *django-base
+    container_name: kshield_celery_worker
+    hostname: celery_worker
+    command: >
+      celery -A kshield worker
+      --loglevel=info
+      --concurrency=4
+      --prefetch-multiplier=1 -Ofair
+      --max-tasks-per-child=500
+      --without-gossip --without-mingle
     volumes:
-      - minio_data:/data
-    ports:
-      - "9000:9000"
-      - "9001:9001"
+      - kshield_media:/app/media:rw
+      - kshield_logs:/app/logs:rw
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks: [kshield_network]
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A kshield inspect ping -d celery@$$(hostname) >/dev/null 2>&1 || exit 1"]
+      interval: 60s
+      timeout: 10s
+      retries: 5
 
+  # ===========================================================================
+  # Celery beat (scheduler) — non exposé publiquement
+  # ===========================================================================
+  celery_beat:
+    <<: *django-base
+    container_name: kshield_celery_beat
+    hostname: celery_beat
+    command: >
+      celery -A kshield beat
+      --loglevel=info
+      --scheduler django_celery_beat.schedulers:DatabaseScheduler
+      --pidfile=/tmp/celerybeat.pid
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks: [kshield_network]
+
+  # ===========================================================================
+  # Adminer (admin DB) — exposé via Traefik, protégé par basic auth
+  # ===========================================================================
   adminer:
     image: adminer:4
-    container_name: kaydan_shield_adminer
-    restart: always
-    ports:
-      - "8080:8080"
+    container_name: kshield_adminer
+    hostname: adminer
+    restart: unless-stopped
+    environment:
+      TZ: Africa/Abidjan
+      ADMINER_DEFAULT_SERVER: db
+      ADMINER_DESIGN: dracula
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+    networks: [kshield_network, proxy]
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=proxy
 
-volumes:
-  postgres_data:
-  static_volume:
-  media_volume:
-  minio_data:
+      - traefik.http.routers.kshield-adminer.rule=Host(`adminer.shield.datarium-dev.com`)
+      - traefik.http.routers.kshield-adminer.entrypoints=websecure
+      - traefik.http.routers.kshield-adminer.tls=true
+      - traefik.http.routers.kshield-adminer.tls.certresolver=lets
+      - traefik.http.routers.kshield-adminer.service=kshield-adminer-svc
+
+      - traefik.http.services.kshield-adminer-svc.loadbalancer.server.port=8080
+      - traefik.http.services.kshield-adminer-svc.loadbalancer.server.scheme=http
+
+      # Basic Auth obligatoire — générer avec :
+      #   htpasswd -nb admin <password>
+      # puis renseigner ADMINER_BASIC_AUTH dans .env (échapper les $ en $$)
+      - traefik.http.routers.kshield-adminer.middlewares=kshield-adminer-auth@docker,kshield-sec-headers@docker
+      - traefik.http.middlewares.kshield-adminer-auth.basicauth.users=${ADMINER_BASIC_AUTH:-admin:$$apr1$$change$$me}
+    logging: *logging_rotated

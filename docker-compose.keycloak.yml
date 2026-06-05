@@ -129,12 +129,16 @@ services:
     cap_drop: [ALL]
     cap_add: [NET_BIND_SERVICE]
     labels:
-      # Traefik
+      # Traefik — branchement sur l'instance déjà installée sur l'hôte
       - "traefik.enable=true"
+      - "traefik.docker.network=proxy"
       - "traefik.http.routers.keycloak.rule=Host(`${KEYCLOAK_DOMAIN}`)"
       - "traefik.http.routers.keycloak.entrypoints=websecure"
-      - "traefik.http.routers.keycloak.tls.certresolver=letsencrypt"
-      - "traefik.http.services.keycloak.loadbalancer.server.port=8080"
+      - "traefik.http.routers.keycloak.tls=true"
+      - "traefik.http.routers.keycloak.tls.certresolver=lets"
+      - "traefik.http.routers.keycloak.service=keycloak-svc"
+      - "traefik.http.services.keycloak-svc.loadbalancer.server.port=8080"
+      - "traefik.http.services.keycloak-svc.loadbalancer.server.scheme=http"
       # Headers de sécurité
       - "traefik.http.middlewares.keycloak-headers.headers.framedeny=true"
       - "traefik.http.middlewares.keycloak-headers.headers.contenttypenosniff=true"
@@ -143,10 +147,11 @@ services:
       - "traefik.http.middlewares.keycloak-headers.headers.stsseconds=31536000"
       - "traefik.http.middlewares.keycloak-headers.headers.stsincludesubdomains=true"
       - "traefik.http.middlewares.keycloak-headers.headers.stspreload=true"
-      - "traefik.http.routers.keycloak.middlewares=keycloak-headers"
+      - "traefik.http.middlewares.keycloak-headers.headers.customRequestHeaders.X-Forwarded-Proto=https"
       # Rate limiting (anti brute-force réseau, en plus de Keycloak)
       - "traefik.http.middlewares.keycloak-ratelimit.ratelimit.average=20"
       - "traefik.http.middlewares.keycloak-ratelimit.ratelimit.burst=40"
+      - "traefik.http.routers.keycloak.middlewares=keycloak-headers@docker,keycloak-ratelimit@docker"
 
 volumes:
   keycloak_db_data:
