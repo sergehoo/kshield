@@ -208,7 +208,7 @@ services:
       - traefik.enable=true
       - traefik.docker.network=proxy
 
-      - traefik.http.routers.kshield-api.rule=Host(`api.shield.datarium-dev.com`)
+      - traefik.http.routers.kshield-api.rule=Host(`shield.datarium-dev.com`)
       - traefik.http.routers.kshield-api.entrypoints=websecure
       - traefik.http.routers.kshield-api.tls=true
       - traefik.http.routers.kshield-api.tls.certresolver=lets
