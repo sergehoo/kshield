@@ -192,6 +192,17 @@ services:
       shieldredis:
         condition: service_healthy
     networks: [kshield_network, proxy]
+    # Override du HEALTHCHECK Dockerfile :
+    # - on simule le proxy HTTPS pour ne pas se prendre le 301 SSL_REDIRECT
+    # - on ne grep plus la réponse (l'endpoint peut renvoyer 401/403 si auth requise)
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - "curl -fsS -o /dev/null -H 'X-Forwarded-Proto: https' -H 'Host: api.shield.datarium-dev.com' http://127.0.0.1:8000/api/v1/employees/face/status/ || exit 1"
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
     labels:
       - traefik.enable=true
       - traefik.docker.network=proxy
@@ -241,6 +252,13 @@ services:
       shieldredis:
         condition: service_healthy
     networks: [kshield_network, proxy]
+    # Override : le port 8001 ne sert que /ws/, pas /api/. On check juste le TCP.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -o /dev/null http://127.0.0.1:8001/ || nc -z 127.0.0.1 8001 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
     labels:
       - traefik.enable=true
       - traefik.docker.network=proxy
