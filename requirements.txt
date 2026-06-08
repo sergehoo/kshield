@@ -17,7 +17,10 @@ python-dotenv==1.2.2
 six==1.17.0
 
 # ─── DB (PostgreSQL/PostGIS via Django GIS) ───
-psycopg-binary==3.3.4
+# `psycopg[binary]` installe à la fois le module Python `psycopg` ET
+# le binaire `psycopg-binary` (extension C). Sans le module Python,
+# Django plante avec "Error loading psycopg2 or psycopg module".
+psycopg[binary]>=3.2,<4
 dj-database-url>=2.2,<3
 
 # ─── DRF + auth ───
