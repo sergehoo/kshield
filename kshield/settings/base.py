@@ -83,6 +83,10 @@ MIDDLEWARE = [
     "django_prometheus.middleware.PrometheusBeforeMiddleware",  # début monitor
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
+    # WhiteNoise : sert les fichiers /static/ (CSS/JS admin + Django REST Framework
+    # + custom) directement depuis le conteneur, sans nginx. Doit être placé juste
+    # APRÈS SecurityMiddleware pour bénéficier des en-têtes de cache.
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -257,12 +261,11 @@ CELERY_BEAT_SCHEDULE = {
 }
 
 # ---------------------------------------------------------------------------
-# Storage (MinIO / S3 compatible) — activé en prod
+# Storage (MinIO / S3 compatible) — activé en prod via STORAGES override
 # ---------------------------------------------------------------------------
-DEFAULT_FILE_STORAGE = config(
-    "DEFAULT_FILE_STORAGE",
-    default="django.core.files.storage.FileSystemStorage",
-)
+# NB : Django 4.2+ remplace DEFAULT_FILE_STORAGE / STATICFILES_STORAGE par
+# le dict STORAGES (déclaré plus bas dans la section static). Les vars AWS_*
+# restent valides pour configurer le backend s3boto3.
 AWS_S3_ENDPOINT_URL = config("AWS_S3_ENDPOINT_URL", default=None)
 AWS_ACCESS_KEY_ID = config("AWS_ACCESS_KEY_ID", default=None)
 AWS_SECRET_ACCESS_KEY = config("AWS_SECRET_ACCESS_KEY", default=None)
@@ -285,6 +288,26 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 STATICFILES_DIRS = [BASE_DIR / "static"] if (BASE_DIR / "static").exists() else []
 MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
+
+# WhiteNoise : compression + cache busting (fingerprint dans le nom de fichier
+# pour permettre des max-age=1 an sans risque de stale).
+STORAGES = {
+    "default": {
+        "BACKEND": config(
+            "DEFAULT_FILE_STORAGE",
+            default="django.core.files.storage.FileSystemStorage",
+        ),
+    },
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
+}
+# Si un fichier référencé dans CSS/JS est manquant, on ne casse PAS le build
+# (manifest tolérant aux fichiers absents : utile pour admin qui réfère à des
+# images optionnelles).
+WHITENOISE_MANIFEST_STRICT = False
+# Cache long pour les assets hashed
+WHITENOISE_MAX_AGE = config("WHITENOISE_MAX_AGE", default=60 * 60 * 24 * 365, cast=int)
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 

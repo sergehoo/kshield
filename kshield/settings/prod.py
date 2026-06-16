@@ -81,10 +81,17 @@ SERVER_EMAIL = DEFAULT_FROM_EMAIL
 # ---------------------------------------------------------------------------
 # Stockage S3 / MinIO obligatoire en prod
 # ---------------------------------------------------------------------------
-DEFAULT_FILE_STORAGE = config(
-    "DEFAULT_FILE_STORAGE",
-    default="storages.backends.s3boto3.S3Boto3Storage",
-)
+# Override du backend "default" (media uploadés). Le "staticfiles" reste géré
+# par WhiteNoise (cf. base.py). Django 4.2+ : on utilise STORAGES dict.
+STORAGES = {
+    **STORAGES,    # noqa: F405 — hérité de base.py
+    "default": {
+        "BACKEND": config(
+            "DEFAULT_FILE_STORAGE",
+            default="storages.backends.s3boto3.S3Boto3Storage",
+        ),
+    },
+}
 AWS_DEFAULT_ACL = None
 AWS_S3_FILE_OVERWRITE = False
 AWS_QUERYSTRING_AUTH = True
