@@ -49,13 +49,33 @@ _engine_lock = threading.Lock()
 _engine_instance: Optional["FaceEngine"] = None
 
 
-def get_engine() -> "FaceEngine":
-    """Retourne le singleton FaceEngine (init lazy au premier appel)."""
+def get_engine():
+    """Retourne le moteur de face reco selon ``KAYDAN_SHIELD["FACE"]["BACKEND"]``.
+
+    - "insightface" (default) : ``FaceEngine`` — RetinaFace + ArcFace
+    - "yolov8"                : ``YoloV8FaceEngine`` — YOLOv8-face + ArcFace
+      (plus précis en conditions difficiles : profil, occlusion, multi-faces)
+
+    Le moteur est un singleton thread-safe par process.
+    """
     global _engine_instance
     if _engine_instance is not None:
         return _engine_instance
     with _engine_lock:
-        if _engine_instance is None:
+        if _engine_instance is not None:
+            return _engine_instance
+        backend = (settings.KAYDAN_SHIELD.get("FACE", {})
+                   .get("BACKEND", "insightface").lower())
+        if backend == "yolov8":
+            try:
+                from .face_engine_yolov8 import YoloV8FaceEngine
+                _engine_instance = YoloV8FaceEngine.get_instance()
+            except Exception as exc:
+                logger.warning(
+                    "Backend yolov8 indisponible (%s), fallback insightface.", exc,
+                )
+                _engine_instance = FaceEngine()
+        else:
             _engine_instance = FaceEngine()
         return _engine_instance
 

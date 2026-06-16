@@ -103,6 +103,14 @@ onnxruntime>=1.18,<2
 opencv-python-headless>=4.10
 numpy>=1.26
 
+# ─── YOLOv8 (face detection backend optionnel) ───
+# Activé si FACE_BACKEND=yolov8. Détecteur plus précis qu'InsightFace
+# RetinaFace en conditions difficiles (profil, occlusion, multi-faces).
+# Coût : ~700 MB pour torch + ultralytics. Si tu n'utilises QUE le backend
+# insightface, commenter ces deux lignes pour gagner ~1 Go en image Docker.
+ultralytics>=8.1,<9
+torch>=2.0,<3
+
 # ─── Dev tooling ───
 django-debug-toolbar==6.3.0
 black==26.3.1

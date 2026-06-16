@@ -34,6 +34,7 @@ urlpatterns = [
 
     # Terrain — listes
     path("sites/",            views.SitesView.as_view(),         name="admin-sites"),
+    path("system/",           views.SystemStatusView.as_view(),  name="admin-system-status"),
     path("devices/",          views.DevicesView.as_view(),       name="admin-devices"),
     # Assistant 2-étapes "Ajouter un lecteur" (picker techno → form pré-filtré)
     path("devices/add/",      views.DeviceReaderPickerView.as_view(),
@@ -50,6 +51,8 @@ urlpatterns = [
 
     # Sécurité — listes
     path("attendance/",       views.AttendanceView.as_view(),    name="admin-attendance"),
+    path("attendance/sheet/export/", views.AttendanceSheetExportView.as_view(),
+         name="admin-attendance-sheet-export"),
     path("antifraud/",        views.AntifraudView.as_view(),     name="admin-antifraud"),
     path("audit/",            views.AuditView.as_view(),         name="admin-audit"),
 

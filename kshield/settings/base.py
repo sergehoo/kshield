@@ -258,6 +258,11 @@ CELERY_BEAT_SCHEDULE = {
         "task": "devices.push_zkteco_users",
         "schedule": 300.0,
     },
+    # Agrégation des AccessEvent en Punch + AttendanceDay — toutes les 5 min
+    "attendance_aggregate_punches": {
+        "task": "attendance.aggregate_punches",
+        "schedule": 300.0,
+    },
 }
 
 # ---------------------------------------------------------------------------
@@ -373,7 +378,19 @@ KAYDAN_SHIELD = {
         # Master switch — si False, l'engine renvoie une erreur explicite et
         # la page admin retombe sur face-api.js client-only.
         "ENABLED": config("FACE_ENGINE_ENABLED", default=True, cast=bool),
-        # Modèle InsightFace :
+        # Backend de détection + embedding :
+        #   "insightface" (default) : RetinaFace + ArcFace, all-in-one
+        #   "yolov8"               : YOLOv8-face pour détection + ArcFace pour embedding,
+        #                            plus précis sur conditions difficiles (profil,
+        #                            occlusion, multi-faces) au prix de ~50 ms en plus.
+        "BACKEND": config("FACE_BACKEND", default="insightface").lower(),
+        # Chemin local OU URL HF des poids YOLOv8-face (utilisé si BACKEND=yolov8).
+        # Default : yolov8n-face.pt (nano, ~6 MB). Pour plus de précision :
+        # yolov8s-face.pt (22 MB), yolov8m-face.pt (50 MB).
+        "YOLO_WEIGHTS": config("FACE_YOLO_WEIGHTS", default=""),
+        # Modèle ArcFace utilisé pour l'embedding (commun aux deux backends) :
+        "ARCFACE_MODEL": config("FACE_ARCFACE_MODEL", default="buffalo_l"),
+        # Modèle InsightFace (utilisé si BACKEND=insightface) :
         #   buffalo_l = IResNet100, 512D, precision (~280 Mo, ~220 ms CPU / ~25 ms GPU)
         #   buffalo_s = MobileFaceNet, 512D, rapide   (~16 Mo,  ~95 ms CPU / ~10 ms GPU)
         # En CPU on conseille buffalo_s pour les checkpoints temps-réel.

@@ -1,0 +1,178 @@
+{% extends "layout/base.html" %}
+{% load static %}
+{% block title %}{{ page_title }} · KAYDAN SHIELD{% endblock %}
+{% block page_title %}{{ page_title }}{% endblock %}
+{% block page_subtitle %}{{ page_subtitle }}{% endblock %}
+{% block breadcrumb %}{{ breadcrumb }}{% endblock %}
+
+{% block page_actions %}
+  <button class="btn btn-ghost" onclick="location.reload()">
+    <i data-lucide="refresh-cw"></i> Rafraîchir
+  </button>
+{% endblock %}
+
+{% block content %}
+<style>
+  .status-grid { display:grid; gap:14px; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); margin-bottom:18px; }
+  .status-card { padding:16px 18px; border:1px solid var(--border); border-radius:12px; background:var(--surface); }
+  .status-card h3 { font-size:13.5px; font-weight:700; margin:0 0 10px; display:flex; align-items:center; gap:8px; }
+  .status-pill { display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border-radius:10px; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.05em; }
+  .pill-ok    { background:rgba(45,212,191,.16); color:#2dd4bf; }
+  .pill-warn  { background:rgba(251,191,36,.16); color:#fbbf24; }
+  .pill-down  { background:rgba(248,113,113,.16); color:#f87171; }
+  .pill-unk   { background:rgba(148,163,184,.16); color:var(--text-dim); }
+  .kv { display:flex; justify-content:space-between; padding:5px 0; font-size:12.5px; border-bottom:1px dashed var(--border); }
+  .kv:last-child { border-bottom:0; }
+  .kv .k { color:var(--text-dim); }
+  .kv .v { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:11.5px; }
+  .empty { text-align:center; padding:14px; color:var(--text-dim); font-size:12.5px; }
+</style>
+
+<div class="status-grid">
+  {# ── Workers Celery ── #}
+  <div class="status-card">
+    <h3>
+      <i data-lucide="cpu" style="color:var(--ks-orange-400)"></i>
+      Workers Celery
+      {% if workers.ok %}
+        <span class="status-pill pill-ok">{{ workers.count }} actif{{ workers.count|pluralize }}</span>
+      {% else %}
+        <span class="status-pill pill-down">Aucun</span>
+      {% endif %}
+    </h3>
+    {% if workers.workers %}
+      {% for w in workers.workers %}
+        <div style="padding:8px 0;border-bottom:1px dashed var(--border)">
+          <div style="font-size:12px;font-family:ui-monospace,monospace">{{ w.name }}</div>
+          <div style="font-size:11px;color:var(--text-dim)">
+            {{ w.active }} task{{ w.active|pluralize }} actif{{ w.active|pluralize }} ·
+            pool {{ w.pool|default:"?" }} ·
+            uptime {{ w.uptime|default:"?" }}s
+          </div>
+        </div>
+      {% endfor %}
+    {% else %}
+      <div class="empty">
+        ⚠️ Aucun worker Celery détecté. Lance <code>docker compose up -d shieldworker shieldbeat</code> sur le serveur.
+        {% if workers.error %}<br><small style="color:var(--danger)">{{ workers.error }}</small>{% endif %}
+      </div>
+    {% endif %}
+  </div>
+
+  {# ── Redis broker ── #}
+  <div class="status-card">
+    <h3>
+      <i data-lucide="database" style="color:#ef4444"></i>
+      Broker Redis
+      {% if redis.ok %}<span class="status-pill pill-ok">OK</span>{% else %}<span class="status-pill pill-down">KO</span>{% endif %}
+    </h3>
+    {% if redis.ok %}
+      <div class="kv"><span class="k">URL</span><span class="v">{{ redis.url }}</span></div>
+      <div class="kv"><span class="k">Version</span><span class="v">{{ redis.version }}</span></div>
+      <div class="kv"><span class="k">Mémoire</span><span class="v">{{ redis.used_memory_human }}</span></div>
+      <div class="kv"><span class="k">Clients</span><span class="v">{{ redis.connected_clients }}</span></div>
+      <div class="kv"><span class="k">Uptime</span><span class="v">{{ redis.uptime_days }} jours</span></div>
+    {% else %}
+      <div class="empty">{{ redis.error|default:"Redis injoignable" }}</div>
+    {% endif %}
+  </div>
+
+  {# ── Terminaux ZKTeco ── #}
+  <div class="status-card">
+    <h3>
+      <i data-lucide="fingerprint" style="color:#3b82f6"></i>
+      Terminaux ZKTeco
+      <span class="status-pill pill-{% if zk_devices %}ok{% else %}unk{% endif %}">{{ zk_devices|length }}</span>
+    </h3>
+    {% if zk_devices %}
+      {% for z in zk_devices %}
+        <div style="padding:8px 0;border-bottom:1px dashed var(--border);display:flex;justify-content:space-between;align-items:center;gap:8px">
+          <div style="min-width:0;flex:1">
+            <div style="font-size:12.5px;font-weight:600">
+              <a href="{% url 'admin-device-detail' z.device.pk %}" style="color:inherit">{{ z.device.serial_number }}</a>
+            </div>
+            <div style="font-size:11px;color:var(--text-dim)">{{ z.device.ip_address }} · {{ z.device.model.model|default:"?" }}</div>
+            <div style="font-size:10.5px;color:var(--text-dim);margin-top:2px">
+              Heartbeat : {% if z.last_hb %}{{ z.last_hb|timesince }}{% else %}jamais{% endif %}
+            </div>
+          </div>
+          <span class="status-pill pill-{% if z.health == 'ok' %}ok{% elif z.health == 'warn' %}warn{% elif z.health == 'down' %}down{% else %}unk{% endif %}">{{ z.health }}</span>
+        </div>
+      {% endfor %}
+    {% else %}
+      <div class="empty">Aucun terminal ZKTeco actif.</div>
+    {% endif %}
+  </div>
+</div>
+
+{# ── Tâches périodiques (django-celery-beat) ── #}
+<section class="card" style="padding:0;margin-bottom:18px">
+  <header style="padding:14px 18px;border-bottom:1px solid var(--border)">
+    <strong style="font-size:13.5px">
+      <i data-lucide="calendar-clock" style="width:14px;height:14px;vertical-align:-2px;color:var(--ks-orange-400)"></i>
+      Tâches périodiques actives
+      <span class="text-dim" style="font-size:11px;font-weight:400;margin-left:6px">{{ periodic_tasks|length }}</span>
+    </strong>
+  </header>
+  {% if periodic_tasks %}
+    <div class="table-wrap"><table class="table">
+      <thead><tr>
+        <th>Nom</th><th>Tâche</th><th>Schedule</th><th>Dernier run</th><th>Total runs</th>
+      </tr></thead>
+      <tbody>
+        {% for t in periodic_tasks %}
+          <tr>
+            <td>{{ t.name }}</td>
+            <td class="mono" style="font-size:11px">{{ t.task }}</td>
+            <td class="mono" style="font-size:11px">
+              {% if t.crontab %}{{ t.crontab.minute }} {{ t.crontab.hour }} {{ t.crontab.day_of_month }} {{ t.crontab.month_of_year }} {{ t.crontab.day_of_week }}{% elif t.interval %}{{ t.interval }}{% else %}—{% endif %}
+            </td>
+            <td>{% if t.last_run_at %}{{ t.last_run_at|date:"d/m H:i:s" }}{% else %}<span class="text-dim">jamais</span>{% endif %}</td>
+            <td class="mono">{{ t.total_run_count }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+  {% else %}
+    <div class="empty">Aucune tâche périodique enregistrée. Le scheduler n'a peut-être jamais tourné.</div>
+  {% endif %}
+</section>
+
+{# ── Derniers résultats de tâches ── #}
+<section class="card" style="padding:0">
+  <header style="padding:14px 18px;border-bottom:1px solid var(--border)">
+    <strong style="font-size:13.5px">
+      <i data-lucide="list-checks" style="width:14px;height:14px;vertical-align:-2px;color:#2dd4bf"></i>
+      30 derniers résultats de tâches
+    </strong>
+  </header>
+  {% if recent_tasks %}
+    <div class="table-wrap"><table class="table">
+      <thead><tr>
+        <th>Quand</th><th>Tâche</th><th>Statut</th><th>Durée</th><th>Worker</th><th>Résultat / Erreur</th>
+      </tr></thead>
+      <tbody>
+        {% for t in recent_tasks %}
+          <tr>
+            <td class="mono">{{ t.date_done|date:"d/m H:i:s" }}</td>
+            <td class="mono" style="font-size:11px">{{ t.task_name }}</td>
+            <td>
+              {% if t.status == "SUCCESS" %}<span class="pill pill-success">OK</span>
+              {% elif t.status == "FAILURE" %}<span class="pill pill-danger">FAIL</span>
+              {% elif t.status == "RETRY" %}<span class="pill pill-warning">RETRY</span>
+              {% else %}<span class="pill pill-muted">{{ t.status }}</span>{% endif %}
+            </td>
+            <td class="mono" style="font-size:11px">{% if t.date_done and t.date_created %}{{ t.date_done|timesince:t.date_created }}{% else %}—{% endif %}</td>
+            <td class="mono" style="font-size:11px">{{ t.worker|default:"—" }}</td>
+            <td class="mono" style="font-size:10.5px;max-width:380px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{{ t.result|default:t.traceback|default:'' }}">
+              {{ t.result|default:t.traceback|default:"—"|truncatechars:90 }}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+  {% else %}
+    <div class="empty">Aucun résultat de tâche en base. Active <code>django-celery-results</code> et lance des tâches.</div>
+  {% endif %}
+</section>
+{% endblock %}

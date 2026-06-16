@@ -51,6 +51,8 @@ volumes:
     name: kshield_media
   kshield_logs:
     name: kshield_logs
+  kshield_backups:
+    name: kshield_backups
 
 x-logging-rotated: &logging_rotated
   driver: "json-file"
@@ -368,4 +370,77 @@ services:
       # puis renseigner ADMINER_BASIC_AUTH dans .env (échapper les $ en $$)
       - traefik.http.routers.kshield-adminer.middlewares=kshield-adminer-auth@docker,kshield-sec-headers@docker
       - traefik.http.middlewares.kshield-adminer-auth.basicauth.users=${ADMINER_BASIC_AUTH:-admin:$$apr1$$change$$me}
+    logging: *logging_rotated
+
+  # ===========================================================================
+  # Backup automatique — dump quotidien PostgreSQL + rotation 30 jours
+  # ===========================================================================
+  shieldbackup:
+    image: postgres:16-alpine
+    container_name: kshield_backup
+    hostname: shieldbackup
+    restart: unless-stopped
+    environment:
+      TZ: Africa/Abidjan
+      PGHOST: shielddb
+      PGUSER: ${POSTGRES_USER:-kshield}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB:-kaydan_shield}
+      # Rétention : nombre de jours à conserver (default 30)
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-30}
+      # Cron : tous les jours à 02h00 (heure du conteneur)
+      BACKUP_CRON: ${BACKUP_CRON:-0 2 * * *}
+    depends_on:
+      shielddb:
+        condition: service_healthy
+    volumes:
+      - kshield_backups:/backups
+    networks: [kshield_network]
+    # Boucle shell : dump + rotation toutes les 24h via sleep + cron-like.
+    # Au démarrage, fait un dump immédiat pour confirmer que ça marche.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        echo "[backup] start — retention=$$BACKUP_RETENTION_DAYS jours"
+        mkdir -p /backups
+        # Test connexion au démarrage
+        if ! pg_isready -t 5; then
+          echo "[backup] ✗ DB injoignable au démarrage"
+          exit 1
+        fi
+        # Premier dump immédiat (validation)
+        if [ ! -f /backups/.first_done ]; then
+          STAMP=$$(date +%Y%m%d-%H%M%S)
+          F="/backups/kshield-$$STAMP.sql.gz"
+          echo "[backup] premier dump → $$F"
+          pg_dump --clean --if-exists --no-owner | gzip -9 > "$$F.tmp"
+          mv "$$F.tmp" "$$F"
+          touch /backups/.first_done
+          echo "[backup] ✓ taille $$(du -h $$F | cut -f1)"
+        fi
+        # Boucle quotidienne (sleep 24h entre chaque dump)
+        while true; do
+          # Calcule secondes jusqu'à 02:00 demain
+          NOW=$$(date +%s)
+          TARGET=$$(date -d "tomorrow 02:00" +%s 2>/dev/null || date -v+1d -v2H -v0M -v0S +%s)
+          DELAY=$$((TARGET - NOW))
+          if [ "$$DELAY" -le 0 ]; then DELAY=86400; fi
+          echo "[backup] prochain dump dans $$DELAY secondes"
+          sleep "$$DELAY"
+          STAMP=$$(date +%Y%m%d-%H%M%S)
+          F="/backups/kshield-$$STAMP.sql.gz"
+          echo "[backup] dump → $$F"
+          if pg_dump --clean --if-exists --no-owner | gzip -9 > "$$F.tmp"; then
+            mv "$$F.tmp" "$$F"
+            echo "[backup] ✓ $$F ($$(du -h $$F | cut -f1))"
+          else
+            rm -f "$$F.tmp"
+            echo "[backup] ✗ dump échoué"
+          fi
+          # Rotation
+          find /backups -name "kshield-*.sql.gz" -mtime +$$BACKUP_RETENTION_DAYS -delete
+          echo "[backup] rotation : conservés $$(ls /backups/kshield-*.sql.gz 2>/dev/null | wc -l) dumps"
+        done
     logging: *logging_rotated

@@ -125,6 +125,130 @@ class BaseAdminView(TemplateView):
 # =============================================================================
 # Pilotage
 # =============================================================================
+class SystemStatusView(BaseAdminView):
+    """Page de diagnostic infra : workers Celery, beat, brokers, ZKTeco.
+
+    Permet de voir d'un coup d'œil si la sync ZKTeco tourne bien, quels
+    tasks ont été exécutés récemment, et si le broker Redis répond.
+    """
+    template_name = "administration/system_status.html"
+    active_nav = "system"
+    page_title = "État du système"
+    page_subtitle = "Workers, brokers, terminaux et tâches périodiques."
+    breadcrumb = "Système"
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        # ── Workers Celery ────────────────────────────────────────────────
+        ctx["workers"] = self._inspect_workers()
+
+        # ── Broker Redis ──────────────────────────────────────────────────
+        ctx["redis"] = self._check_redis()
+
+        # ── Tasks récentes ────────────────────────────────────────────────
+        try:
+            from django_celery_results.models import TaskResult
+            recent = (TaskResult.objects
+                      .order_by("-date_done")[:30])
+            ctx["recent_tasks"] = recent
+        except Exception:
+            ctx["recent_tasks"] = []
+
+        # ── Schedule actif (django-celery-beat) ───────────────────────────
+        try:
+            from django_celery_beat.models import PeriodicTask
+            ctx["periodic_tasks"] = (PeriodicTask.objects
+                                      .filter(enabled=True)
+                                      .order_by("name")[:50])
+        except Exception:
+            ctx["periodic_tasks"] = []
+
+        # ── Terminaux ZKTeco actifs + dernière sync ───────────────────────
+        try:
+            from devices.models import Device
+            from devices.zk_client import is_zkteco_device
+            zk_devices = []
+            now = timezone.now()
+            cutoff_recent = now - timedelta(minutes=10)
+            cutoff_stale = now - timedelta(hours=1)
+            for d in Device.objects.select_related("model", "site").filter(
+                status="active", ip_address__isnull=False,
+            ):
+                if not is_zkteco_device(d):
+                    continue
+                last = d.last_heartbeat_at
+                health = "unknown"
+                if last:
+                    if last >= cutoff_recent:
+                        health = "ok"
+                    elif last >= cutoff_stale:
+                        health = "warn"
+                    else:
+                        health = "down"
+                zk_devices.append({
+                    "device": d,
+                    "last_hb": last,
+                    "health": health,
+                })
+            ctx["zk_devices"] = zk_devices
+        except Exception:
+            ctx["zk_devices"] = []
+
+        return ctx
+
+    def _inspect_workers(self) -> dict:
+        """Interroge Celery via inspect() — ping les workers + active tasks."""
+        try:
+            from kshield.celery import app
+            insp = app.control.inspect(timeout=2)
+            ping = insp.ping() or {}
+            active = insp.active() or {}
+            scheduled = insp.scheduled() or {}
+            stats = insp.stats() or {}
+            workers = []
+            for name, _ in ping.items():
+                workers.append({
+                    "name": name,
+                    "active": len(active.get(name, [])),
+                    "scheduled": len(scheduled.get(name, [])),
+                    "pool": stats.get(name, {}).get("pool", {}).get("max-concurrency"),
+                    "uptime": stats.get(name, {}).get("uptime"),
+                })
+            return {
+                "ok": bool(workers),
+                "count": len(workers),
+                "workers": workers,
+            }
+        except Exception as exc:
+            return {"ok": False, "count": 0, "workers": [], "error": str(exc)[:200]}
+
+    def _check_redis(self) -> dict:
+        """Test PING Redis + récup info basique."""
+        try:
+            from django.conf import settings
+            import redis as _redis
+            url = (settings.CELERY_BROKER_URL or "").strip()
+            if not url:
+                return {"ok": False, "error": "CELERY_BROKER_URL non défini"}
+            client = _redis.from_url(url, socket_timeout=2)
+            client.ping()
+            info = client.info()
+            return {
+                "ok": True,
+                "url": url.split("@")[-1] if "@" in url else url,
+                "version": info.get("redis_version"),
+                "used_memory_human": info.get("used_memory_human"),
+                "connected_clients": info.get("connected_clients"),
+                "uptime_days": info.get("uptime_in_days"),
+            }
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)[:200]}
+
+
 class DashboardView(BaseAdminView):
     template_name = "administration/dashboard.html"
     active_nav = "dashboard"
@@ -2366,6 +2490,99 @@ class MapDataAPIView(View):
 # =============================================================================
 # Export Excel — Flux temps réel
 # =============================================================================
+class AttendanceSheetExportView(View):
+    """GET /attendance/sheet/export/ — export Excel de la feuille de pointage.
+
+    Reprend les mêmes filtres GET que ``AttendanceView._build_sheet_context``
+    et produit un .xlsx avec une ligne par (employé, jour).
+    """
+    MAX_ROWS = 50_000
+
+    def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            from django.shortcuts import redirect
+            return redirect("admin-login")
+        return super().dispatch(request, *args, **kwargs)
+
+    def get(self, request):
+        try:
+            from openpyxl import Workbook
+            from openpyxl.styles import Alignment, Font, PatternFill
+            from openpyxl.utils import get_column_letter
+        except ImportError:
+            return HttpResponse(
+                "openpyxl non installé — pip install openpyxl",
+                status=500, content_type="text/plain",
+            )
+
+        # Construit le contexte via la même méthode que la vue HTML
+        sheet_ctx = AttendanceView._build_sheet_context(
+            type("_F", (), {"request": request})()
+        )
+        rows = sheet_ctx.get("sheet_rows", [])[:self.MAX_ROWS]
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Feuille de pointage"
+
+        headers = [
+            "Date", "Matricule", "Nom", "Type",
+            "Première entrée", "Dernière sortie", "Durée présence", "Minutes",
+        ]
+        ws.append(headers)
+
+        # Style header
+        header_fill = PatternFill(start_color="0B1B33", end_color="0B1B33", fill_type="solid")
+        header_font = Font(bold=True, color="F26B1F", size=11)
+        for col_idx in range(1, len(headers) + 1):
+            c = ws.cell(row=1, column=col_idx)
+            c.fill = header_fill
+            c.font = header_font
+            c.alignment = Alignment(horizontal="center", vertical="center")
+        ws.row_dimensions[1].height = 22
+
+        for r in rows:
+            ws.append([
+                r["date"].strftime("%Y-%m-%d") if r.get("date") else "",
+                r["matricule"],
+                r["name"],
+                "Employé" if r["holder_kind"] == "employee" else "Ouvrier",
+                r["first_in"].strftime("%H:%M:%S") if r.get("first_in") else "",
+                r["last_out"].strftime("%H:%M:%S") if r.get("last_out") else "",
+                r["duration_hms"],
+                r["duration_min"],
+            ])
+
+        # Largeurs
+        widths = [12, 14, 30, 10, 16, 16, 14, 10]
+        for i, w in enumerate(widths, 1):
+            ws.column_dimensions[get_column_letter(i)].width = w
+
+        # Ligne de totaux
+        if rows:
+            last_row = ws.max_row + 2
+            total_minutes = sum(r["duration_min"] for r in rows)
+            ws.cell(row=last_row, column=1, value="TOTAUX").font = Font(bold=True)
+            ws.cell(row=last_row, column=3, value=f"{sheet_ctx.get('sheet_total_persons', 0)} personne(s)")
+            ws.cell(row=last_row, column=4, value=f"{sheet_ctx.get('sheet_total_days', 0)} jour(s)")
+            ws.cell(row=last_row, column=7, value=f"{round(total_minutes / 60.0, 1)} h").font = Font(bold=True)
+            ws.cell(row=last_row, column=8, value=total_minutes).font = Font(bold=True)
+
+        # Réponse
+        from io import BytesIO
+        buf = BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        from django.utils import timezone
+        fname = f"feuille_pointage_{timezone.now():%Y%m%d_%H%M}.xlsx"
+        resp = HttpResponse(
+            buf.read(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        resp["Content-Disposition"] = f'attachment; filename="{fname}"'
+        return resp
+
+
 class RealtimeExportView(View):
     """GET /realtime/export/?<filtres> — export xlsx."""
     MAX_ROWS = 50_000

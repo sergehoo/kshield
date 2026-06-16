@@ -68,6 +68,12 @@
       <button class="btn btn-primary" type="submit"><i data-lucide="filter"></i> Filtrer</button>
     </form>
 
+    <div style="display:flex;justify-content:flex-end;margin-bottom:8px">
+      <a class="btn btn-ghost" href="{% url 'admin-attendance-sheet-export' %}?period={{ sheet_period }}&start={{ sheet_start }}&end={{ sheet_end }}&site={{ sheet_site_id }}&holder_kind={{ sheet_holder_kind }}&q={{ sheet_q }}">
+        <i data-lucide="file-spreadsheet" style="width:14px;height:14px"></i> Exporter en Excel
+      </a>
+    </div>
+
     <section class="statstrip mb-2">
       <div><div class="label">Personnes pointées</div><div class="value">{{ sheet_total_persons }}</div></div>
       <div><div class="label">Jours pointés</div><div class="value">{{ sheet_total_days }}</div></div>
