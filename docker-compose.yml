@@ -27,8 +27,13 @@ networks:
   kshield_network:
     name: kshield_network
     driver: bridge
+  # Réseau du reverse proxy externe. Sur Dokploy il s'appelle `dokploy-network`;
+  # sur un Traefik standalone il s'appelle généralement `proxy`. On définit
+  # ici un alias local `proxy` qui pointe vers le bon réseau externe via la
+  # variable d'env `PROXY_NETWORK` (default = "dokploy-network").
   proxy:
     external: true
+    name: ${PROXY_NETWORK:-dokploy-network}
 
 # Volumes préfixés `kshield_` pour éviter toute collision avec d'autres stacks.
 volumes:
