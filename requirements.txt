@@ -79,6 +79,15 @@ django-prometheus>=2.3,<3
 prometheus-client>=0.20
 sentry-sdk[django,celery]>=2.10,<3
 
+# ─── Discovery réseau lecteurs RFID/NFC/BLE (mDNS / Bonjour) ───
+# Utilisé par devices/reader_discovery.py pour l'auto-détection des lecteurs
+# UHF (LLRP), NFC réseau et gateways BLE sur le LAN.
+zeroconf>=0.140,<1
+
+# ─── Terminaux ZKTeco (K14, K20, F18, MA300, iClock…) ───
+# Wrapper SDK ZKAccess sur port 4370 — sync users + ingestion pointages.
+pyzk>=0.9
+
 # ─── Reconnaissance faciale (InsightFace + SilentFace) ───
 # Pipeline universel CPU. Pour activer GPU sur un host avec NVIDIA :
 #   pip uninstall -y onnxruntime

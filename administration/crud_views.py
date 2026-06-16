@@ -360,6 +360,15 @@ def make_crud(
 # ---------------------------------------------------------------------------
 # Context extras spécifiques par entité
 # ---------------------------------------------------------------------------
+def _device_detail_extras(view, ctx):
+    """Injecte is_zkteco_device pour afficher les boutons ZK conditionnellement."""
+    try:
+        from devices.zk_client import is_zkteco_device
+        return {"is_zkteco_device": is_zkteco_device(view.object)}
+    except Exception:
+        return {"is_zkteco_device": False}
+
+
 def _badge_detail_extras(view, ctx):
     """Injecte timeline (assignments + scans) pour le badge detail."""
     badge = view.object
@@ -696,7 +705,9 @@ def _build_all():
           url_prefix="zones", entity_label="Zone", entity_label_plural="Zones"),
         C("device", model=Device, form_class=kforms.DeviceForm,
           active_nav="devices", list_url_name="admin-devices",
-          url_prefix="devices", entity_label="Équipement", entity_label_plural="Équipements"),
+          url_prefix="devices", entity_label="Équipement", entity_label_plural="Équipements",
+          detail_template="administration/device_detail.html",
+          detail_context_extras=_device_detail_extras),
         C("devicemodel", model=DM, form_class=kforms.DeviceModelForm,
           active_nav="devices", list_url_name="admin-devices",
           url_prefix="device-models", entity_label="Modèle d'équipement",

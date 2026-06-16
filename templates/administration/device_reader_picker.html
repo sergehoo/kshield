@@ -1,0 +1,549 @@
+{% extends "layout/base.html" %}
+{% load static %}
+
+{% block title %}{{ page_title }} · KAYDAN SHIELD{% endblock %}
+{% block page_title %}{{ page_title }}{% endblock %}
+{% block page_subtitle %}{{ page_subtitle }}{% endblock %}
+{% block breadcrumb %}{{ breadcrumb }}{% endblock %}
+
+{% block page_actions %}
+  <a class="btn btn-ghost" href="{% url 'admin-devices' %}">
+    <i data-lucide="arrow-left" style="width:16px;height:16px"></i> Retour à la liste
+  </a>
+  <button type="button" class="btn btn-primary" id="btn-scan-network">
+    <i data-lucide="radar" style="width:14px;height:14px"></i> Scanner le réseau
+  </button>
+{% endblock %}
+
+{% block content %}
+<style>
+  .kind-grid {
+    display: grid; gap: 16px;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    margin: 4px 0 24px;
+  }
+  .kind-card {
+    position: relative;
+    display: flex; flex-direction: column; gap: 14px;
+    padding: 22px 22px 20px;
+    border-radius: 16px;
+    background: var(--surface);
+    border: 1.5px solid var(--border);
+    text-decoration: none;
+    color: inherit;
+    transition: transform .15s ease, border-color .15s, box-shadow .15s, background-color .15s;
+    overflow: hidden;
+  }
+  .kind-card::before {
+    content: "";
+    position: absolute; inset: 0;
+    background: radial-gradient(circle at top right, var(--accent, #F26B1F) 0%, transparent 60%);
+    opacity: .06;
+    pointer-events: none;
+    transition: opacity .2s;
+  }
+  .kind-card:hover {
+    transform: translateY(-2px);
+    border-color: var(--accent, var(--ks-orange-400));
+    box-shadow: 0 14px 36px rgba(0,0,0,.18);
+  }
+  .kind-card:hover::before { opacity: .14; }
+  .kind-card:focus-visible {
+    outline: 2px solid var(--accent, var(--ks-orange-400));
+    outline-offset: 2px;
+  }
+
+  .kind-head { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+  .kind-icon {
+    width: 48px; height: 48px;
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--accent, #F26B1F) 18%, transparent);
+    color: var(--accent, #F26B1F);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .kind-icon svg { width: 24px; height: 24px; }
+  .kind-tag {
+    font-size: 10.5px; font-weight: 600;
+    padding: 3px 9px;
+    border-radius: 20px;
+    background: color-mix(in srgb, var(--accent, #F26B1F) 16%, transparent);
+    color: var(--accent, #F26B1F);
+    text-transform: uppercase; letter-spacing: .06em;
+  }
+  .kind-title {
+    font-family: 'Sora', sans-serif;
+    font-size: 17px; font-weight: 700;
+    margin: 2px 0 4px;
+    letter-spacing: -.01em;
+  }
+  .kind-desc {
+    font-size: 12.5px; line-height: 1.5;
+    color: var(--text-dim);
+    flex: 1;
+  }
+  .kind-footer {
+    display:flex; align-items:center; justify-content:space-between;
+    padding-top: 12px;
+    margin-top: 4px;
+    border-top: 1px dashed var(--border);
+    font-size: 11.5px; color: var(--text-dim);
+  }
+  .kind-footer .count {
+    display: inline-flex; align-items: center; gap: 5px;
+  }
+  .kind-footer .arrow {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-weight: 600; color: var(--accent, #F26B1F);
+    transition: gap .15s;
+  }
+  .kind-card:hover .kind-footer .arrow { gap: 8px; }
+  .kind-card.is-empty { opacity: .85; }
+  .kind-card.is-empty .kind-footer .count { color: var(--warning, #fbbf24); }
+
+  .helper-banner {
+    display: flex; align-items: flex-start; gap: 12px;
+    padding: 14px 16px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, rgba(242,107,31,.08), rgba(217,70,239,.04));
+    border-left: 3px solid var(--ks-orange-400);
+    margin-bottom: 18px;
+    font-size: 13px; line-height: 1.5;
+  }
+  .helper-banner svg { width: 18px; height: 18px; flex-shrink: 0; color: var(--ks-orange-400); margin-top: 1px; }
+  .helper-banner strong { color: var(--text); }
+
+  .other-row {
+    display: flex; gap: 12px; flex-wrap: wrap;
+    margin-top: 8px;
+  }
+</style>
+
+<div class="helper-banner">
+  <i data-lucide="info"></i>
+  <div>
+    <strong>Sélectionnez la technologie</strong> du lecteur à enregistrer.
+    Vous serez ensuite guidé(e) pour saisir uniquement les champs pertinents
+    (fréquence radio, IP réseau, beacon UUID, etc.). Vous devez d'abord avoir
+    créé un <a href="{% url 'admin-devicemodel-create' %}">modèle d'équipement</a>
+    correspondant à votre matériel.
+  </div>
+</div>
+
+<div class="kind-grid">
+  {% for k in reader_kinds %}
+    <a href="{% url 'admin-device-reader-create' kind=k.key %}"
+       class="kind-card {% if not k.model_count %}is-empty{% endif %}"
+       style="--accent: {{ k.color }}">
+      <div class="kind-head">
+        <div class="kind-icon">
+          {% if k.key == 'uhf' %}
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+          {% elif k.key == 'nfc' %}
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/><path d="M8.5 10.5c1-2 5-2 6 0s-1 3-3 4.5"/></svg>
+          {% elif k.key == 'ble' %}
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6.5 6.5 17.5 17.5 12 23 12 1 17.5 6.5 6.5 17.5"/></svg>
+          {% elif k.key == 'zk' %}
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 9a3 3 0 0 1 6 0c0 2-2 2-2 4"/><line x1="13" y1="17" x2="13" y2="17.01"/></svg>
+          {% else %}
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/></svg>
+          {% endif %}
+        </div>
+        <span class="kind-tag">{{ k.key|upper }}</span>
+      </div>
+      <div>
+        <div class="kind-title">{{ k.label }}</div>
+        <p class="kind-desc">{{ k.hint }}</p>
+      </div>
+      <div class="kind-footer">
+        <span class="count">
+          {% if k.model_count %}
+            <i data-lucide="layers" style="width:13px;height:13px"></i>
+            {{ k.model_count }} modèle{{ k.model_count|pluralize }} dispo
+          {% else %}
+            <i data-lucide="alert-triangle" style="width:13px;height:13px"></i>
+            Aucun modèle — à créer
+          {% endif %}
+        </span>
+        <span class="arrow">Configurer <i data-lucide="arrow-right" style="width:14px;height:14px"></i></span>
+      </div>
+    </a>
+  {% endfor %}
+</div>
+
+<div class="other-row">
+  <a href="{% url 'admin-device-create' %}" class="btn btn-ghost">
+    <i data-lucide="plus" style="width:14px;height:14px"></i> Autre équipement (générique)
+  </a>
+  <a href="{% url 'admin-devicemodel-create' %}" class="btn btn-ghost">
+    <i data-lucide="layers" style="width:14px;height:14px"></i> Créer un modèle d'équipement
+  </a>
+</div>
+
+{# ──────────────────── Modale Scan réseau ──────────────────── #}
+<style>
+  /* Backdrop opaque + fond solide de la dialog (les vars --surface sont parfois
+     transparentes selon le thème, ce qui faisait disparaître la modale). */
+  #scan-dialog {
+    max-width: 760px;
+    width: 92vw;
+    border: 1px solid var(--border-strong, rgba(255,255,255,.14));
+    padding: 0;
+    border-radius: 16px;
+    color: var(--text, #e2e8f0);
+    box-shadow: 0 30px 80px rgba(0,0,0,.55);
+    /* Fond OPAQUE — pas de transparence */
+    background: #112742;
+  }
+  [data-theme="light"] #scan-dialog {
+    background: #ffffff;
+    color: #0f172a;
+    border-color: rgba(15,29,52,.14);
+  }
+  /* Backdrop sombre flouté */
+  #scan-dialog::backdrop {
+    background: rgba(8, 16, 32, .65);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+  }
+  /* Fallback open sans showModal (Safari < 15) */
+  #scan-dialog[open]:not([data-modal-fallback]) {
+    z-index: 9999;
+  }
+  /* Polish */
+  #scan-dialog header strong { color: var(--text, #e2e8f0); }
+  [data-theme="light"] #scan-dialog header strong { color: #0f172a; }
+  #scan-dialog code {
+    background: rgba(0,0,0,.30);
+    padding: 1px 6px; border-radius: 4px;
+    font-size: 11.5px;
+  }
+  [data-theme="light"] #scan-dialog code {
+    background: rgba(15,29,52,.08);
+  }
+  #scan-dialog input, #scan-dialog select {
+    background: rgba(0,0,0,.25);
+    color: var(--text, #e2e8f0);
+    border: 1px solid var(--border, rgba(255,255,255,.12));
+  }
+  [data-theme="light"] #scan-dialog input,
+  [data-theme="light"] #scan-dialog select {
+    background: #f1f5f9;
+    color: #0f172a;
+    border-color: rgba(15,29,52,.12);
+  }
+  #scan-dialog .icon-btn {
+    background: transparent;
+    border: 0;
+    color: var(--text-dim, #94a3b8);
+    cursor: pointer;
+    padding: 6px;
+    border-radius: 6px;
+    transition: background-color .15s, color .15s;
+  }
+  #scan-dialog .icon-btn:hover {
+    background: rgba(255,255,255,.08);
+    color: var(--text, #e2e8f0);
+  }
+  [data-theme="light"] #scan-dialog .icon-btn:hover {
+    background: rgba(15,29,52,.06);
+    color: #0f172a;
+  }
+
+  /* Carte résultat */
+  #scan-dialog .reader-card {
+    padding: 12px 14px;
+    border: 1px solid var(--border, rgba(255,255,255,.10));
+    border-radius: 12px;
+    background: rgba(0,0,0,.18);
+    display: flex; align-items: flex-start; gap: 14px; flex-wrap: wrap;
+  }
+  [data-theme="light"] #scan-dialog .reader-card {
+    background: #f8fafc;
+    border-color: rgba(15,29,52,.08);
+  }
+  /* Tags via/protocole */
+  #scan-dialog .tag {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 10px; font-weight: 600;
+    padding: 2px 8px; border-radius: 10px;
+    text-transform: uppercase; letter-spacing: .06em;
+  }
+  #scan-dialog .tag-via {
+    background: rgba(242,107,31,.15);
+    color: #F26B1F;
+  }
+  #scan-dialog .tag-proto {
+    background: rgba(45,212,191,.15);
+    color: #2dd4bf;
+  }
+  /* Pills d'infos enrichies (FW, SN, MAC, hostname) */
+  #scan-dialog .pills {
+    display: flex; flex-wrap: wrap; gap: 5px;
+    margin-top: 6px;
+  }
+  #scan-dialog .pill {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 11px;
+    padding: 3px 8px; border-radius: 6px;
+    background: rgba(255,255,255,.06);
+    color: var(--text, #e2e8f0);
+    border: 1px solid var(--border, rgba(255,255,255,.08));
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  [data-theme="light"] #scan-dialog .pill {
+    background: rgba(15,29,52,.04);
+    color: #0f172a;
+    border-color: rgba(15,29,52,.08);
+  }
+</style>
+<dialog id="scan-dialog">
+  <header style="padding:16px 22px;border-bottom:1px solid var(--border);
+                  display:flex;justify-content:space-between;align-items:center;gap:10px">
+    <strong style="font-size:15px">
+      <i data-lucide="radar" style="width:16px;height:16px;vertical-align:-2px;color:var(--ks-orange-500)"></i>
+      Détection automatique de lecteurs sur le LAN
+    </strong>
+    <button type="button" class="icon-btn" id="scan-close" aria-label="Fermer">
+      <i data-lucide="x" style="width:16px;height:16px"></i>
+    </button>
+  </header>
+
+  <div style="padding:18px 22px;overflow:auto;max-height:calc(90vh - 64px)">
+    <p class="text-dim" style="font-size:12.5px;margin:0 0 16px;line-height:1.55">
+      Combine la découverte <strong>mDNS / Bonjour</strong> (services <code>_llrp._tcp</code>,
+      <code>_pcsc._tcp</code>, <code>_http._tcp</code>) et un <strong>scan TCP</strong>
+      ciblé sur les ports caractéristiques. Le firewall ne doit pas bloquer le multicast
+      <code>224.0.0.251:5353</code>.
+    </p>
+
+    <div style="display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));margin-bottom:14px">
+      <label style="font-size:11.5px;display:flex;flex-direction:column;gap:4px;color:var(--text-dim)">
+        Technologie
+        <select id="scan-kind" class="form-select">
+          <option value="uhf">RFID UHF (LLRP)</option>
+          <option value="nfc">NFC (réseau IP)</option>
+          <option value="ble">BLE (gateways)</option>
+          <option value="zk">ZKTeco (port 4370)</option>
+        </select>
+      </label>
+      <label style="font-size:11.5px;display:flex;flex-direction:column;gap:4px;color:var(--text-dim)">
+        Plage CIDR <span class="text-dim" style="font-weight:400">(optionnel)</span>
+        <input type="text" id="scan-cidr" placeholder="192.168.1.0/24"
+               class="form-input" autocomplete="off">
+      </label>
+      <label style="font-size:11.5px;display:flex;flex-direction:column;gap:4px;color:var(--text-dim)">
+        Timeout (s)
+        <input type="number" id="scan-timeout" value="5" min="3" max="15" class="form-input">
+      </label>
+      <label style="font-size:11.5px;display:flex;align-items:center;gap:8px;color:var(--text-dim);margin-top:18px">
+        <input type="checkbox" id="scan-mdns" checked>
+        Activer mDNS
+      </label>
+    </div>
+
+    <button class="btn btn-primary" type="button" id="scan-start" style="width:100%">
+      <i data-lucide="radar" style="width:14px;height:14px"></i> Lancer la détection
+    </button>
+
+    <div id="scan-result" style="margin-top:18px;min-height:60px"></div>
+
+    <details style="margin-top:14px;font-size:11.5px;color:var(--text-dim)">
+      <summary style="cursor:pointer;color:var(--text);font-weight:600">
+        💡 Aide à la détection par technologie
+      </summary>
+      <ul style="margin:10px 0 0;padding-left:18px;line-height:1.7">
+        <li><strong>UHF</strong> — détection LLRP (port 5084). Impinj, Zebra, CAEN, Alien, Nordic ID, Kathrein supportés.</li>
+        <li><strong>NFC</strong> — uniquement lecteurs réseau (HID OMNIKEY-IP, Sycreader). Les lecteurs USB/série ne peuvent pas être détectés à distance.</li>
+        <li><strong>BLE</strong> — détecte les <em>gateways</em> BLE (Aruba, Estimote, Kontakt.io). Les beacons individuels doivent être enregistrés via l'app mobile.</li>
+      </ul>
+    </details>
+  </div>
+</dialog>
+
+<script>
+(function() {
+  "use strict";
+
+  function csrf() {
+    var m = document.cookie.match(/csrftoken=([^;]+)/);
+    return m ? m[1] : (document.querySelector('[name=csrfmiddlewaretoken]')?.value || '');
+  }
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) {
+      return ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c];
+    });
+  }
+
+  var dlg = document.getElementById("scan-dialog");
+  var btnOpen = document.getElementById("btn-scan-network");
+  var btnClose = document.getElementById("scan-close");
+  var btnStart = document.getElementById("scan-start");
+  var resBox = document.getElementById("scan-result");
+
+  function openDlg() {
+    if (typeof dlg.showModal === "function") {
+      try { dlg.showModal(); } catch(e) { dlg.setAttribute("open", "open"); }
+    } else {
+      dlg.setAttribute("open", "open");
+    }
+  }
+  function closeDlg() {
+    if (typeof dlg.close === "function") {
+      try { dlg.close(); } catch(e) {}
+    }
+    dlg.removeAttribute("open");
+  }
+
+  if (btnOpen) btnOpen.addEventListener("click", openDlg);
+  if (btnClose) btnClose.addEventListener("click", closeDlg);
+  dlg.addEventListener("click", function(e) {
+    var r = dlg.getBoundingClientRect();
+    var inside = (r.top <= e.clientY && e.clientY <= r.top + r.height
+               && r.left <= e.clientX && e.clientX <= r.left + r.width);
+    if (!inside) closeDlg();
+  });
+
+  if (!btnStart) return;
+  btnStart.addEventListener("click", async function() {
+    var kind = document.getElementById("scan-kind").value;
+    var cidr = (document.getElementById("scan-cidr").value || "").trim();
+    var timeout = parseInt(document.getElementById("scan-timeout").value, 10) || 5;
+    var mdns = document.getElementById("scan-mdns").checked;
+
+    btnStart.disabled = true;
+    resBox.innerHTML = '<div style="padding:18px;text-align:center;color:var(--text-dim)">' +
+      '<i data-lucide="loader-2" style="width:18px;height:18px;animation:spin 1s linear infinite;vertical-align:-3px"></i> ' +
+      'Scan en cours… (mDNS + ' + (cidr ? 'TCP scan ' + esc(cidr) : 'sans scan TCP') + ')</div>';
+    if (window.lucide) window.lucide.createIcons();
+
+    try {
+      var res = await fetch("/api/v1/devices/readers/discover/", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {"X-CSRFToken": csrf(), "Content-Type": "application/json"},
+        body: JSON.stringify({
+          kind: kind, cidr: cidr || null, timeout: timeout, mdns: mdns,
+        }),
+      });
+      var data = await res.json();
+
+      if (!res.ok) {
+        if (res.status === 503) {
+          resBox.innerHTML = '<div style="padding:16px;background:rgba(248,113,113,.10);' +
+            'border:1px solid rgba(248,113,113,.35);border-radius:10px;color:#fcd2d2">' +
+            '<strong style="display:block;margin-bottom:6px;color:#f87171">' +
+            '<i data-lucide="package-x" style="width:14px;height:14px;vertical-align:-2px"></i> ' +
+            'Module zeroconf manquant</strong>' +
+            '<div style="font-size:12px;color:var(--text);line-height:1.6">' +
+            'La découverte mDNS n\'est pas disponible. Soit installer la dépendance :<br>' +
+            '<code style="background:rgba(0,0,0,.3);padding:2px 6px;border-radius:4px">pip install zeroconf</code><br>' +
+            'soit décocher "Activer mDNS" et fournir un CIDR pour un scan TCP seul.</div></div>';
+          if (window.lucide) window.lucide.createIcons();
+          return;
+        }
+        resBox.innerHTML = '<div style="padding:14px;color:#f87171">' +
+          'Erreur ' + res.status + ' : ' + esc(data.detail || data.error || "inconnu") + '</div>';
+        return;
+      }
+
+      var readers = data.readers || [];
+      if (readers.length === 0) {
+        resBox.innerHTML = '<div class="text-dim" style="padding:18px;text-align:center">' +
+          '<i data-lucide="search-x" style="width:20px;height:20px"></i><br><br>' +
+          'Aucun lecteur ' + esc(kind.toUpperCase()) + ' trouvé sur le réseau.' +
+          (cidr ? '' : '<br><small>Astuce : préciser un CIDR (ex. 192.168.1.0/24) pour un scan TCP en plus.</small>') +
+          '</div>';
+        if (window.lucide) window.lucide.createIcons();
+        return;
+      }
+
+      var html = '<div style="font-size:12.5px;color:var(--text-dim);margin-bottom:10px">' +
+        '<strong style="color:var(--success,#2dd4bf)">' + readers.length + ' lecteur' +
+        (readers.length > 1 ? 's' : '') + ' détecté' + (readers.length > 1 ? 's' : '') + '</strong>' +
+        ' — cliquez "Importer" pour pré-remplir le formulaire.</div>';
+      html += '<div style="display:grid;gap:10px">';
+      for (var i = 0; i < readers.length; i++) {
+        var r = readers[i];
+        var ip = esc(r.ip || "?");
+        var brand = esc(r.brand || "Inconnu");
+        // Préfère le modèle réellement détecté sur le device, puis le title HTML,
+        // puis le hint statique, puis le name mDNS.
+        var modelExact = r.model_detected || r.title || r.model_hint || r.name || "?";
+        var model = esc(modelExact);
+        var via = esc(r.via || "");
+        var ports = (r.open_ports || []).map(esc).join(", ");
+        var url = r.url ? '<a href="' + esc(r.url) + '" target="_blank" rel="noopener" style="color:var(--ks-orange-400)">' + esc(r.url) + '</a>' : '';
+
+        // Infos enrichies à présenter
+        var firmware = r.firmware_version ? esc(r.firmware_version) : "";
+        var serial   = r.serial_detected  ? esc(r.serial_detected)  : "";
+        var mac      = r.mac_address      ? esc(r.mac_address)      : "";
+        var hostname = r.hostname && r.hostname !== r.ip ? esc(r.hostname.replace(/\.$/, '')) : "";
+
+        // Suggestion de numéro de série pour l'import :
+        //  1) le SN réel détecté → priorité absolue
+        //  2) sinon hostname mDNS débarrassé du suffixe .local
+        //  3) sinon convention KSHIELD-<KIND>-<IP_sans_points>
+        var snForImport = (r.serial_detected ||
+          (r.hostname ? r.hostname.replace(/\.local\.?$/, '').replace(/[^A-Za-z0-9._-]/g, '') : "") ||
+          (kind.toUpperCase() + "-" + (r.ip || "").replace(/\./g, ""))
+        );
+        var params = new URLSearchParams({
+          ip_address: r.ip || "",
+          serial_number: snForImport,
+        });
+        if (mac) params.set("mac_address", mac);
+        if (firmware) params.set("firmware_version", firmware);
+        var importUrl = '{% url "admin-device-reader-create" kind="KIND" %}'.replace("KIND", kind) + "?" + params.toString();
+
+        // Pills pour les détails
+        var pills = '';
+        if (firmware) pills += '<span class="pill"><i data-lucide="cpu" style="width:11px;height:11px"></i> FW ' + firmware + '</span>';
+        if (serial)   pills += '<span class="pill"><i data-lucide="hash" style="width:11px;height:11px"></i> SN ' + serial + '</span>';
+        if (mac)      pills += '<span class="pill"><i data-lucide="ethernet-port" style="width:11px;height:11px"></i> ' + mac + '</span>';
+        if (hostname) pills += '<span class="pill"><i data-lucide="globe" style="width:11px;height:11px"></i> ' + hostname + '</span>';
+
+        html += '<div class="reader-card">';
+        html +=   '<div style="flex:1;min-width:240px">';
+        html +=     '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:5px">';
+        html +=       '<strong style="font-size:14px">' + brand + '</strong>';
+        html +=       '<span style="font-size:13px;color:var(--text-dim)">' + model + '</span>';
+        html +=     '</div>';
+        html +=     '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px">';
+        html +=       '<span class="tag tag-via">' + via + '</span>';
+        html +=       (r.protocol ? '<span class="tag tag-proto">' + esc(r.protocol) + '</span>' : '');
+        html +=     '</div>';
+        html +=     '<div class="mono" style="font-size:11.5px;color:var(--text-dim)">';
+        html +=       ip + (r.port ? ':' + esc(r.port) : '');
+        html +=       (ports ? ' · ports : ' + ports : '');
+        html +=     '</div>';
+        if (pills) html += '<div class="pills">' + pills + '</div>';
+        if (url) html += '<div style="font-size:11px;color:var(--text-dim);margin-top:4px">' + url + '</div>';
+        html +=   '</div>';
+        html +=   '<a class="btn btn-primary" href="' + importUrl + '" style="white-space:nowrap;align-self:flex-start">';
+        html +=     '<i data-lucide="download" style="width:13px;height:13px"></i> Importer';
+        html +=   '</a>';
+        html += '</div>';
+      }
+      html += '</div>';
+      resBox.innerHTML = html;
+      if (window.lucide) window.lucide.createIcons();
+    } catch (exc) {
+      resBox.innerHTML = '<div style="padding:14px;color:#f87171">' +
+        'Erreur réseau : ' + esc(exc.message) + '</div>';
+    } finally {
+      btnStart.disabled = false;
+    }
+  });
+
+  // Petit keyframe spin (au cas où il n'est pas global)
+  var styleId = "scan-spin-style";
+  if (!document.getElementById(styleId)) {
+    var st = document.createElement("style");
+    st.id = styleId;
+    st.textContent = "@keyframes spin { to { transform: rotate(360deg); } }";
+    document.head.appendChild(st);
+  }
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,243 @@
+{% extends "administration/_detail.html" %}
+{% load static %}
+
+{% block page_actions %}
+  <a class="btn btn-ghost" href="{% url list_url_name %}">
+    <i data-lucide="arrow-left" style="width:16px;height:16px"></i> Retour
+  </a>
+  <button type="button" class="btn btn-ghost" id="btn-test-conn">
+    <i data-lucide="activity" style="width:16px;height:16px"></i> Tester la communication
+  </button>
+  {% if is_zkteco_device %}
+    <button type="button" class="btn btn-ghost" id="btn-zk-sync">
+      <i data-lucide="refresh-cw" style="width:16px;height:16px"></i> Sync pointages
+    </button>
+    <button type="button" class="btn btn-ghost" id="btn-zk-push">
+      <i data-lucide="users" style="width:16px;height:16px"></i> Push users
+    </button>
+  {% endif %}
+  <a class="btn btn-ghost" href="{{ delete_url }}" style="color:var(--danger)"
+     onclick="return confirm('Supprimer cet enregistrement ? Cette action est irréversible.');">
+    <i data-lucide="trash-2" style="width:16px;height:16px"></i> Supprimer
+  </a>
+  <a class="btn btn-primary" href="{{ update_url }}">
+    <i data-lucide="pencil" style="width:16px;height:16px"></i> Modifier
+  </a>
+{% endblock %}
+
+{% block content %}
+{# Panneau résultat du test de connexion (caché par défaut) #}
+<section id="test-panel" class="card" style="display:none;padding:18px 20px;margin-bottom:14px">
+  <header style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+    <strong style="font-size:14px;display:flex;align-items:center;gap:8px">
+      <span id="test-status-dot" style="width:10px;height:10px;border-radius:50%;background:var(--text-mute)"></span>
+      <span id="test-status-label">Test de communication</span>
+    </strong>
+    <button type="button" id="test-close" class="icon-btn" aria-label="Fermer"
+            style="background:transparent;border:0;color:var(--text-dim);cursor:pointer;padding:4px;border-radius:6px">
+      <i data-lucide="x" style="width:14px;height:14px"></i>
+    </button>
+  </header>
+  <div id="test-summary" style="font-size:12.5px;color:var(--text-dim);margin-bottom:10px"></div>
+  <div id="test-checks" style="display:grid;gap:6px"></div>
+  <div id="test-meta" style="font-size:11.5px;color:var(--text-mute);margin-top:10px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace"></div>
+</section>
+
+{{ block.super }}
+{% endblock %}
+
+{% block extra_js %}
+<style>
+  .test-check {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-strong);
+    font-size: 12.5px;
+  }
+  .test-check.ok { border-color: rgba(45,212,191,.35); }
+  .test-check.ko { border-color: rgba(248,113,113,.35); }
+  .test-check .check-icon {
+    width: 22px; height: 22px;
+    flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 50%;
+  }
+  .test-check.ok .check-icon { background: rgba(45,212,191,.18); color: #2dd4bf; }
+  .test-check.ko .check-icon { background: rgba(248,113,113,.18); color: #f87171; }
+  .test-check .check-name { flex: 1; min-width: 0; }
+  .test-check .check-ms {
+    font-family: ui-monospace,SFMono-Regular,Menlo,monospace;
+    font-size: 11px; color: var(--text-dim);
+  }
+  .test-check .check-detail {
+    margin-left: auto;
+    font-size: 11.5px; color: var(--text-dim);
+    font-family: ui-monospace,SFMono-Regular,Menlo,monospace;
+    max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+</style>
+<script>
+(function() {
+  "use strict";
+
+  function csrf() {
+    var m = document.cookie.match(/csrftoken=([^;]+)/);
+    return m ? m[1] : (document.querySelector('[name=csrfmiddlewaretoken]')?.value || '');
+  }
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g,
+      function(c){return ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c];});
+  }
+
+  var btn = document.getElementById("btn-test-conn");
+  var panel = document.getElementById("test-panel");
+  var dot   = document.getElementById("test-status-dot");
+  var label = document.getElementById("test-status-label");
+  var summary = document.getElementById("test-summary");
+  var checks  = document.getElementById("test-checks");
+  var meta    = document.getElementById("test-meta");
+  var closeBtn = document.getElementById("test-close");
+  if (!btn) return;
+
+  closeBtn.addEventListener("click", function(){ panel.style.display = "none"; });
+
+  btn.addEventListener("click", async function() {
+    // Récupère le pk depuis l'URL : /devices-mng/<pk>/
+    var m = location.pathname.match(/\/devices-mng\/(\d+)\b/) ||
+            location.pathname.match(/\/devices\/(\d+)\b/);
+    if (!m) { alert("Impossible de déterminer l'ID de l'équipement."); return; }
+    var pk = m[1];
+
+    panel.style.display = "block";
+    dot.style.background = "var(--warning, #fbbf24)";
+    label.textContent = "Test en cours…";
+    summary.innerHTML = '<i data-lucide="loader-2" style="width:13px;height:13px;animation:spin 1s linear infinite;vertical-align:-2px"></i> ' +
+                        'Connexion en cours…';
+    checks.innerHTML = "";
+    meta.innerHTML = "";
+    if (window.lucide) window.lucide.createIcons();
+    btn.disabled = true;
+
+    try {
+      var res = await fetch("/api/v1/devices/" + pk + "/test-connection/", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {"X-CSRFToken": csrf(), "Content-Type": "application/json"},
+        body: "{}",
+      });
+      var data = await res.json();
+
+      if (!res.ok) {
+        dot.style.background = "var(--danger,#f87171)";
+        label.textContent = "Échec du test (HTTP " + res.status + ")";
+        summary.textContent = data.error || data.detail || JSON.stringify(data);
+        return;
+      }
+
+      var ok = !!data.reachable;
+      dot.style.background = ok ? "var(--success,#2dd4bf)" : "var(--danger,#f87171)";
+      label.textContent = ok ? "✓ Équipement joignable" : "✗ Équipement injoignable";
+      summary.textContent = data.summary || (data.error || "");
+
+      checks.innerHTML = (data.checks || []).map(function(c) {
+        var cls = c.ok ? "ok" : "ko";
+        var icon = c.ok ? "check" : "x";
+        var ms = (c.ms != null) ? c.ms + " ms" : "";
+        var detail = "";
+        if (c.detail) detail = esc(c.detail);
+        if (c.status) detail += (detail ? " · " : "") + "HTTP " + c.status;
+        if (c.server) detail += (detail ? " · " : "") + "Server: " + esc(c.server);
+        return '<div class="test-check ' + cls + '">' +
+                '<span class="check-icon"><i data-lucide="' + icon + '" style="width:12px;height:12px"></i></span>' +
+                '<span class="check-name">' + esc(c.name) + '</span>' +
+                (detail ? '<span class="check-detail">' + detail + '</span>' : '') +
+                (ms ? '<span class="check-ms">' + ms + '</span>' : '') +
+                '</div>';
+      }).join("");
+      if (window.lucide) window.lucide.createIcons();
+
+      var d = data.device || {};
+      meta.innerHTML = "Device #" + esc(d.id) + " · " + esc(d.serial_number) +
+                       " · IP " + esc(d.ip) + " · type " + esc(d.type) +
+                       " · " + esc(data.duration_ms) + " ms";
+
+    } catch (e) {
+      dot.style.background = "var(--danger,#f87171)";
+      label.textContent = "Erreur réseau";
+      summary.textContent = String(e.message || e);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  // keyframe spin (au cas où pas global)
+  var id = "test-conn-spin";
+  if (!document.getElementById(id)) {
+    var st = document.createElement("style");
+    st.id = id; st.textContent = "@keyframes spin { to { transform: rotate(360deg); } }";
+    document.head.appendChild(st);
+  }
+
+  // ── Boutons ZKTeco (sync pointages + push users) ────────────────────
+  function getPk() {
+    var m = location.pathname.match(/\/devices-mng\/(\d+)\b/) ||
+            location.pathname.match(/\/devices\/(\d+)\b/);
+    return m ? m[1] : null;
+  }
+  async function callZkEndpoint(path, btn, labelOk) {
+    var pk = getPk();
+    if (!pk) { alert("ID device introuvable."); return; }
+    panel.style.display = "block";
+    dot.style.background = "var(--warning,#fbbf24)";
+    label.textContent = labelOk + "…";
+    summary.textContent = "Requête en cours…";
+    checks.innerHTML = "";
+    meta.innerHTML = "";
+    btn.disabled = true;
+    try {
+      var res = await fetch("/api/v1/devices/" + pk + path, {
+        method: "POST", credentials: "same-origin",
+        headers: {"X-CSRFToken": csrf(), "Content-Type": "application/json"},
+        body: "{}",
+      });
+      var data = await res.json();
+      if (!res.ok) {
+        dot.style.background = "var(--danger,#f87171)";
+        label.textContent = "Erreur (" + res.status + ")";
+        summary.textContent = data.error || data.detail || JSON.stringify(data);
+        return;
+      }
+      dot.style.background = "var(--success,#2dd4bf)";
+      label.textContent = labelOk + " : OK";
+      var lines = [];
+      if (data.events_created != null) lines.push("Événements créés : <strong>" + data.events_created + "</strong>");
+      if (data.synced_devices != null) lines.push("Terminaux sync : <strong>" + data.synced_devices + "</strong>");
+      if (data.pushed_users != null)   lines.push("Utilisateurs poussés : <strong>" + data.pushed_users + "</strong>");
+      summary.innerHTML = lines.join(" · ") || "Action effectuée.";
+      if (data.errors && data.errors.length) {
+        checks.innerHTML = '<details style="font-size:11.5px;color:var(--text-dim)"><summary style="cursor:pointer">'
+          + data.errors.length + ' erreur(s)</summary><pre style="font-size:10.5px;margin:6px 0 0;max-height:200px;overflow:auto">'
+          + esc(JSON.stringify(data.errors, null, 2)) + '</pre></details>';
+      }
+    } catch (e) {
+      dot.style.background = "var(--danger,#f87171)";
+      label.textContent = "Erreur réseau";
+      summary.textContent = String(e.message || e);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  var btnSync = document.getElementById("btn-zk-sync");
+  if (btnSync) btnSync.addEventListener("click", function() {
+    callZkEndpoint("/zk-sync/", btnSync, "Sync pointages ZKTeco");
+  });
+  var btnPush = document.getElementById("btn-zk-push");
+  if (btnPush) btnPush.addEventListener("click", function() {
+    callZkEndpoint("/zk-push-users/", btnPush, "Push utilisateurs ZKTeco");
+  });
+})();
+</script>
+{% endblock %}

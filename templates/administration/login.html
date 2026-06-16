@@ -1,126 +1,813 @@
-{% load static %}
-<!doctype html>
+{% load static %}<!doctype html>
 <html lang="fr" data-theme="dark">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0B1B33">
+  <meta name="description" content="KAYDAN SHIELD — Solution de Contrôle d'Accès Intelligent">
   <title>Connexion · KAYDAN SHIELD</title>
+
+  {# Theme appliqué avant le first paint pour éviter le flash #}
   <script>
-    try { var t = localStorage.getItem("ks-theme");
-      if (t) document.documentElement.dataset.theme = t; } catch(e) {}
+    (function(){
+      try {
+        var t = localStorage.getItem("ks-theme");
+        if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
+      } catch(e) {}
+    })();
   </script>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
+
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><path d='M50 6 L88 22 V52 C88 74 70 90 50 96 C30 90 12 74 12 52 V22 Z' fill='%230B1B33'/><path d='M50 6 V96 C30 90 12 74 12 52 V22 Z' fill='%23F26B1F'/></svg>">
+
   <style>
+    /* ───────────────────────── Design tokens ───────────────────────── */
     :root {
-      --bg:#0B1B33; --surface:#112742; --surface-strong:#1a3251;
-      --border:rgba(255,255,255,.08); --text:#e2e8f0; --text-dim:#94a3b8;
-      --ks-orange-400:#F26B1F; --danger:#f87171; --success:#2dd4bf;
+      --bg:#0B1B33;
+      --bg-2:#0e1f3c;
+      --surface:rgba(17, 39, 66, .65);
+      --surface-strong:rgba(26, 50, 81, .85);
+      --border:rgba(255, 255, 255, .08);
+      --border-strong:rgba(255, 255, 255, .14);
+      --text:#e2e8f0;
+      --text-dim:#94a3b8;
+      --text-mute:#64748b;
+      --ks-navy:#0B1B33;
+      --ks-orange:#F26B1F;
+      --ks-orange-400:#F26B1F;
+      --ks-orange-500:#e85d10;
+      --ks-magenta:#d946ef;
+      --danger:#f87171;
+      --danger-bg:rgba(248, 113, 113, .12);
+      --success:#2dd4bf;
+      --warning:#fbbf24;
+      --shadow-xl:0 30px 80px rgba(0, 0, 0, .45);
+      --radius-lg:18px;
+      --radius-md:12px;
+      --radius-sm:8px;
     }
     [data-theme="light"] {
-      --bg:#f8fafc; --surface:#fff; --surface-strong:#f1f5f9;
-      --border:rgba(15,29,52,.08); --text:#0f172a; --text-dim:#64748b;
+      --bg:#f1f5f9;
+      --bg-2:#e2e8f0;
+      --surface:rgba(255, 255, 255, .85);
+      --surface-strong:rgba(248, 250, 252, .95);
+      --border:rgba(15, 29, 52, .08);
+      --border-strong:rgba(15, 29, 52, .14);
+      --text:#0f172a;
+      --text-dim:#475569;
+      --text-mute:#64748b;
+      --shadow-xl:0 30px 80px rgba(15, 29, 52, .14);
+      --danger-bg:rgba(248, 113, 113, .08);
     }
-    * { box-sizing: border-box; }
+
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { height: 100%; }
     body {
-      margin: 0; min-height: 100vh; font-family: Inter, sans-serif;
-      background: var(--bg); color: var(--text);
-      display: flex; align-items: center; justify-content: center;
-      padding: 20px;
+      margin: 0;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+      color: var(--text);
+      background: var(--bg);
+      overflow: hidden;
+      transition: background-color .3s ease;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
     }
-    .login-shell {
-      max-width: 420px; width: 100%;
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: 16px; padding: 36px 32px;
-      box-shadow: 0 20px 60px rgba(0,0,0,.25);
+
+    /* ───────────────────────── Background animé ───────────────────────── */
+    .bg-fx {
+      position: fixed; inset: 0; z-index: -1;
+      overflow: hidden;
+      background: radial-gradient(ellipse at 20% 0%, rgba(242, 107, 31, .15) 0%, transparent 50%),
+                  radial-gradient(ellipse at 80% 100%, rgba(217, 70, 239, .12) 0%, transparent 55%),
+                  linear-gradient(135deg, var(--bg) 0%, var(--bg-2) 100%);
     }
-    .brand {
-      display: flex; align-items: center; gap: 12px; margin-bottom: 24px;
+    .bg-fx::before, .bg-fx::after {
+      content: ""; position: absolute;
+      border-radius: 50%; filter: blur(80px);
+      opacity: .5; pointer-events: none;
+      animation: float 18s ease-in-out infinite;
     }
+    .bg-fx::before {
+      width: 480px; height: 480px;
+      background: radial-gradient(circle, var(--ks-orange) 0%, transparent 70%);
+      top: -120px; left: -120px;
+    }
+    .bg-fx::after {
+      width: 580px; height: 580px;
+      background: radial-gradient(circle, var(--ks-magenta) 0%, transparent 70%);
+      bottom: -180px; right: -180px;
+      animation-delay: -9s;
+    }
+    @keyframes float {
+      0%, 100% { transform: translate(0, 0) scale(1); }
+      33% { transform: translate(40px, -30px) scale(1.05); }
+      66% { transform: translate(-30px, 30px) scale(.95); }
+    }
+
+    /* Grid pattern subtil */
+    .bg-grid {
+      position: fixed; inset: 0; z-index: -1;
+      background-image:
+        linear-gradient(rgba(255, 255, 255, .015) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, .015) 1px, transparent 1px);
+      background-size: 32px 32px;
+      mask-image: radial-gradient(circle at center, black 0%, transparent 75%);
+    }
+    [data-theme="light"] .bg-grid {
+      background-image:
+        linear-gradient(rgba(15, 29, 52, .04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(15, 29, 52, .04) 1px, transparent 1px);
+    }
+
+    /* ───────────────────────── Layout split ───────────────────────── */
+    .page {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 1fr;
+      align-items: stretch;
+    }
+    @media (min-width: 980px) {
+      .page { grid-template-columns: 1fr 1.05fr; }
+    }
+
+    /* ── Panneau gauche (brand / pitch) ── */
+    .brand-pane {
+      display: none;
+      padding: 48px 56px;
+      position: relative;
+      overflow: hidden;
+    }
+    @media (min-width: 980px) {
+      .brand-pane { display: flex; flex-direction: column; }
+    }
+    .brand-pane-content {
+      position: relative; z-index: 1;
+      display: flex; flex-direction: column;
+      justify-content: space-between;
+      height: 100%;
+      max-width: 460px;
+    }
+
+    .brand-header { display: flex; align-items: center; gap: 14px; }
     .brand-mark {
-      width: 44px; height: 44px; border-radius: 10px;
-      background: linear-gradient(135deg, var(--ks-orange-400), #d946ef);
-      display: flex; align-items: center; justify-content: center; color: white;
+      width: 48px; height: 48px;
+      display: flex; align-items: center; justify-content: center;
+      background: linear-gradient(135deg, var(--ks-orange) 0%, var(--ks-magenta) 100%);
+      border-radius: 12px;
+      box-shadow: 0 8px 24px rgba(242, 107, 31, .35);
     }
-    .brand h1 {
-      margin: 0; font-size: 18px; font-weight: 700;
+    .brand-mark svg { width: 26px; height: 26px; color: #fff; }
+    .brand-title {
+      font-family: 'Sora', sans-serif;
+      font-size: 20px; font-weight: 800; letter-spacing: -.01em;
+      line-height: 1.1;
     }
-    .brand .tag { font-size: 11px; color: var(--text-dim); }
-    h2 { font-size: 22px; margin: 0 0 8px; font-weight: 700; }
-    .sub { font-size: 13px; color: var(--text-dim); margin: 0 0 24px; }
-    .field { margin-bottom: 14px; }
+    .brand-tag { font-size: 11.5px; color: var(--text-dim); margin-top: 2px; }
+
+    .pitch h2 {
+      font-family: 'Sora', sans-serif;
+      font-size: 38px; font-weight: 800; line-height: 1.12;
+      letter-spacing: -.02em;
+      margin: 0 0 18px;
+    }
+    .pitch h2 .accent {
+      background: linear-gradient(120deg, var(--ks-orange) 30%, var(--ks-magenta) 90%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      color: transparent;
+    }
+    .pitch p {
+      font-size: 14.5px; line-height: 1.65;
+      color: var(--text-dim); margin: 0 0 28px;
+      max-width: 38ch;
+    }
+
+    .features { display: grid; gap: 14px; }
+    .feature {
+      display: flex; align-items: flex-start; gap: 12px;
+      padding: 12px 14px;
+      border-radius: 12px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      backdrop-filter: blur(8px);
+      transition: transform .2s ease, border-color .2s ease;
+    }
+    .feature:hover {
+      transform: translateY(-1px);
+      border-color: var(--border-strong);
+    }
+    .feature-icon {
+      flex-shrink: 0;
+      width: 34px; height: 34px;
+      border-radius: 9px;
+      display: flex; align-items: center; justify-content: center;
+      background: linear-gradient(135deg, rgba(242, 107, 31, .2), rgba(217, 70, 239, .15));
+      color: var(--ks-orange);
+    }
+    .feature-icon svg { width: 18px; height: 18px; stroke-width: 2; }
+    .feature-text { flex: 1; min-width: 0; }
+    .feature-text strong {
+      display: block; font-size: 13px; font-weight: 600;
+      color: var(--text); margin-bottom: 1px;
+    }
+    .feature-text span { font-size: 12px; color: var(--text-dim); }
+
+    .brand-footer {
+      font-size: 11.5px;
+      color: var(--text-mute);
+      display: flex; align-items: center; gap: 16px;
+      flex-wrap: wrap;
+    }
+    .brand-footer a { color: inherit; text-decoration: none; transition: color .15s; }
+    .brand-footer a:hover { color: var(--ks-orange); }
+
+    /* ── Panneau droit (formulaire) ── */
+    .form-pane {
+      display: flex; align-items: center; justify-content: center;
+      padding: 32px 24px;
+      position: relative;
+    }
+    @media (min-width: 980px) { .form-pane { padding: 48px 56px; } }
+
+    .form-shell {
+      width: 100%; max-width: 420px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 36px 32px;
+      box-shadow: var(--shadow-xl);
+      backdrop-filter: blur(16px) saturate(140%);
+      -webkit-backdrop-filter: blur(16px) saturate(140%);
+      animation: shell-in .5s cubic-bezier(.16, 1, .3, 1);
+    }
+    @keyframes shell-in {
+      from { opacity: 0; transform: translateY(12px) scale(.985); }
+      to   { opacity: 1; transform: none; }
+    }
+    .form-shell.shake { animation: shake .45s cubic-bezier(.36, .07, .19, .97) both; }
+    @keyframes shake {
+      10%, 90% { transform: translateX(-1px); }
+      20%, 80% { transform: translateX(2px); }
+      30%, 50%, 70% { transform: translateX(-5px); }
+      40%, 60% { transform: translateX(5px); }
+    }
+
+    /* Brand visible uniquement sur mobile (le pane gauche est masqué) */
+    .form-brand-mobile {
+      display: flex; align-items: center; gap: 12px;
+      margin-bottom: 22px;
+    }
+    @media (min-width: 980px) { .form-brand-mobile { display: none; } }
+    .form-brand-mobile .brand-mark { width: 40px; height: 40px; border-radius: 10px; }
+    .form-brand-mobile .brand-mark svg { width: 22px; height: 22px; }
+
+    h1.form-title {
+      font-family: 'Sora', sans-serif;
+      font-size: 24px; font-weight: 800; margin: 0 0 6px;
+      letter-spacing: -.01em;
+    }
+    .form-sub { font-size: 13.5px; color: var(--text-dim); margin: 0 0 26px; }
+
+    /* ── Champs ── */
+    .field { margin-bottom: 14px; position: relative; }
+    .field-row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
     .field label {
-      display: block; font-size: 11px; text-transform: uppercase;
-      color: var(--text-dim); font-weight: 600; letter-spacing: .04em;
-      margin-bottom: 6px;
+      font-size: 11px; font-weight: 600;
+      color: var(--text-dim);
+      text-transform: uppercase; letter-spacing: .06em;
     }
-    .field input {
-      width: 100%; padding: 11px 14px; border-radius: 10px;
-      background: var(--surface-strong); color: var(--text);
-      border: 1px solid var(--border); font-size: 14px;
-      transition: border-color .15s, box-shadow .15s;
+    .field-hint {
+      font-size: 11.5px; color: var(--text-mute);
+      text-decoration: none; transition: color .15s;
     }
-    .field input:focus {
-      outline: none; border-color: var(--ks-orange-400);
-      box-shadow: 0 0 0 3px rgba(242,107,31,.12);
+    .field-hint:hover { color: var(--ks-orange); }
+
+    .input-wrap {
+      position: relative;
+      display: flex; align-items: center;
     }
+    .input-wrap .icon-left {
+      position: absolute; left: 12px;
+      width: 16px; height: 16px;
+      color: var(--text-mute); pointer-events: none;
+    }
+    .input-wrap input {
+      width: 100%;
+      padding: 12px 14px 12px 38px;
+      border-radius: var(--radius-md);
+      background: var(--surface-strong);
+      color: var(--text);
+      border: 1.5px solid var(--border);
+      font-size: 14px; font-family: inherit;
+      transition: border-color .15s, box-shadow .15s, background-color .15s;
+    }
+    .input-wrap input::placeholder { color: var(--text-mute); }
+    .input-wrap input:hover { border-color: var(--border-strong); }
+    .input-wrap input:focus {
+      outline: none;
+      border-color: var(--ks-orange);
+      box-shadow: 0 0 0 4px rgba(242, 107, 31, .12);
+    }
+    .input-wrap input:-webkit-autofill {
+      -webkit-box-shadow: 0 0 0 30px var(--surface-strong) inset;
+      -webkit-text-fill-color: var(--text);
+      transition: background-color 5000s ease-in-out 0s;
+    }
+    /* Bouton show/hide password */
+    .input-wrap .toggle-pwd {
+      position: absolute; right: 8px;
+      background: transparent; border: 0;
+      width: 32px; height: 32px;
+      border-radius: 6px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      color: var(--text-mute); transition: color .15s, background-color .15s;
+    }
+    .input-wrap .toggle-pwd:hover {
+      color: var(--text);
+      background: rgba(255, 255, 255, .05);
+    }
+    [data-theme="light"] .input-wrap .toggle-pwd:hover { background: rgba(15, 29, 52, .05); }
+    .input-wrap .toggle-pwd svg { width: 16px; height: 16px; }
+
+    /* Caps Lock warning */
+    .caps-warning {
+      display: none;
+      align-items: center; gap: 6px;
+      margin-top: 6px;
+      padding: 6px 10px;
+      font-size: 11.5px;
+      color: var(--warning);
+      background: rgba(251, 191, 36, .08);
+      border-radius: 6px;
+      border-left: 2px solid var(--warning);
+    }
+    .caps-warning.show { display: flex; }
+    .caps-warning svg { width: 13px; height: 13px; flex-shrink: 0; }
+
+    /* Remember-me row */
+    .options-row {
+      display: flex; justify-content: space-between; align-items: center;
+      margin: 6px 0 18px;
+    }
+    .check {
+      display: inline-flex; align-items: center; gap: 8px;
+      cursor: pointer; user-select: none;
+      font-size: 12.5px; color: var(--text-dim);
+    }
+    .check input { position: absolute; opacity: 0; pointer-events: none; }
+    .check .box {
+      width: 16px; height: 16px;
+      border: 1.5px solid var(--border-strong);
+      border-radius: 4px;
+      background: var(--surface-strong);
+      display: flex; align-items: center; justify-content: center;
+      transition: background-color .15s, border-color .15s;
+    }
+    .check input:checked + .box {
+      background: var(--ks-orange);
+      border-color: var(--ks-orange);
+    }
+    .check .box svg {
+      width: 11px; height: 11px; color: #fff;
+      opacity: 0; transform: scale(.6);
+      transition: opacity .15s, transform .15s;
+    }
+    .check input:checked + .box svg { opacity: 1; transform: none; }
+    .check input:focus-visible + .box {
+      box-shadow: 0 0 0 3px rgba(242, 107, 31, .25);
+    }
+
+    /* ── Boutons ── */
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      gap: 8px;
+      width: 100%; padding: 13px 16px;
+      border-radius: var(--radius-md);
+      font-family: inherit; font-size: 14px; font-weight: 600;
+      cursor: pointer;
+      border: 1.5px solid transparent;
+      transition: transform .12s ease, box-shadow .15s, background-color .15s, border-color .15s;
+    }
+    .btn:active { transform: scale(.985); }
+    .btn:disabled { cursor: wait; opacity: .85; }
     .btn-primary {
-      width: 100%; padding: 12px; border-radius: 10px; border: 0;
-      background: linear-gradient(135deg, var(--ks-orange-400), #d946ef);
-      color: #fff; font-weight: 600; font-size: 14px; cursor: pointer;
-      margin-top: 8px;
+      background: linear-gradient(135deg, var(--ks-orange) 0%, var(--ks-magenta) 100%);
+      color: #fff;
+      box-shadow: 0 8px 22px rgba(242, 107, 31, .35);
     }
-    .btn-primary:hover { opacity: .94; }
+    .btn-primary:hover:not(:disabled) {
+      box-shadow: 0 10px 28px rgba(242, 107, 31, .42);
+    }
+    .btn-ghost {
+      background: var(--surface-strong);
+      color: var(--text);
+      border-color: var(--border-strong);
+    }
+    .btn-ghost:hover:not(:disabled) {
+      background: rgba(255, 255, 255, .04);
+      border-color: var(--ks-orange);
+    }
+    [data-theme="light"] .btn-ghost:hover:not(:disabled) {
+      background: rgba(15, 29, 52, .04);
+    }
+    .btn .spinner {
+      width: 16px; height: 16px;
+      border: 2px solid rgba(255, 255, 255, .35);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      display: none;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .btn.is-loading .spinner { display: inline-block; }
+    .btn.is-loading .btn-label { opacity: .85; }
+
+    /* ── Séparateur "ou" ── */
+    .divider {
+      display: flex; align-items: center; gap: 12px;
+      margin: 20px 0;
+      font-size: 11px; color: var(--text-mute);
+      text-transform: uppercase; letter-spacing: .12em;
+    }
+    .divider::before, .divider::after {
+      content: ""; flex: 1; height: 1px;
+      background: var(--border);
+    }
+
+    /* ── Erreur ── */
     .error {
-      padding: 10px 14px; background: rgba(248,113,113,.12);
-      color: var(--danger); border-radius: 8px; font-size: 12.5px;
-      border-left: 3px solid var(--danger); margin-bottom: 14px;
+      display: flex; align-items: flex-start; gap: 10px;
+      padding: 12px 14px;
+      background: var(--danger-bg);
+      color: var(--danger);
+      border-radius: var(--radius-sm);
+      border-left: 3px solid var(--danger);
+      font-size: 13px; line-height: 1.4;
+      margin-bottom: 16px;
     }
-    .footer-link {
-      text-align: center; margin-top: 18px;
-      font-size: 11.5px; color: var(--text-dim);
+    .error svg { width: 16px; height: 16px; flex-shrink: 0; margin-top: 1px; }
+
+    /* ── Footer ── */
+    .form-footer {
+      text-align: center;
+      margin-top: 22px;
+      font-size: 11.5px;
+      color: var(--text-mute);
     }
-    .footer-link a { color: var(--ks-orange-400); text-decoration: none; }
+    .form-footer .secure {
+      display: inline-flex; align-items: center; gap: 5px;
+      color: var(--success);
+      font-weight: 500;
+      margin-bottom: 4px;
+    }
+    .form-footer .secure svg { width: 12px; height: 12px; }
+    .form-footer a { color: var(--ks-orange); text-decoration: none; }
+    .form-footer a:hover { text-decoration: underline; }
+
+    /* ── Theme toggle (en haut à droite) ── */
+    .theme-toggle {
+      position: absolute; top: 18px; right: 18px; z-index: 10;
+      width: 36px; height: 36px;
+      border-radius: 50%;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text-dim);
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer;
+      transition: color .15s, border-color .15s, transform .12s;
+      backdrop-filter: blur(8px);
+    }
+    .theme-toggle:hover {
+      color: var(--ks-orange);
+      border-color: var(--ks-orange);
+    }
+    .theme-toggle:active { transform: scale(.92); }
+    .theme-toggle svg { width: 16px; height: 16px; }
+    .theme-toggle .sun-icon,
+    .theme-toggle .moon-icon { transition: opacity .2s, transform .3s; }
+    [data-theme="dark"] .theme-toggle .moon-icon { display: none; }
+    [data-theme="light"] .theme-toggle .sun-icon { display: none; }
+
+    /* ── Accessibilité ── */
+    :focus-visible {
+      outline: 2px solid var(--ks-orange);
+      outline-offset: 2px;
+      border-radius: 4px;
+    }
+    .sr-only {
+      position: absolute; width: 1px; height: 1px;
+      padding: 0; margin: -1px; overflow: hidden;
+      clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+    }
+
+    /* ── Reduce motion ── */
+    @media (prefers-reduced-motion: reduce) {
+      .bg-fx::before, .bg-fx::after { animation: none; }
+      .form-shell { animation: none; }
+      .form-shell.shake { animation: none; }
+      * { transition-duration: .01ms !important; }
+    }
   </style>
 </head>
 <body>
-  <main class="login-shell">
-    <div class="brand">
-      <div class="brand-mark">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M12 3 L20 6 V12 C20 17 16.5 20.5 12 22 C7.5 20.5 4 17 4 12 V6 Z"/>
-          <path d="M12 3 V22"/>
-        </svg>
-      </div>
-      <div>
-        <h1>KAYDAN&nbsp;SHIELD</h1>
-        <div class="tag">Contrôle d'accès intelligent</div>
-      </div>
-    </div>
+  <div class="bg-fx" aria-hidden="true"></div>
+  <div class="bg-grid" aria-hidden="true"></div>
 
-    <h2>Connexion</h2>
-    <p class="sub">Accédez à votre espace administrateur KAYDAN GROUPE.</p>
+  <button type="button" class="theme-toggle" id="themeToggle"
+          aria-label="Basculer thème clair/sombre" title="Thème clair / sombre">
+    <svg class="sun-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
+    </svg>
+    <svg class="moon-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+    </svg>
+  </button>
 
-    {% if error %}<div class="error">{{ error }}</div>{% endif %}
+  <div class="page">
+    {# ──────────────── Panneau gauche : brand + pitch ──────────────── #}
+    <aside class="brand-pane">
+      <div class="brand-pane-content">
+        <header class="brand-header">
+          <div class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 3 L20 6 V12 C20 17 16.5 20.5 12 22 C7.5 20.5 4 17 4 12 V6 Z"/>
+              <path d="M12 3 V22"/>
+            </svg>
+          </div>
+          <div>
+            <div class="brand-title">KAYDAN&nbsp;SHIELD</div>
+            <div class="brand-tag">Contrôle d'accès intelligent</div>
+          </div>
+        </header>
 
-    <form method="post" novalidate>
-      {% csrf_token %}
-      <input type="hidden" name="next" value="{{ next }}">
-      <div class="field">
-        <label for="login-email">Email</label>
-        <input type="email" id="login-email" name="email"
-               value="{{ email|default:'' }}" required autocomplete="email" autofocus>
+        <section class="pitch">
+          <h2>Sécurité <span class="accent">de classe entreprise</span><br>pour vos sites stratégiques.</h2>
+          <p>Reconnaissance faciale, contrôle d'accès, anti-fraude, supervision temps réel —
+             le tout dans une plateforme unifiée.</p>
+
+          <div class="features" role="list">
+            <div class="feature" role="listitem">
+              <div class="feature-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="3"/>
+                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                </svg>
+              </div>
+              <div class="feature-text">
+                <strong>Reconnaissance faciale temps réel</strong>
+                <span>InsightFace + détection anti-spoofing</span>
+              </div>
+            </div>
+
+            <div class="feature" role="listitem">
+              <div class="feature-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="11" width="18" height="11" rx="2"/>
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                </svg>
+              </div>
+              <div class="feature-text">
+                <strong>Contrôle d'accès multi-site</strong>
+                <span>Badges, QR, biométrie, géofencing</span>
+              </div>
+            </div>
+
+            <div class="feature" role="listitem">
+              <div class="feature-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                  <polyline points="22 4 12 14.01 9 11.01"/>
+                </svg>
+              </div>
+              <div class="feature-text">
+                <strong>Anti-fraude & audit complet</strong>
+                <span>Détection d'anomalies + traçabilité SIEM</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <footer class="brand-footer">
+          <span>© <span id="year"></span> KAYDAN GROUPE</span>
+          <span>·</span>
+          <a href="mailto:support@kaydangroupe.com">Support</a>
+          <span>·</span>
+          <a href="https://www.kaydangroupe.com" target="_blank" rel="noopener">kaydangroupe.com</a>
+        </footer>
       </div>
-      <div class="field">
-        <label for="login-password">Mot de passe</label>
-        <input type="password" id="login-password" name="password" required autocomplete="current-password">
-      </div>
-      <button type="submit" class="btn-primary">Se connecter</button>
-    </form>
+    </aside>
 
-    <div class="footer-link">
-      KAYDAN GROUPE © <span id="y"></span> — Solution propriétaire
-    </div>
-    <script>document.getElementById("y").textContent = new Date().getFullYear();</script>
-  </main>
+    {# ──────────────── Panneau droit : formulaire ──────────────── #}
+    <main class="form-pane">
+      <div class="form-shell" id="formShell">
+        <div class="form-brand-mobile">
+          <div class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 3 L20 6 V12 C20 17 16.5 20.5 12 22 C7.5 20.5 4 17 4 12 V6 Z"/>
+              <path d="M12 3 V22"/>
+            </svg>
+          </div>
+          <div>
+            <div class="brand-title">KAYDAN&nbsp;SHIELD</div>
+            <div class="brand-tag">Contrôle d'accès intelligent</div>
+          </div>
+        </div>
+
+        <h1 class="form-title">Bon retour 👋</h1>
+        <p class="form-sub">Connectez-vous à votre espace administrateur KAYDAN&nbsp;SHIELD.</p>
+
+        {% if error %}
+          <div class="error" role="alert" aria-live="assertive">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+            <span>{{ error }}</span>
+          </div>
+        {% endif %}
+
+        <form method="post" novalidate id="loginForm">
+          {% csrf_token %}
+          <input type="hidden" name="next" value="{{ next }}">
+
+          <div class="field">
+            <div class="field-row">
+              <label for="login-email">Email</label>
+            </div>
+            <div class="input-wrap">
+              <svg class="icon-left" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/>
+              </svg>
+              <input type="email" id="login-email" name="email"
+                     value="{{ email|default:'' }}" required autocomplete="email"
+                     placeholder="vous@kaydangroupe.com"
+                     autofocus inputmode="email" autocapitalize="off" spellcheck="false">
+            </div>
+          </div>
+
+          <div class="field">
+            <div class="field-row">
+              <label for="login-password">Mot de passe</label>
+              <a href="mailto:support@kaydangroupe.com?subject=R%C3%A9initialisation%20mot%20de%20passe%20SHIELD"
+                 class="field-hint">Oublié&nbsp;?</a>
+            </div>
+            <div class="input-wrap">
+              <svg class="icon-left" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+              </svg>
+              <input type="password" id="login-password" name="password"
+                     required autocomplete="current-password"
+                     placeholder="••••••••" style="padding-right:44px">
+              <button type="button" class="toggle-pwd" id="togglePwd"
+                      aria-label="Afficher / masquer le mot de passe"
+                      aria-pressed="false" tabindex="0">
+                <svg id="iconEye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+                </svg>
+                <svg id="iconEyeOff" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none">
+                  <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>
+                </svg>
+              </button>
+            </div>
+            <div class="caps-warning" id="capsWarning" role="status">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 2L4 12h5v8h6v-8h5L12 2z"/>
+              </svg>
+              <span>Verr.&nbsp;Maj activée</span>
+            </div>
+          </div>
+
+          <div class="options-row">
+            <label class="check" for="remember">
+              <input type="checkbox" id="remember" name="remember" value="1">
+              <span class="box">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="20 6 9 17 4 12"/>
+                </svg>
+              </span>
+              Se souvenir de moi
+            </label>
+          </div>
+
+          <button type="submit" class="btn btn-primary" id="submitBtn">
+            <span class="spinner" aria-hidden="true"></span>
+            <span class="btn-label">Se connecter</span>
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="margin-left:2px">
+              <line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>
+            </svg>
+          </button>
+
+          {% if sso_enabled %}
+            <div class="divider"><span>ou</span></div>
+            <a href="{% url 'sso:login' %}{% if next %}?next={{ next|urlencode }}{% endif %}"
+               class="btn btn-ghost" style="text-decoration:none">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74"/>
+                <polyline points="21 3 21 9 15 9"/>
+              </svg>
+              <span class="btn-label">Continuer avec Keycloak SSO</span>
+            </a>
+          {% endif %}
+        </form>
+
+        <div class="form-footer">
+          <div class="secure">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+            </svg>
+            Connexion chiffrée TLS 1.3
+          </div>
+          <div>Accès strictement réservé · Toutes les tentatives sont auditées.</div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    (function() {
+      "use strict";
+
+      // ── Année dans le footer ──
+      var yearEl = document.getElementById("year");
+      if (yearEl) yearEl.textContent = new Date().getFullYear();
+
+      // ── Theme toggle ──
+      var themeBtn = document.getElementById("themeToggle");
+      if (themeBtn) {
+        themeBtn.addEventListener("click", function() {
+          var cur = document.documentElement.dataset.theme || "dark";
+          var next = cur === "dark" ? "light" : "dark";
+          document.documentElement.dataset.theme = next;
+          try { localStorage.setItem("ks-theme", next); } catch (e) {}
+          var meta = document.querySelector('meta[name="theme-color"]');
+          if (meta) meta.setAttribute("content", next === "light" ? "#f8fafc" : "#0B1B33");
+        });
+      }
+
+      // ── Show / hide password ──
+      var togglePwd = document.getElementById("togglePwd");
+      var pwdInput = document.getElementById("login-password");
+      var iconEye = document.getElementById("iconEye");
+      var iconEyeOff = document.getElementById("iconEyeOff");
+      if (togglePwd && pwdInput) {
+        togglePwd.addEventListener("click", function() {
+          var isPwd = pwdInput.type === "password";
+          pwdInput.type = isPwd ? "text" : "password";
+          togglePwd.setAttribute("aria-pressed", isPwd ? "true" : "false");
+          iconEye.style.display = isPwd ? "none" : "";
+          iconEyeOff.style.display = isPwd ? "" : "none";
+          pwdInput.focus();
+        });
+      }
+
+      // ── Caps Lock warning ──
+      var capsWarn = document.getElementById("capsWarning");
+      function updateCaps(e) {
+        if (!e.getModifierState) return;
+        var on = e.getModifierState("CapsLock");
+        capsWarn.classList.toggle("show", on);
+      }
+      if (pwdInput && capsWarn) {
+        pwdInput.addEventListener("keydown", updateCaps);
+        pwdInput.addEventListener("keyup", updateCaps);
+        pwdInput.addEventListener("blur", function() { capsWarn.classList.remove("show"); });
+      }
+
+      // ── Shake animation sur erreur ──
+      var shell = document.getElementById("formShell");
+      if (shell && shell.querySelector(".error")) {
+        shell.classList.add("shake");
+        setTimeout(function() { shell.classList.remove("shake"); }, 500);
+        // Refocus email avec sélection
+        var emailEl = document.getElementById("login-email");
+        if (emailEl && emailEl.value) {
+          // si email pré-rempli après erreur → focus password
+          if (pwdInput) pwdInput.focus();
+        }
+      }
+
+      // ── Loading state au submit ──
+      var form = document.getElementById("loginForm");
+      var submitBtn = document.getElementById("submitBtn");
+      if (form && submitBtn) {
+        form.addEventListener("submit", function() {
+          submitBtn.classList.add("is-loading");
+          submitBtn.disabled = true;
+          submitBtn.querySelector(".btn-label").textContent = "Connexion…";
+          // Safeguard : si la requête traîne (timeout réseau), réactive après 12s.
+          setTimeout(function() {
+            submitBtn.classList.remove("is-loading");
+            submitBtn.disabled = false;
+            submitBtn.querySelector(".btn-label").textContent = "Se connecter";
+          }, 12000);
+        });
+      }
+    })();
+  </script>
 </body>
 </html>

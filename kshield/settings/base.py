@@ -245,6 +245,15 @@ CELERY_BEAT_SCHEDULE = {
         "task": "reports.generate_monthly_digest",
         "schedule": _crontab(hour=7, minute=30, day_of_month="1"),
     },
+    # Sync ZKTeco — pull pointages toutes les 60s + push users toutes les 5 min
+    "zkteco_sync_attendances": {
+        "task": "devices.sync_zkteco_attendances",
+        "schedule": 60.0,
+    },
+    "zkteco_push_users": {
+        "task": "devices.push_zkteco_users",
+        "schedule": 300.0,
+    },
 }
 
 # ---------------------------------------------------------------------------

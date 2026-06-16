@@ -1,0 +1,205 @@
+{% extends "layout/base.html" %}
+{% load static %}
+
+{% block title %}{{ page_title }} · KAYDAN SHIELD{% endblock %}
+{% block page_title %}{{ page_title }}{% endblock %}
+{% block page_subtitle %}{{ reader_meta.hint }}{% endblock %}
+{% block breadcrumb %}{{ breadcrumb }}{% endblock %}
+
+{% block page_actions %}
+  <a class="btn btn-ghost" href="{% url 'admin-device-reader-picker' %}">
+    <i data-lucide="arrow-left" style="width:16px;height:16px"></i> Changer de technologie
+  </a>
+{% endblock %}
+
+{% block content %}
+<style>
+  .reader-banner {
+    display: flex; align-items: center; gap: 16px;
+    padding: 18px 20px;
+    border-radius: 14px;
+    background: linear-gradient(135deg,
+      color-mix(in srgb, var(--accent) 14%, transparent),
+      color-mix(in srgb, var(--accent) 4%, transparent));
+    border-left: 3px solid var(--accent);
+    margin-bottom: 18px;
+  }
+  .reader-banner .icon {
+    width: 44px; height: 44px;
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--accent) 25%, transparent);
+    color: var(--accent);
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .reader-banner .icon svg { width: 22px; height: 22px; }
+  .reader-banner h3 {
+    font-family: 'Sora', sans-serif;
+    margin: 0 0 2px;
+    font-size: 16px; font-weight: 700; color: var(--text);
+  }
+  .reader-banner .meta {
+    font-size: 12px; color: var(--text-dim);
+  }
+
+  .checklist {
+    display: grid; gap: 10px;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    padding: 14px 18px;
+    background: var(--surface);
+    border: 1px dashed var(--border);
+    border-radius: 12px;
+    margin-bottom: 18px;
+    font-size: 12.5px;
+  }
+  .checklist .item {
+    display: flex; align-items: flex-start; gap: 8px;
+    color: var(--text-dim);
+    line-height: 1.45;
+  }
+  .checklist .item svg {
+    width: 14px; height: 14px;
+    flex-shrink: 0; margin-top: 2px;
+    color: var(--accent);
+  }
+  .checklist .item strong {
+    display: block; font-weight: 600;
+    color: var(--text);
+    margin-bottom: 1px;
+  }
+</style>
+
+<div class="reader-banner" style="--accent: {{ reader_meta.color }}">
+  <div class="icon">
+    {% if reader_kind == 'uhf' %}
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+    {% elif reader_kind == 'nfc' %}
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/><path d="M8.5 10.5c1-2 5-2 6 0s-1 3-3 4.5"/></svg>
+    {% elif reader_kind == 'ble' %}
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6.5 6.5 17.5 17.5 12 23 12 1 17.5 6.5 6.5 17.5"/></svg>
+    {% elif reader_kind == 'zk' %}
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 9a3 3 0 0 1 6 0c0 2-2 2-2 4"/><line x1="13" y1="17" x2="13" y2="17.01"/></svg>
+    {% endif %}
+  </div>
+  <div style="flex:1;min-width:0">
+    <h3>{{ reader_meta.label }}</h3>
+    <div class="meta">Configuration guidée — saisissez uniquement les informations spécifiques à votre matériel.</div>
+  </div>
+</div>
+
+{# Aide contextuelle par techno #}
+<div class="checklist" style="--accent: {{ reader_meta.color }}">
+  {% if reader_kind == 'uhf' %}
+    <div class="item">
+      <i data-lucide="check-circle-2"></i>
+      <div><strong>Numéro de série</strong> Sur le boîtier (Impinj, Zebra, CAEN…)</div>
+    </div>
+    <div class="item">
+      <i data-lucide="check-circle-2"></i>
+      <div><strong>IP fixe sur le LAN</strong> DHCP réservé recommandé</div>
+    </div>
+    <div class="item">
+      <i data-lucide="check-circle-2"></i>
+      <div><strong>MAC du port Ethernet</strong> Utilisé pour le filtrage réseau</div>
+    </div>
+    <div class="item">
+      <i data-lucide="check-circle-2"></i>
+      <div><strong>Site + Checkpoint</strong> Pour orienter les événements de lecture</div>
+    </div>
+  {% elif reader_kind == 'nfc' %}
+    <div class="item">
+      <i data-lucide="check-circle-2"></i>
+      <div><strong>Numéro de série</strong> Imprimé au dos du lecteur</div>
+    </div>
+    <div class="item">
+      <i data-lucide="check-circle-2"></i>
+      <div><strong>Mode de connexion</strong> Réseau (IP/MAC) ou USB/série (laisser vide)</div>
+    </div>
+    <div class="item">
+      <i data-lucide="check-circle-2"></i>
+      <div><strong>Checkpoint</strong> Tourniquet, point de pointage, badgeuse</div>
+    </div>
+    <div class="item">
+      <i data-lucide="check-circle-2"></i>
+      <div><strong>Date de mise en service</strong> Pour suivi MTBF</div>
+    </div>
+  {% elif reader_kind == 'ble' %}
+    <div class="item">
+      <i data-lucide="check-circle-2"></i>
+      <div><strong>Numéro de série</strong> Visible sur l'étiquette de la balise</div>
+    </div>
+    <div class="item">
+      <i data-lucide="check-circle-2"></i>
+      <div><strong>Adresse MAC BLE</strong> Format AA:BB:CC:DD:EE:FF</div>
+    </div>
+    <div class="item">
+      <i data-lucide="check-circle-2"></i>
+      <div><strong>Zone de déploiement</strong> Pour géolocalisation indoor</div>
+    </div>
+    <div class="item">
+      <i data-lucide="check-circle-2"></i>
+      <div><strong>Niveau de pile initial</strong> 100% pour suivi de la dégradation</div>
+    </div>
+  {% elif reader_kind == 'zk' %}
+    <div class="item">
+      <i data-lucide="check-circle-2"></i>
+      <div><strong>IP fixe sur le LAN</strong> Le SDK ZKAccess écoute sur TCP/4370</div>
+    </div>
+    <div class="item">
+      <i data-lucide="check-circle-2"></i>
+      <div><strong>Numéro de série</strong> Auto-détecté après premier dialogue SDK</div>
+    </div>
+    <div class="item">
+      <i data-lucide="check-circle-2"></i>
+      <div><strong>Site + Checkpoint</strong> Orientent les pointages dans Shield</div>
+    </div>
+    <div class="item">
+      <i data-lucide="check-circle-2"></i>
+      <div><strong>Compatibles</strong> K14, K20, K40, F18, MA300, iClock, U30, série SpeedFace…</div>
+    </div>
+  {% endif %}
+</div>
+
+{% if imported_from_scan %}
+<div style="display:flex;align-items:center;gap:10px;padding:11px 16px;
+            background:rgba(45,212,191,.10);border:1px solid rgba(45,212,191,.30);
+            border-radius:10px;margin-bottom:14px;font-size:12.5px;color:var(--text)">
+  <i data-lucide="zap" style="width:16px;height:16px;color:var(--success,#2dd4bf);flex-shrink:0"></i>
+  <span><strong style="color:var(--success,#2dd4bf)">Auto-détecté :</strong>
+  IP, MAC et numéro de série pré-remplis depuis le scan réseau. Vérifiez les champs et complétez ce qui manque (site, modèle, checkpoint).</span>
+</div>
+{% endif %}
+
+<section class="card">
+  <form method="post" enctype="multipart/form-data" class="form" novalidate>
+    {% csrf_token %}
+
+    {% if form.non_field_errors %}
+      <div class="form-error" style="padding:10px;border-radius:10px;background:rgba(248,113,113,.06);border:1px solid rgba(248,113,113,.25);margin-bottom:12px">
+        {% for err in form.non_field_errors %}<div>{{ err }}</div>{% endfor %}
+      </div>
+    {% endif %}
+
+    <div class="form-grid">
+      {% for field in form %}
+        {% include "administration/_partials/form_field.html" with field=field %}
+      {% endfor %}
+    </div>
+
+    <div class="form-actions">
+      <a class="btn btn-ghost" href="{% url 'admin-device-reader-picker' %}">Annuler</a>
+      <button class="btn btn-primary" type="submit">
+        <i data-lucide="check" style="width:16px;height:16px"></i>
+        Enregistrer le lecteur
+      </button>
+    </div>
+  </form>
+</section>
+
+<p style="font-size:11.5px;color:var(--text-mute);margin-top:14px;text-align:center">
+  <i data-lucide="lightbulb" style="width:12px;height:12px;vertical-align:-2px"></i>
+  Astuce : si votre matériel n'apparaît pas dans la liste des modèles, créez-en un via
+  <a href="{% url 'admin-devicemodel-create' %}" target="_blank" rel="noopener" style="color:var(--ks-orange-400)">cette page</a>,
+  puis revenez ici.
+</p>
+{% endblock %}

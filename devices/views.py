@@ -446,6 +446,1201 @@ class CameraRtspProbeMultipleView(APIView):
                           "total": len(results)})
 
 
+class ZkImportUsersView(APIView):
+    """POST /api/v1/devices/<pk>/zk-import-users/ — dump tous les users actuels
+    du terminal ZKTeco dans l'inbox d'enrôlement.
+
+    Utile pour rapatrier en masse une base de cartes déjà programmée sur le K14
+    (ex. à la mise en service Shield d'un site qui utilisait déjà ZKTeco seul).
+    """
+    permission_classes = [HasKshieldPermission]
+    kshield_perms = {"read": "badges.manage", "write": "badges.manage"}
+
+    def post(self, request, pk):
+        from django.core.cache import cache
+        from django.utils import timezone
+
+        from .models import Device
+        from .zk_client import is_zkteco_device, safe_zk_session
+
+        try:
+            device = Device.objects.select_related("model").get(pk=pk)
+        except Device.DoesNotExist:
+            return Response({"error": "device introuvable"},
+                              status=status.HTTP_404_NOT_FOUND)
+        if not is_zkteco_device(device) or not device.ip_address:
+            return Response({"error": "device n'est pas un ZKTeco joignable"},
+                              status=status.HTTP_400_BAD_REQUEST)
+
+        pwd = 0
+        if device.model and isinstance(device.model.spec, dict):
+            pwd = int(device.model.spec.get("sdk_password", 0) or 0)
+
+        with safe_zk_session(ip=device.ip_address, port=4370,
+                                password=pwd, timeout=5) as zk:
+            if zk is None:
+                return Response({"error": "session ZK impossible"},
+                                  status=status.HTTP_502_BAD_GATEWAY)
+            try:
+                users = zk.list_users()
+            except Exception as exc:
+                return Response({"error": f"get_users failed : {exc}"},
+                                  status=status.HTTP_502_BAD_GATEWAY)
+
+        inbox_key = "scan_inbox:reader:{}".format(device.pk)
+        items = cache.get(inbox_key) or []
+        added = 0
+        skipped_no_card = 0
+        existing_uids = {it.get("uid") for it in items}
+        now_iso = timezone.now().isoformat()
+        for u in users:
+            card = int(getattr(u, "card", 0) or 0)
+            if not card:
+                skipped_no_card += 1
+                continue
+            uid_str = str(card)
+            if uid_str in existing_uids:
+                continue
+            items.append({
+                "uid": uid_str,
+                "timestamp": now_iso,
+                "source": "zkteco_existing_user",
+                "device_id": device.pk,
+                "raw": {
+                    "user_id": str(u.user_id),
+                    "name": u.name,
+                    "card": card,
+                },
+            })
+            existing_uids.add(uid_str)
+            added += 1
+
+        if len(items) > 500:
+            items = items[-500:]
+        cache.set(inbox_key, items, 600)
+
+        return Response({
+            "imported": added,
+            "skipped_no_card": skipped_no_card,
+            "total_users_on_terminal": len(users),
+        })
+
+
+class ZkEnrollSessionView(APIView):
+    """Gère les sessions d'enrôlement live d'un terminal ZKTeco.
+
+    POST /api/v1/devices/<pk>/enroll-session/  body={"action":"start|stop|status", "duration":300}
+    """
+    permission_classes = [HasKshieldPermission]
+    kshield_perms = {"read": "badges.manage", "write": "badges.manage"}
+
+    def post(self, request, pk):
+        from .models import Device
+        from .zk_client import is_zkteco_device
+        from .zk_enrollment import EnrollmentSessionManager
+
+        action = (request.data.get("action") or "").lower()
+        if action not in ("start", "stop", "status"):
+            return Response({"error": "action invalide (start|stop|status)"},
+                              status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            device = Device.objects.select_related("model").get(pk=pk)
+        except Device.DoesNotExist:
+            return Response({"error": "device introuvable"},
+                              status=status.HTTP_404_NOT_FOUND)
+
+        if not is_zkteco_device(device):
+            return Response({"error": "device n'est pas un terminal ZKTeco"},
+                              status=status.HTTP_400_BAD_REQUEST)
+        if not device.ip_address:
+            return Response({"error": "device sans IP — impossible d'ouvrir la session"},
+                              status=status.HTTP_400_BAD_REQUEST)
+
+        if action == "start":
+            duration = int(request.data.get("duration") or 300)
+            duration = max(30, min(duration, 1800))  # 30s à 30 min
+            result = EnrollmentSessionManager.start(device, duration=duration)
+        elif action == "stop":
+            result = EnrollmentSessionManager.stop(device.pk)
+        else:
+            result = EnrollmentSessionManager.status(device.pk)
+        return Response(result)
+
+    def get(self, request, pk):
+        """Status raccourci en GET."""
+        from .zk_enrollment import EnrollmentSessionManager
+        return Response(EnrollmentSessionManager.status(int(pk)))
+
+
+class ZkSyncNowView(APIView):
+    """POST /api/v1/devices/<pk>/zk-sync/ — déclenche un pull pointages immédiat.
+
+    Utilisé depuis l'UI ou pour debug. Bloque jusqu'à fin de sync (pas de Celery).
+    """
+    permission_classes = [HasKshieldPermission]
+    kshield_perms = {"read": "devices.view", "write": "devices.manage"}
+
+    def post(self, request, pk):
+        from .tasks import sync_zkteco_attendances
+        try:
+            result = sync_zkteco_attendances(device_id=pk)
+        except Exception as exc:
+            return Response({"error": str(exc)},
+                              status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return Response(result)
+
+
+class ZkAdmsWebhookView(APIView):
+    """Endpoint ADMS / push HTTP des terminaux ZKTeco.
+
+    Plusieurs terminaux ZKTeco supportent un mode "ADMS" (Auto Data Management
+    Server) où ils POSTent chaque event de vérification (succès ET échec) à un
+    serveur HTTP au lieu d'attendre un pull.
+
+    URL côté terminal à configurer (menu → COMM → Cloud Server) :
+        http://<shield_host>/api/v1/devices/zk-adms/<serial>/cdata
+        ou simplement /iclock/cdata avec stamp= et SN= en query string.
+
+    On accepte deux variantes du payload :
+
+    A) JSON :
+       {"sn": "CQUJ222460289", "user_id": "1", "card": 6238480,
+        "timestamp": "2026-06-09 12:34:56", "status": 0,
+        "punch": 0, "verify": "card"}
+
+    B) Format ATTLOG raw (legacy ZKTeco) :
+       Tab-separated lines: <user_id>\\t<timestamp>\\t<status>\\t<verify>...
+
+    Auth : on autorise tous (les K14 ne signent pas) — la sécurité vient du
+    fait que le `sn` doit matcher un Device.serial_number connu.
+    """
+    permission_classes = [AllowAny]   # webhook depuis le terminal lui-même
+
+    def post(self, request, sn=None):
+        from datetime import datetime
+
+        from django.contrib.contenttypes.models import ContentType
+        from django.utils import timezone
+
+        from access_control.models import AccessEvent
+
+        from .models import Badge, Device
+        from .tasks import _resolve_direction, _fallback_site
+
+        # Détermine le SN du terminal : via URL ou query string ou body
+        if not sn:
+            sn = (request.query_params.get("SN") or request.query_params.get("sn")
+                  or (request.data or {}).get("sn"))
+        if not sn:
+            return Response({"error": "sn requis"}, status=400)
+
+        device = Device.objects.filter(serial_number=sn).first()
+        if not device:
+            return Response({"error": f"device inconnu : {sn}"}, status=404)
+
+        # Parse les events (JSON ou ATTLOG raw)
+        events_in = self._parse_payload(request)
+        if not events_in:
+            return Response({"received": 0, "ok": True})
+
+        # Cache du mapping user_id → card côté Shield (Badge stocké par card)
+        created = 0
+        errors = []
+        for ev in events_in:
+            try:
+                user_id = str(ev.get("user_id") or "")
+                card = ev.get("card") or 0
+                badge_uid_str = str(card) if card else user_id
+                ts = ev.get("timestamp")
+                if isinstance(ts, str):
+                    try:
+                        ts = datetime.fromisoformat(ts.replace(" ", "T"))
+                    except Exception:
+                        ts = timezone.now()
+                if hasattr(ts, "tzinfo") and ts.tzinfo is None:
+                    ts = timezone.make_aware(ts, timezone.get_current_timezone())
+
+                badge = Badge.objects.filter(
+                    tenant=device.tenant, uid=badge_uid_str,
+                ).first()
+                holder_kind = "unknown"
+                holder_ct = None
+                holder_oid = None
+                if badge and badge.holder_object_id:
+                    holder_kind = badge.holder_kind or "unknown"
+                    holder_ct = badge.holder_content_type
+                    holder_oid = badge.holder_object_id
+
+                # Status ADMS : certains firmwares envoient status=5 pour
+                # "rejected" et 0/1 pour granted in/out
+                raw_status = ev.get("status")
+                verify = (ev.get("verify") or "").lower()
+                decision = "granted"
+                denial = ""
+                if not badge:
+                    decision = "denied"
+                    denial = f"Badge inconnu : {badge_uid_str}"
+                elif raw_status in (5, "5"):
+                    decision = "denied"
+                    denial = "Vérification refusée par le terminal"
+                elif verify in ("invalid", "fail", "rejected"):
+                    decision = "denied"
+                    denial = "Carte refusée"
+
+                # Direction via checkpoint ou toggle
+                class _Att:
+                    punch = ev.get("punch") or 0
+                direction = _resolve_direction(device=device, badge=badge,
+                                                  att=_Att())
+
+                AccessEvent.objects.create(
+                    tenant=device.tenant,
+                    timestamp=ts,
+                    site=device.site or _fallback_site(device),
+                    zone=getattr(device, "zone", None),
+                    checkpoint=getattr(device, "checkpoint", None),
+                    direction=direction,
+                    method="nfc",
+                    decision=decision,
+                    denial_reason=denial,
+                    device=device,
+                    badge_uid=badge_uid_str,
+                    holder_kind=holder_kind,
+                    holder_content_type=holder_ct,
+                    holder_object_id=holder_oid,
+                    raw_payload={
+                        "source": "zkteco_adms",
+                        "zk_user_id": user_id,
+                        "zk_card": card,
+                        "zk_status": raw_status,
+                        "zk_verify": verify,
+                        "zk_punch": ev.get("punch"),
+                    },
+                )
+                created += 1
+            except Exception as exc:
+                errors.append(str(exc)[:200])
+
+        # Heartbeat OK
+        device.last_heartbeat_at = timezone.now()
+        device.save(update_fields=["last_heartbeat_at"])
+
+        # Le K14 attend une réponse simple "OK" en text/plain pour confirmer
+        # l'ingestion. On retourne ça si le content-type d'origine était texte.
+        if "text" in (request.content_type or "").lower():
+            from django.http import HttpResponse
+            return HttpResponse("OK\n", content_type="text/plain")
+        return Response({"received": len(events_in), "created": created,
+                          "errors": errors})
+
+    def _parse_payload(self, request):
+        """Extrait une liste d'events depuis le body, JSON ou ATTLOG raw."""
+        # JSON
+        if isinstance(request.data, dict):
+            if "events" in request.data:
+                return request.data["events"]
+            # Single event
+            if "user_id" in request.data or "card" in request.data:
+                return [request.data]
+        if isinstance(request.data, list):
+            return request.data
+
+        # ATTLOG raw (text/plain, lignes tab-separated)
+        raw = request.body.decode(errors="ignore") if request.body else ""
+        if not raw or "\t" not in raw:
+            return []
+        events = []
+        for line in raw.splitlines():
+            parts = line.split("\t")
+            if len(parts) < 2:
+                continue
+            try:
+                events.append({
+                    "user_id": parts[0].strip(),
+                    "timestamp": parts[1].strip(),
+                    "status": int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else None,
+                    "verify": parts[3].strip() if len(parts) > 3 else "",
+                    "punch": int(parts[4]) if len(parts) > 4 and parts[4].lstrip("-").isdigit() else 0,
+                })
+            except Exception:
+                continue
+        return events
+
+
+class ZkPushEmployeeView(APIView):
+    """POST /api/v1/devices/employees/<pk>/push-to-zk/ — pousse un employé vers
+    TOUS les terminaux ZKTeco actifs de son tenant.
+
+    Récupère le badge actif de l'employé, dérive (uid ZK, card) et set_user sur
+    chaque K14 du même tenant. Réponse : per-device status.
+
+    Body optionnel : {"device_ids": [...]} pour cibler des K14 spécifiques.
+    """
+    permission_classes = [HasKshieldPermission]
+    kshield_perms = {"read": "employees.view", "write": "employees.manage"}
+
+    def post(self, request, pk):
+        from django.contrib.contenttypes.models import ContentType
+
+        from employees.models import Employee
+
+        from .models import Badge, Device
+        from .zk_client import ZkConnectionError, is_zkteco_device, safe_zk_session
+
+        try:
+            emp = Employee.objects.get(pk=pk)
+        except Employee.DoesNotExist:
+            return Response({"error": "employé introuvable"},
+                              status=status.HTTP_404_NOT_FOUND)
+
+        # Badge actif lié à cet employé (peut être attribué via Workflow 2A)
+        emp_ct = ContentType.objects.get_for_model(Employee)
+        badge = Badge.objects.filter(
+            tenant=emp.tenant if hasattr(emp, "tenant") else None,
+            holder_content_type=emp_ct,
+            holder_object_id=emp.pk,
+            status__in=("active", "assigned"),
+        ).first()
+        if not badge:
+            # Fallback : sans tenant filter (en mono-tenant pas grave)
+            badge = Badge.objects.filter(
+                holder_content_type=emp_ct,
+                holder_object_id=emp.pk,
+                status__in=("active", "assigned"),
+            ).first()
+        if not badge:
+            return Response({
+                "error": "Cet employé n'a aucun badge actif. Attribue-lui d'abord "
+                         "un badge via le Workflow 2A puis réessaye."
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Cible : tous les K14 actifs du tenant + IP renseignée
+        target_devices = (
+            Device.objects.select_related("model")
+            .filter(status="active", ip_address__isnull=False)
+        )
+        if hasattr(badge, "tenant_id") and badge.tenant_id:
+            target_devices = target_devices.filter(tenant_id=badge.tenant_id)
+        device_ids = request.data.get("device_ids") if isinstance(
+            request.data, dict) else None
+        if device_ids:
+            target_devices = target_devices.filter(pk__in=device_ids)
+        # Garde seulement les vrais ZKTeco
+        target_devices = [d for d in target_devices if is_zkteco_device(d)]
+
+        if not target_devices:
+            return Response({
+                "error": "Aucun terminal ZKTeco actif éligible (vérifier brand "
+                         "et IP des devices)."
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Dérive uid + card pour le push
+        try:
+            card_int = int(badge.uid, 16) if not badge.uid.isdigit() else int(badge.uid)
+        except Exception:
+            card_int = abs(hash(badge.uid)) % 9_999_999
+        try:
+            uid_int = card_int % 65500 + 1
+        except Exception:
+            uid_int = abs(hash(badge.uid)) % 65500 + 1
+        name = (f"{emp.first_name} {emp.last_name}".strip()
+                or emp.matricule or badge.uid)
+
+        results = []
+        for device in target_devices:
+            pwd = 0
+            if device.model and isinstance(device.model.spec, dict):
+                pwd = int(device.model.spec.get("sdk_password", 0) or 0)
+            with safe_zk_session(ip=device.ip_address, port=4370,
+                                   password=pwd, timeout=4) as zk:
+                if zk is None:
+                    results.append({
+                        "device_id": device.pk,
+                        "device": device.serial_number,
+                        "ok": False, "error": "session impossible",
+                    })
+                    continue
+                try:
+                    zk.set_user(
+                        uid=uid_int, name=name[:24],
+                        card=card_int, user_id=str(badge.uid)[:9],
+                    )
+                    results.append({
+                        "device_id": device.pk,
+                        "device": device.serial_number,
+                        "ok": True, "uid": uid_int, "card": card_int,
+                    })
+                except ZkConnectionError as exc:
+                    results.append({
+                        "device_id": device.pk,
+                        "device": device.serial_number,
+                        "ok": False, "error": str(exc)[:200],
+                    })
+
+        success_count = sum(1 for r in results if r["ok"])
+        return Response({
+            "employee": str(emp),
+            "badge_uid": badge.uid,
+            "devices_targeted": len(target_devices),
+            "devices_succeeded": success_count,
+            "results": results,
+        })
+
+
+class ZkSyncAllView(APIView):
+    """POST /api/v1/devices/zk-sync-all/ — sync immédiat de TOUS les terminaux ZKTeco.
+
+    Idéal pour rafraîchir la page realtime à la demande (sans attendre le worker).
+    """
+    permission_classes = [HasKshieldPermission]
+    kshield_perms = {"read": "devices.view", "write": "devices.manage"}
+
+    def post(self, request):
+        from .tasks import sync_zkteco_attendances
+        try:
+            result = sync_zkteco_attendances()   # pas de device_id = tous
+        except Exception as exc:
+            return Response({"error": str(exc)},
+                              status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return Response(result)
+
+
+class ZkPushUsersNowView(APIView):
+    """POST /api/v1/devices/<pk>/zk-push-users/ — push users immédiat."""
+    permission_classes = [HasKshieldPermission]
+    kshield_perms = {"read": "devices.view", "write": "devices.manage"}
+
+    def post(self, request, pk):
+        from .tasks import push_zkteco_users
+        try:
+            result = push_zkteco_users(device_id=pk)
+        except Exception as exc:
+            return Response({"error": str(exc)},
+                              status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return Response(result)
+
+
+class DeviceConnectivityTestView(APIView):
+    """POST /api/v1/devices/<pk>/test-connection/ — vérifie qu'un équipement répond.
+
+    Pour un lecteur réseau, on enchaîne :
+      1. Résolution DNS / présence de l'IP
+      2. TCP connect sur les ports caractéristiques selon le type
+         (5084 LLRP pour UHF, 80/443 HTTP, 8080, etc.)
+      3. HTTP probe sur le premier port HTTP ouvert (récupère server header)
+      4. LLRP handshake léger (lecture des 4 premiers bytes) sur 5084
+
+    Réponse :
+      {
+        "device":   {"id": 5, "serial_number": "UHF-...", "ip": "192.168.1.50"},
+        "reachable": true,
+        "duration_ms": 123,
+        "checks": [
+          {"name": "DNS",     "ok": true,  "detail": "192.168.1.50"},
+          {"name": "TCP 5084 (LLRP)", "ok": true, "ms": 12},
+          {"name": "TCP 80 (HTTP)",   "ok": true, "ms": 8},
+          {"name": "HTTP GET /",      "ok": true, "ms": 154, "status": 200, "server": "Impinj/1.0"},
+          {"name": "LLRP handshake",  "ok": true, "ms": 25,  "msg_type": "GET_READER_CAPABILITIES_RESPONSE"}
+        ]
+      }
+    """
+    permission_classes = [HasKshieldPermission]
+    kshield_perms = {"read": "devices.view", "write": "devices.manage"}
+
+    def post(self, request, pk):
+        import socket
+        import time as _time
+        from .models import Device
+
+        try:
+            device = Device.objects.select_related("model").get(pk=pk)
+        except Device.DoesNotExist:
+            return Response({"error": "device introuvable"},
+                              status=status.HTTP_404_NOT_FOUND)
+
+        ip = device.ip_address
+        if not ip:
+            return Response({
+                "device": {"id": device.pk, "serial_number": device.serial_number},
+                "reachable": False,
+                "error": "Aucune IP renseignée pour cet équipement. "
+                         "Modifier le device et renseigner ip_address.",
+            }, status=status.HTTP_200_OK)
+
+        from .zk_client import is_zkteco_device
+        is_zk = is_zkteco_device(device)
+
+        device_type = (device.model.type if device.model else "") or ""
+        # Ports à tester selon le type
+        if is_zk:
+            # Terminal ZKTeco — port 4370 (SDK ZKAccess) + 80 (web) + 8081 (ADMS)
+            ports = [(4370, "ZKAccess SDK"), (80, "HTTP"), (8081, "ADMS"), (4380, "ZK-HTTP")]
+            try_llrp = False
+        elif device_type.startswith("reader_uhf") or device_type == "portique":
+            ports = [(5084, "LLRP"), (80, "HTTP"), (443, "HTTPS"), (22, "SSH")]
+            try_llrp = True
+        elif device_type.startswith("reader_nfc"):
+            ports = [(80, "HTTP"), (443, "HTTPS"), (8000, "HTTP-alt"), (4370, "ZKAccess SDK")]
+            try_llrp = False
+        elif device_type == "beacon_ble":
+            ports = [(80, "HTTP"), (443, "HTTPS"), (8080, "HTTP-alt"), (1883, "MQTT")]
+            try_llrp = False
+        elif device_type == "camera":
+            ports = [(80, "HTTP"), (554, "RTSP"), (443, "HTTPS")]
+            try_llrp = False
+        else:
+            # Lecteur générique
+            ports = [(80, "HTTP"), (443, "HTTPS"), (5084, "LLRP"), (8080, "HTTP-alt"), (4370, "ZKAccess SDK")]
+            try_llrp = (5084 in [p for p, _ in ports])
+
+        start = _time.monotonic()
+        checks = []
+
+        # 1) DNS / IP résolu
+        try:
+            socket.inet_aton(ip)  # valid IPv4 ?
+            checks.append({"name": "DNS / IP", "ok": True, "detail": ip})
+        except OSError:
+            try:
+                resolved = socket.gethostbyname(ip)
+                checks.append({"name": "DNS", "ok": True, "detail": resolved})
+                ip = resolved
+            except OSError as exc:
+                checks.append({"name": "DNS", "ok": False, "detail": str(exc)})
+                duration = int((_time.monotonic() - start) * 1000)
+                return Response({
+                    "device": {"id": device.pk, "serial_number": device.serial_number,
+                                 "ip": device.ip_address},
+                    "reachable": False, "checks": checks,
+                    "duration_ms": duration,
+                })
+
+        # 2) TCP connect par port
+        open_ports = []
+        for port, label in ports:
+            t = _time.monotonic()
+            ok = False
+            try:
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    s.settimeout(2.0)
+                    ok = s.connect_ex((ip, port)) == 0
+            except Exception:
+                ok = False
+            ms = int((_time.monotonic() - t) * 1000)
+            checks.append({
+                "name": f"TCP {port} ({label})",
+                "ok": ok, "ms": ms, "port": port,
+            })
+            if ok:
+                open_ports.append((port, label))
+
+        # 3) HTTP probe sur premier port HTTP ouvert
+        http_port = next((p for p, l in open_ports
+                           if l in ("HTTP", "HTTPS", "HTTP-alt")), None)
+        if http_port:
+            scheme = "https" if http_port in (443, 8443) else "http"
+            url = f"{scheme}://{ip}:{http_port}/"
+            t = _time.monotonic()
+            try:
+                import ssl
+                import urllib.request
+                req = urllib.request.Request(
+                    url, headers={"User-Agent": "KaydanShield-PingTest/1.0"},
+                )
+                ctx = ssl.create_default_context()
+                ctx.check_hostname = False
+                ctx.verify_mode = ssl.CERT_NONE
+                with urllib.request.urlopen(req, timeout=3.0, context=ctx) as resp:
+                    code = resp.status
+                    server = resp.headers.get("Server", "")
+                ms = int((_time.monotonic() - t) * 1000)
+                checks.append({
+                    "name": f"HTTP GET {url}",
+                    "ok": 200 <= code < 500, "ms": ms,
+                    "status": code, "server": server,
+                })
+            except Exception as exc:
+                ms = int((_time.monotonic() - t) * 1000)
+                checks.append({
+                    "name": f"HTTP GET {url}",
+                    "ok": False, "ms": ms, "detail": str(exc)[:200],
+                })
+
+        # 4a) Check ZKAccess SDK approfondi : ouvre une vraie session pyzk,
+        # récupère firmware + serial + count users. Beaucoup plus parlant
+        # qu'un simple "port ouvert".
+        if any(p == 4370 for p, _ in open_ports):
+            t = _time.monotonic()
+            try:
+                from .zk_client import ZkClient, ZkConnectionError, ZkUnavailable
+                pwd = 0
+                if device.model and isinstance(device.model.spec, dict):
+                    pwd = device.model.spec.get("sdk_password", 0) or 0
+                try:
+                    with ZkClient(ip, port=4370, password=int(pwd), timeout=4).open() as zk:
+                        info = zk.info()
+                except (ZkUnavailable, ZkConnectionError) as exc:
+                    raise RuntimeError(str(exc))
+                ms = int((_time.monotonic() - t) * 1000)
+                detail = (
+                    f"{info.get('name') or '?'} / {info.get('firmware') or '?'} / "
+                    f"SN {info.get('serial') or '?'} · "
+                    f"{info.get('users_count') or 0} user(s), "
+                    f"{info.get('fingerprints_count') or 0} empreinte(s)"
+                )
+                checks.append({
+                    "name": "Dialogue ZKAccess SDK", "ok": True, "ms": ms,
+                    "detail": detail,
+                    "zk_info": info,
+                })
+                # Met à jour firmware si on l'a appris
+                if info.get("firmware") and info["firmware"] != device.firmware_version:
+                    device.firmware_version = info["firmware"][:40]
+                    device.save(update_fields=["firmware_version"])
+            except Exception as exc:
+                ms = int((_time.monotonic() - t) * 1000)
+                checks.append({
+                    "name": "Dialogue ZKAccess SDK", "ok": False, "ms": ms,
+                    "detail": str(exc)[:200],
+                })
+
+        # 4b) Handshake LLRP léger : ouvre TCP/5084, lit 10 bytes, parse l'header
+        if try_llrp and any(p == 5084 for p, _ in open_ports):
+            t = _time.monotonic()
+            try:
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    s.settimeout(3.0)
+                    s.connect((ip, 5084))
+                    # Le lecteur envoie spontanément un READER_EVENT_NOTIFICATION
+                    # à la connexion. On lit l'entête : version + msg_type + length
+                    raw = s.recv(10)
+                if len(raw) >= 6:
+                    # bits 0-2 version, 3-15 type, 16-47 length
+                    b0, b1 = raw[0], raw[1]
+                    msg_type = ((b0 & 0x03) << 8) | b1
+                    msg_types = {
+                        63: "READER_EVENT_NOTIFICATION",
+                         1: "GET_READER_CAPABILITIES",
+                        11: "GET_READER_CONFIG_RESPONSE",
+                    }
+                    name = msg_types.get(msg_type, f"msg_type={msg_type}")
+                    ms = int((_time.monotonic() - t) * 1000)
+                    checks.append({
+                        "name": "Handshake LLRP", "ok": True, "ms": ms,
+                        "detail": name, "bytes_read": len(raw),
+                    })
+                else:
+                    ms = int((_time.monotonic() - t) * 1000)
+                    checks.append({
+                        "name": "Handshake LLRP", "ok": False, "ms": ms,
+                        "detail": f"Réponse incomplète ({len(raw)} octets)",
+                    })
+            except Exception as exc:
+                ms = int((_time.monotonic() - t) * 1000)
+                checks.append({
+                    "name": "Handshake LLRP", "ok": False, "ms": ms,
+                    "detail": str(exc)[:200],
+                })
+
+        # Synthèse : reachable si au moins 1 port s'ouvre OU si HTTP a répondu
+        reachable = bool(open_ports) or any(
+            c.get("ok") and c["name"].startswith("HTTP GET") for c in checks
+        )
+
+        # Met à jour last_heartbeat_at si reachable
+        if reachable:
+            from django.utils import timezone
+            device.last_heartbeat_at = timezone.now()
+            device.save(update_fields=["last_heartbeat_at"])
+
+        duration_ms = int((_time.monotonic() - start) * 1000)
+        return Response({
+            "device": {
+                "id": device.pk,
+                "serial_number": device.serial_number,
+                "ip": device.ip_address,
+                "type": device_type,
+            },
+            "reachable": reachable,
+            "duration_ms": duration_ms,
+            "checks": checks,
+            "summary": (
+                f"{len(open_ports)} port(s) ouvert(s) : "
+                + ", ".join(f"{p}" for p, _ in open_ports)
+                if open_ports else
+                "Aucun port ne répond — vérifier IP, alimentation, firewall."
+            ),
+        })
+
+
+class ScanInboxView(APIView):
+    """Inbox éphémère de scans bruts pour l'enrôlement live.
+
+    Les scans sont stockés dans le cache Django (TTL 10 min) — pas de table SQL.
+    Permet à un lecteur RFID/NFC IP de pousser ses lectures, et à l'UI admin de
+    les afficher en temps réel.
+
+    GET  /api/v1/devices/scan/inbox/?reader_id=<id>&since=<iso8601>
+        → {"scans": [{"uid": "AABBCC01", "timestamp": "…"}, ...], "now": "…"}
+
+    POST /api/v1/devices/scan/inbox/   (utilisé par les lecteurs IP en webhook)
+        Body : {"reader_id": <id_ou_serial>, "uid": "AABBCC01", "rssi": -45}
+        → {"ok": true}
+
+    DELETE /api/v1/devices/scan/inbox/?reader_id=<id>
+        → vide la file (bouton "Vider" UI)
+    """
+    permission_classes = [HasKshieldPermission]
+    kshield_perms = {"read": "badges.manage", "write": "badges.manage"}
+
+    CACHE_KEY = "scan_inbox:reader:{}"      # liste de dicts {uid, timestamp, rssi}
+    CACHE_TTL = 600                          # 10 minutes
+    MAX_ITEMS = 500
+
+    def _cache_key(self, reader_id) -> str:
+        return self.CACHE_KEY.format(reader_id)
+
+    def get(self, request):
+        from datetime import datetime, timezone
+        from django.core.cache import cache
+
+        from .models import Device
+        from .zk_client import is_zkteco_device, safe_zk_session
+
+        reader_id = request.query_params.get("reader_id")
+        if not reader_id:
+            return Response({"error": "reader_id requis"},
+                              status=status.HTTP_400_BAD_REQUEST)
+        since = request.query_params.get("since") or ""
+
+        # ── Si le lecteur est un terminal ZKTeco, on PULL en live ──
+        # Cap à 1 pull toutes les 3s par device pour ne pas saturer le terminal.
+        device = None
+        try:
+            device = Device.objects.select_related("model").get(pk=reader_id)
+        except (Device.DoesNotExist, ValueError):
+            pass
+
+        if device and is_zkteco_device(device) and device.ip_address:
+            throttle_key = f"zk_pull_lock:{device.pk}"
+            if not cache.get(throttle_key):
+                cache.set(throttle_key, 1, 3)   # lock 3s
+                self._pull_zk_into_inbox(device)
+
+        # Lecture des items dans l'inbox
+        items = cache.get(self._cache_key(reader_id)) or []
+
+        # Filtre par `since` si fourni
+        if since:
+            try:
+                cutoff = datetime.fromisoformat(since.replace("Z", "+00:00"))
+                items = [
+                    it for it in items
+                    if datetime.fromisoformat(it["timestamp"]) > cutoff
+                ]
+            except Exception:
+                pass
+
+        now_iso = datetime.now(timezone.utc).isoformat()
+        return Response({"scans": items, "now": now_iso, "count": len(items)})
+
+    def _pull_zk_into_inbox(self, device):
+        """Pull les nouveaux pointages d'un terminal ZKTeco et les met dans l'inbox.
+
+        Pour chaque pointage, on remplace ``user_id`` (interne au terminal, ex. "1")
+        par le ``card`` correspondant (numéro de carte RFID, ex. "6238480") qui
+        est ce que l'enrôlement attend comme UID de badge. Le mapping user_id →
+        card est cache 60s pour éviter de re-fetcher get_users à chaque pull.
+
+        Watermark stocké en cache pour ne pas retourner deux fois le même UID.
+        """
+        from datetime import datetime, timezone
+        from django.core.cache import cache
+
+        from .zk_client import safe_zk_session
+
+        watermark_key = f"zk_inbox_watermark:{device.pk}"
+        mapping_key = f"zk_user_to_card:{device.pk}"
+        last_seen_iso = cache.get(watermark_key)
+        last_seen = None
+        if last_seen_iso:
+            try:
+                last_seen = datetime.fromisoformat(last_seen_iso)
+            except Exception:
+                last_seen = None
+
+        pwd = 0
+        if device.model and isinstance(device.model.spec, dict):
+            pwd = int(device.model.spec.get("sdk_password", 0) or 0)
+
+        with safe_zk_session(
+            ip=device.ip_address, port=4370, password=pwd, timeout=3,
+        ) as zk:
+            if zk is None:
+                return
+
+            # Mapping user_id → card (cache 60s)
+            user_to_card = cache.get(mapping_key)
+            if user_to_card is None:
+                user_to_card = {}
+                try:
+                    for u in zk.list_users():
+                        card = int(getattr(u, "card", 0) or 0)
+                        if card:
+                            user_to_card[str(u.user_id)] = card
+                except Exception:
+                    pass
+                cache.set(mapping_key, user_to_card, 60)
+
+            try:
+                atts = zk.pull_attendances(since=last_seen)
+            except Exception:
+                return
+            if not atts:
+                return
+
+            inbox_key = self._cache_key(device.pk)
+            items = cache.get(inbox_key) or []
+            existing_uids = {it.get("uid") for it in items}
+            max_ts = last_seen
+            from django.utils import timezone as djtz
+            for a in atts:
+                ts = a.timestamp
+                if ts.tzinfo is None:
+                    ts_aware = djtz.make_aware(ts, djtz.get_current_timezone())
+                else:
+                    ts_aware = ts
+                # Remplace user_id par le numéro de carte si dispo
+                user_id_str = str(a.user_id)
+                card = user_to_card.get(user_id_str)
+                uid_to_push = str(card) if card else user_id_str
+                # Dedup soft : ne pas re-pousser un uid déjà présent
+                if uid_to_push in existing_uids:
+                    if max_ts is None or ts > max_ts:
+                        max_ts = ts
+                    continue
+                items.append({
+                    "uid": uid_to_push,
+                    "timestamp": ts_aware.isoformat(),
+                    "source": "zkteco",
+                    "device_id": device.pk,
+                    "raw": {
+                        "user_id": user_id_str,
+                        "card": card,
+                        "status": getattr(a, "status", None),
+                        "punch":  getattr(a, "punch", None),
+                    },
+                })
+                existing_uids.add(uid_to_push)
+                if max_ts is None or ts > max_ts:
+                    max_ts = ts
+
+            # Cap à 500 items dans l'inbox
+            if len(items) > self.MAX_ITEMS:
+                items = items[-self.MAX_ITEMS:]
+            cache.set(inbox_key, items, self.CACHE_TTL)
+            if max_ts is not None:
+                cache.set(watermark_key, max_ts.isoformat(), 7 * 86400)
+
+    def post(self, request):
+        from datetime import datetime, timezone
+        from django.core.cache import cache
+
+        from .models import Device
+        reader_ref = request.data.get("reader_id") or request.data.get("reader")
+        uid = (request.data.get("uid") or "").strip().upper()
+        rssi = request.data.get("rssi")
+        if not (reader_ref and uid):
+            return Response({"error": "reader_id et uid requis"},
+                              status=status.HTTP_400_BAD_REQUEST)
+
+        # reader_ref peut être un PK ou un serial_number → on tente les deux
+        device = None
+        try:
+            device = Device.objects.filter(pk=reader_ref).first()
+        except Exception:
+            device = None
+        if not device:
+            device = Device.objects.filter(serial_number=reader_ref).first()
+        if not device:
+            return Response({"error": f"lecteur introuvable : {reader_ref}"},
+                              status=status.HTTP_404_NOT_FOUND)
+
+        key = self._cache_key(device.pk)
+        items = cache.get(key) or []
+        items.append({
+            "uid": uid,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "rssi": rssi,
+        })
+        # Cap mémoire
+        if len(items) > self.MAX_ITEMS:
+            items = items[-self.MAX_ITEMS:]
+        cache.set(key, items, self.CACHE_TTL)
+        return Response({"ok": True, "queued": len(items)})
+
+    def delete(self, request):
+        from django.core.cache import cache
+        reader_id = request.query_params.get("reader_id")
+        if not reader_id:
+            return Response({"error": "reader_id requis"},
+                              status=status.HTTP_400_BAD_REQUEST)
+        cache.delete(self._cache_key(reader_id))
+        return Response({"ok": True})
+
+
+class BadgeBulkEnrollView(APIView):
+    """POST /api/v1/devices/badges/bulk-enroll/ — enrôle plusieurs badges en pool.
+
+    Body :
+        {
+          "type":       "nfc" | "uhf" | "uhf_xerafy" | "qr",
+          "category":   "employee_rfid" | "worker_rfid" | "visitor_qr",
+          "valid_from": "2026-06-01" (optionnel),
+          "valid_until":"2027-06-01" (optionnel),
+          "uids":       ["AABBCC01", "AABBCC02", ...]
+        }
+
+    Comportement :
+      - Status forcé à "available" → en pool, pas encore attribué
+      - Doublons silencieusement ignorés (uid unique en base)
+      - holder_kind/holder_object_id laissés vides
+      - Réponse : {"created": N, "skipped": M, "errors": [...]}
+    """
+    permission_classes = [HasKshieldPermission]
+    kshield_perms = {"read": "badges.manage", "write": "badges.manage"}
+
+    def post(self, request):
+        from .models import Badge
+
+        btype     = (request.data.get("type") or "nfc").lower()
+        category  = (request.data.get("category") or "employee_rfid").lower()
+        uids_raw  = request.data.get("uids") or []
+        valid_from  = request.data.get("valid_from") or None
+        valid_until = request.data.get("valid_until") or None
+
+        if btype not in dict(Badge.TYPE_CHOICES):
+            return Response({"error": f"type invalide : {btype}"},
+                              status=status.HTTP_400_BAD_REQUEST)
+        if category not in dict(Badge.CATEGORY_CHOICES):
+            return Response({"error": f"category invalide : {category}"},
+                              status=status.HTTP_400_BAD_REQUEST)
+        if not isinstance(uids_raw, list) or not uids_raw:
+            return Response({"error": "uids : liste non vide attendue"},
+                              status=status.HTTP_400_BAD_REQUEST)
+
+        # Normalise : uppercase, trim, retire les doublons en gardant l'ordre
+        seen = set(); uids = []
+        for u in uids_raw:
+            s = str(u or "").strip().upper()
+            if not s or s in seen:
+                continue
+            if len(s) > 64:
+                continue
+            seen.add(s); uids.append(s)
+        if not uids:
+            return Response({"error": "aucun UID valide après normalisation"},
+                              status=status.HTTP_400_BAD_REQUEST)
+
+        # Détecte les déjà-existants en une seule requête
+        from core.services import get_kaydan_tenant
+        tenant = get_kaydan_tenant()
+        existing = set(
+            Badge.objects.filter(tenant=tenant, uid__in=uids)
+            .values_list("uid", flat=True)
+        )
+
+        to_create = []
+        for uid in uids:
+            if uid in existing:
+                continue
+            to_create.append(Badge(
+                tenant=tenant,
+                uid=uid,
+                type=btype,
+                category=category,
+                status="available",
+                valid_from=valid_from or None,
+                valid_until=valid_until or None,
+            ))
+
+        created_count = 0
+        if to_create:
+            Badge.objects.bulk_create(to_create, batch_size=200, ignore_conflicts=True)
+            created_count = len(to_create)
+
+        return Response({
+            "created": created_count,
+            "skipped": len(existing) + (len(uids_raw) - len(uids)),
+            "skipped_existing": sorted(existing),
+            "total_input": len(uids_raw),
+            "total_unique": len(uids),
+            "type": btype,
+            "category": category,
+        })
+
+
+class HelmetBulkEnrollView(APIView):
+    """POST /api/v1/devices/helmets/bulk-enroll/ — enrôle des casques (UHF+BLE).
+
+    Body :
+        {
+          "rows": [
+            {"serial": "HLM-001", "uhf": "AABBCC01", "ble": "DEADBEEF01"},
+            {"serial": "HLM-002", "uhf": "AABBCC02", "ble": "DEADBEEF02"},
+            ...
+          ],
+          "size": "M" (optionnel, taille par défaut pour tous les casques)
+        }
+
+    Réponse : {"created": N, "skipped": M, "errors": [...]}
+    """
+    permission_classes = [HasKshieldPermission]
+    kshield_perms = {"read": "badges.manage", "write": "badges.manage"}
+
+    def post(self, request):
+        from .models import Helmet
+
+        rows = request.data.get("rows") or []
+        size = request.data.get("size") or ""
+        if not isinstance(rows, list) or not rows:
+            return Response({"error": "rows : liste non vide attendue"},
+                              status=status.HTTP_400_BAD_REQUEST)
+
+        from core.services import get_kaydan_tenant
+        tenant = get_kaydan_tenant()
+
+        # Validation + normalisation
+        clean_rows = []
+        errors = []
+        seen_serials = set(); seen_uhf = set(); seen_ble = set()
+        for i, row in enumerate(rows, 1):
+            serial = str(row.get("serial") or "").strip()
+            uhf    = str(row.get("uhf") or "").strip().upper()
+            ble    = str(row.get("ble") or "").strip().upper()
+            if not (serial and uhf and ble):
+                errors.append({"row": i, "error": "serial / uhf / ble requis"})
+                continue
+            if serial in seen_serials or uhf in seen_uhf or ble in seen_ble:
+                errors.append({"row": i, "error": "doublon dans la requête"})
+                continue
+            seen_serials.add(serial); seen_uhf.add(uhf); seen_ble.add(ble)
+            clean_rows.append({"serial": serial, "uhf": uhf, "ble": ble})
+
+        if not clean_rows:
+            return Response({
+                "created": 0, "skipped": 0,
+                "errors": errors or [{"error": "aucune ligne valide"}],
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Détecte les conflits existants en base (en une seule requête)
+        from django.db.models import Q
+        existing_qs = Helmet.objects.filter(
+            Q(serial_number__in=[r["serial"] for r in clean_rows])
+            | Q(uhf_tag_uid__in=[r["uhf"] for r in clean_rows])
+            | Q(ble_beacon_uid__in=[r["ble"] for r in clean_rows])
+        ).values("serial_number", "uhf_tag_uid", "ble_beacon_uid")
+        ex_serials = {e["serial_number"] for e in existing_qs}
+        ex_uhf     = {e["uhf_tag_uid"]   for e in existing_qs}
+        ex_ble     = {e["ble_beacon_uid"]for e in existing_qs}
+
+        to_create = []
+        skipped = 0
+        for r in clean_rows:
+            if (r["serial"] in ex_serials or r["uhf"] in ex_uhf
+                    or r["ble"] in ex_ble):
+                skipped += 1
+                errors.append({
+                    "serial": r["serial"],
+                    "error": "déjà enrôlé (serial / uhf / ble existant)",
+                })
+                continue
+            to_create.append(Helmet(
+                tenant=tenant,
+                serial_number=r["serial"],
+                uhf_tag_uid=r["uhf"],
+                ble_beacon_uid=r["ble"],
+                status="active",
+                size=size,
+            ))
+
+        created_count = 0
+        if to_create:
+            # ignore_conflicts au cas où un autre process insère en parallèle
+            Helmet.objects.bulk_create(to_create, batch_size=200, ignore_conflicts=True)
+            created_count = len(to_create)
+
+        return Response({
+            "created": created_count,
+            "skipped": skipped,
+            "errors": errors,
+            "total_input": len(rows),
+        })
+
+
+class ReaderDiscoverView(APIView):
+    """POST /api/v1/devices/readers/discover/ — auto-discovery de lecteurs RFID/NFC/BLE.
+
+    Body : ``{"kind": "uhf|nfc|ble", "cidr": "192.168.1.0/24", "timeout": 5, "mdns": true}``
+
+    - ``kind`` requis : technologie ciblée.
+    - ``cidr`` optionnel : plage à scanner en TCP (≤ /20). Sans CIDR, seul mDNS.
+    - ``timeout`` : durée totale, 3-15s (default 5).
+    - ``mdns`` : active / désactive la découverte mDNS (default True).
+
+    Réponses :
+      200 : ``{"readers": [...], "count": N, "kind": "uhf"}``
+      400 : CIDR invalide ou kind invalide.
+      503 : zeroconf non installé ET pas de CIDR fourni.
+    """
+    permission_classes = [HasKshieldPermission]
+    kshield_perms = {"read": "devices.manage", "write": "devices.manage"}
+
+    def post(self, request):
+        kind = (request.data.get("kind") or "").lower()
+        if kind not in ("uhf", "nfc", "ble", "zk"):
+            return Response(
+                {"error": "kind invalide", "detail": "Attendu : uhf, nfc, ble ou zk"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        cidr = request.data.get("cidr") or None
+        timeout = int(request.data.get("timeout") or 5)
+        timeout = max(3, min(timeout, 15))
+        mdns = bool(request.data.get("mdns", True))
+
+        try:
+            from .reader_discovery import (
+                ReaderDiscoveryError, ReaderDiscoveryUnavailable,
+                discover_readers,
+            )
+            results = discover_readers(
+                kind=kind, cidr=cidr, timeout=timeout, mdns=mdns,
+            )
+        except ReaderDiscoveryUnavailable as exc:
+            return Response(
+                {"error": "mDNS library missing", "detail": str(exc)},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        except ReaderDiscoveryError as exc:
+            return Response(
+                {"error": "discovery error", "detail": str(exc)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except Exception as exc:
+            return Response(
+                {"error": "discovery failed", "detail": str(exc)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        return Response({
+            "readers": results,
+            "count": len(results),
+            "kind": kind,
+        })
+
+
 class CameraOnvifDiscoverView(APIView):
     """POST /api/v1/devices/cameras/discover/ — scan ONVIF du LAN.
 
@@ -625,6 +1820,37 @@ class BadgeIssueWorkflowAPIView(APIView):
                 badge = BadgeWorkflowService.issue_employee_badge(emp, helmet=helmet)
                 return Response({"id": badge.id, "uid": badge.uid,
                                  "category": badge.category}, status=201)
+
+            if wf == "assign_pool":
+                # Attribue un badge existant du pool à un employé ou ouvrier
+                from employees.models import Employee
+                from ouvriers.models import Worker
+                badge_id = request.data.get("badge_id")
+                if not badge_id:
+                    return Response({"error": "badge_id requis"}, status=400)
+                badge = Badge.objects.get(pk=badge_id)
+
+                emp_id = request.data.get("employee_id")
+                worker_id = request.data.get("worker_id")
+                if emp_id:
+                    holder = Employee.objects.get(pk=emp_id)
+                elif worker_id:
+                    holder = Worker.objects.get(pk=worker_id)
+                else:
+                    return Response({"error": "employee_id OU worker_id requis"}, status=400)
+
+                helmet = None
+                if request.data.get("helmet_id"):
+                    helmet = Helmet.objects.get(pk=request.data["helmet_id"])
+
+                badge = BadgeWorkflowService.assign_pool_badge(
+                    badge, holder, helmet=helmet,
+                )
+                return Response({
+                    "id": badge.id, "uid": badge.uid,
+                    "category": badge.category, "status": badge.status,
+                    "holder": str(holder),
+                }, status=200)
 
             if wf == "worker":
                 from ouvriers.models import Worker

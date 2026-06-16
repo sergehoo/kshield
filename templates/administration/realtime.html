@@ -6,6 +6,16 @@
 {% block breadcrumb %}Flux temps réel{% endblock %}
 
 {% block page_actions %}
+  <label class="check" style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--text-dim);cursor:pointer">
+    <input type="checkbox" id="auto-refresh" style="accent-color:var(--ks-orange-400)">
+    <span>Auto-refresh 10s</span>
+    <span id="ar-spin" style="display:none">
+      <i data-lucide="loader-2" style="width:12px;height:12px;animation:spin 1s linear infinite;vertical-align:-1px"></i>
+    </span>
+  </label>
+  <button class="btn btn-ghost" id="btn-sync-zk" title="Pull tous les pointages stockés sur les terminaux ZKTeco">
+    <i data-lucide="zap"></i> Sync ZKTeco
+  </button>
   <button class="btn btn-ghost" onclick="location.reload()"><i data-lucide="refresh-cw"></i> Rafraîchir</button>
   <a class="btn btn-primary" href="{% url 'admin-realtime-export' %}?{{ request.GET.urlencode }}"><i data-lucide="file-spreadsheet"></i> Export Excel</a>
 {% endblock %}
@@ -70,7 +80,104 @@
       </div>
       {% include "administration/_partials/pagination.html" %}
     {% else %}
-      {% include "administration/_partials/empty_card.html" with icon="activity" title="Aucun événement" description="Élargissez les filtres ou attendez un scan." %}
+      {% include "administration/_partials/empty_card.html" with icon="activity" title="Aucun événement" description="Élargissez les filtres ou cliquez 'Sync ZKTeco' pour pull les pointages des terminaux." %}
     {% endif %}
   </section>
+
+<script>
+(function() {
+  "use strict";
+
+  function csrf() {
+    var m = document.cookie.match(/csrftoken=([^;]+)/);
+    return m ? m[1] : (document.querySelector('[name=csrfmiddlewaretoken]')?.value || '');
+  }
+
+  // ── Bouton "Sync ZKTeco" : pull pointages de tous les terminaux et reload ──
+  var btn = document.getElementById("btn-sync-zk");
+  if (btn) {
+    btn.addEventListener("click", async function() {
+      var origHtml = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = '<i data-lucide="loader-2" style="width:14px;height:14px;animation:spin 1s linear infinite"></i> Sync en cours…';
+      if (window.lucide) window.lucide.createIcons();
+      try {
+        var res = await fetch("/api/v1/devices/zk-sync-all/", {
+          method: "POST", credentials: "same-origin",
+          headers: {"X-CSRFToken": csrf(), "Content-Type": "application/json"},
+          body: "{}",
+        });
+        var data = await res.json();
+        if (!res.ok) {
+          alert("Erreur " + res.status + " : " + (data.error || JSON.stringify(data)));
+          return;
+        }
+        // Recharge la page pour voir les nouveaux events
+        location.reload();
+      } catch (e) {
+        alert("Erreur réseau : " + e.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = origHtml;
+        if (window.lucide) window.lucide.createIcons();
+      }
+    });
+  }
+
+  // ── Auto-refresh toggle ──
+  var arCheck = document.getElementById("auto-refresh");
+  var arSpin = document.getElementById("ar-spin");
+  var arTimer = null;
+  var REFRESH_MS = 10000;
+
+  function setSpin(on) { if (arSpin) arSpin.style.display = on ? "" : "none"; }
+
+  if (arCheck) {
+    // Restaure le state depuis localStorage
+    try {
+      if (localStorage.getItem("realtime-auto-refresh") === "1") arCheck.checked = true;
+    } catch (e) {}
+
+    function startAutoRefresh() {
+      stopAutoRefresh();
+      setSpin(true);
+      arTimer = setInterval(async function() {
+        // Sync ZKTeco en silencieux puis reload doux (juste les rangées)
+        try {
+          await fetch("/api/v1/devices/zk-sync-all/", {
+            method: "POST", credentials: "same-origin",
+            headers: {"X-CSRFToken": csrf(), "Content-Type": "application/json"},
+            body: "{}",
+          });
+        } catch (e) { /* silent */ }
+        // Reload la page (simple et efficace, garde les filtres dans l'URL)
+        location.reload();
+      }, REFRESH_MS);
+    }
+    function stopAutoRefresh() {
+      if (arTimer) { clearInterval(arTimer); arTimer = null; }
+      setSpin(false);
+    }
+
+    arCheck.addEventListener("change", function() {
+      try {
+        localStorage.setItem("realtime-auto-refresh", arCheck.checked ? "1" : "0");
+      } catch (e) {}
+      if (arCheck.checked) startAutoRefresh(); else stopAutoRefresh();
+    });
+
+    // Lance au chargement si checkbox cochée (restauré depuis localStorage)
+    if (arCheck.checked) startAutoRefresh();
+  }
+
+  // keyframe spin
+  var sid = "realtime-spin-kf";
+  if (!document.getElementById(sid)) {
+    var st = document.createElement("style");
+    st.id = sid;
+    st.textContent = "@keyframes spin { to { transform: rotate(360deg); } }";
+    document.head.appendChild(st);
+  }
+})();
+</script>
 {% endblock %}

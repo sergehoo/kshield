@@ -9,7 +9,7 @@
 {% block page_actions %}
   <form method="post" action="{% url 'admin-digest-action' verb='generate' %}" style="display:inline-flex;gap:6px;align-items:center">
     {% csrf_token %}
-    <select name="period" class="input" style="height:32px;padding:0 8px;min-width:140px">
+    <select name="period" class="form-select" style="min-width:140px">
       <option value="weekly">Hebdomadaire</option>
       <option value="monthly">Mensuel</option>
       <option value="quarterly">Trimestriel</option>
@@ -56,13 +56,13 @@
   <section class="card mb-2" style="padding:10px 14px">
     <form method="get" class="row" style="gap:8px;flex-wrap:wrap;align-items:center">
       <strong style="font-size:13px;margin-right:8px"><i data-lucide="filter" style="width:14px;height:14px;vertical-align:-2px"></i> Filtres</strong>
-      <select name="period" class="input" style="height:32px;padding:0 8px;min-width:140px">
+      <select name="period" class="form-select" style="min-width:140px">
         <option value="">Toutes périodes</option>
         <option value="weekly" {% if filter_period == "weekly" %}selected{% endif %}>Hebdomadaire</option>
         <option value="monthly" {% if filter_period == "monthly" %}selected{% endif %}>Mensuel</option>
         <option value="quarterly" {% if filter_period == "quarterly" %}selected{% endif %}>Trimestriel</option>
       </select>
-      <select name="status" class="input" style="height:32px;padding:0 8px;min-width:140px">
+      <select name="status" class="form-select" style="min-width:140px">
         <option value="">Tous statuts</option>
         <option value="ready" {% if filter_status == "ready" %}selected{% endif %}>Prêt</option>
         <option value="generating" {% if filter_status == "generating" %}selected{% endif %}>En génération</option>

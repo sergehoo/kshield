@@ -10,6 +10,9 @@
   <a class="btn btn-ghost" href="{% url 'admin-badge-scan' %}">
     <i data-lucide="scan-line" style="width:16px;height:16px"></i> Scanner
   </a>
+  <a class="btn btn-primary" href="{% url 'admin-badge-enroll' %}">
+    <i data-lucide="package-plus" style="width:16px;height:16px"></i> Enrôler en masse
+  </a>
 {% endblock %}
 
 {% block content %}
@@ -143,30 +146,69 @@
 
   {# ============== TAB Employés ============== #}
   {% if tab == 'employee' %}
-  <section class="card mb-2" x-data="{employeeId:'',helmetId:'',needsHelmet:false,busy:false,msg:''}">
-    <div class="card-title"><h3><i data-lucide="briefcase" style="color:var(--ks-orange-400)"></i> Workflow 2 — Émettre un badge employé</h3></div>
-    <div class="grid grid-3 gap-2" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;align-items:end">
+
+  {# ─── Workflow 2A : Attribuer un badge déjà en pool ─── #}
+  {% if pool_employee_badges %}
+  <section class="card mb-2" x-data="{badgeId:'',employeeIdA:'',busyA:false,msgA:''}">
+    <div class="card-title">
+      <h3>
+        <i data-lucide="link-2" style="color:#2dd4bf"></i>
+        Workflow 2A — Attribuer un badge enrôlé à un employé
+        <span class="pill pill-info" style="font-size:10.5px;margin-left:8px">{{ pool_employee_count }} en pool</span>
+      </h3>
+    </div>
+    <p class="text-dim" style="font-size:12px;margin:4px 0 12px">
+      Choisis un badge déjà enrôlé via le K14 / Saisie batch (status "En pool") et lie-le à un employé.
+      <em>Les casques RFID sont réservés aux ouvriers.</em>
+    </p>
+    <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:8px;align-items:end">
+      <div>
+        <label class="form-label">Badge en pool</label>
+        <select class="form-select" x-model="badgeId">
+          <option value="">— sélectionner un badge —</option>
+          {% for b in pool_employee_badges %}
+            <option value="{{ b.id }}">{{ b.uid }} · {{ b.get_type_display }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="form-label">Employé destinataire</label>
+        <select class="form-select" x-model="employeeIdA">
+          <option value="">— sélectionner —</option>
+          {% for e in unbadged_employees %}
+            <option value="{{ e.id }}">{{ e.matricule }} · {{ e.first_name }} {{ e.last_name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button class="btn btn-primary" :disabled="!badgeId||!employeeIdA||busyA" @click="
+        busyA=true;msgA='';
+        const body={workflow:'assign_pool',badge_id:parseInt(badgeId),employee_id:parseInt(employeeIdA)};
+        fetch('/api/v1/devices/badges/issue/',{method:'POST',headers:{'Content-Type':'application/json','X-CSRFToken':document.cookie.split('csrftoken=')[1]?.split(';')[0]||''},body:JSON.stringify(body)})
+          .then(r=>r.json()).then(d=>{busyA=false;msgA=d.uid?('✓ Badge '+d.uid+' attribué à '+d.holder):(d.error||'Erreur');setTimeout(()=>location.reload(),900)});">
+        <i data-lucide="check" style="width:14px;height:14px"></i> <span x-text="busyA?'…':'Attribuer'"></span>
+      </button>
+    </div>
+    <p x-show="msgA" x-text="msgA" class="text-dim mt-2"></p>
+  </section>
+  {% endif %}
+
+  <section class="card mb-2" x-data="{employeeId:'',busy:false,msg:''}">
+    <div class="card-title"><h3><i data-lucide="briefcase" style="color:var(--ks-orange-400)"></i> Workflow 2B — Émettre un badge employé (nouveau UID auto)</h3></div>
+    <p class="text-dim" style="font-size:12px;margin:4px 0 12px">
+      Génère un badge avec UID auto au format <code>EMP-&lt;matricule&gt;</code>.
+      Utile si tu n'as pas encore enrôlé de cartes physiques pour cet employé.
+    </p>
+    <div style="display:grid;grid-template-columns:1fr auto;gap:8px;align-items:end">
       <div>
         <label class="form-label">Employé sans badge</label>
-        <select class="form-select" x-model="employeeId" @change="
-          const sel = $event.target; const opt = sel.options[sel.selectedIndex];
-          const wl = opt?.dataset?.wl || 'office';
-          needsHelmet = (wl === 'field' || wl === 'both'); if (!needsHelmet) helmetId = '';">
+        <select class="form-select" x-model="employeeId">
           <option value="">— sélectionner —</option>
-          {% for e in unbadged_employees %}<option value="{{ e.id }}" data-wl="{{ e.work_location }}">{{ e.matricule }} · {{ e.first_name }} {{ e.last_name }} · {{ e.get_work_location_display }}</option>{% endfor %}
+          {% for e in unbadged_employees %}<option value="{{ e.id }}">{{ e.matricule }} · {{ e.first_name }} {{ e.last_name }}</option>{% endfor %}
         </select>
       </div>
-      <div x-show="needsHelmet" x-cloak>
-        <label class="form-label">Casque RFID</label>
-        <select class="form-select" x-model="helmetId">
-          <option value="">— casque —</option>
-          {% for h in available_helmets %}<option value="{{ h.id }}">{{ h.serial_number }}</option>{% endfor %}
-        </select>
-      </div>
-      <button class="btn btn-primary" :disabled="!employeeId||(needsHelmet&&!helmetId)||busy" @click="
+      <button class="btn btn-primary" :disabled="!employeeId||busy" @click="
         busy=true;msg='';
         const body={workflow:'employee',employee_id:parseInt(employeeId)};
-        if(helmetId)body.helmet_id=parseInt(helmetId);
         fetch('/api/v1/devices/badges/issue/',{method:'POST',headers:{'Content-Type':'application/json','X-CSRFToken':document.cookie.split('csrftoken=')[1]?.split(';')[0]||''},body:JSON.stringify(body)})
           .then(r=>r.json()).then(d=>{busy=false;msg=d.uid?'Badge '+d.uid+' émis':d.error||'Erreur';setTimeout(()=>location.reload(),700)});">
         <i data-lucide="plus" style="width:14px;height:14px"></i> <span x-text="busy?'…':'Émettre badge'"></span>
@@ -198,8 +240,59 @@
 
   {# ============== TAB Ouvriers ============== #}
   {% if tab == 'worker' %}
+
+  {# ─── Workflow 3A : Attribuer un badge en pool à un ouvrier ─── #}
+  {% if pool_employee_badges %}
+  <section class="card mb-2" x-data="{badgeIdW:'',workerIdA:'',helmetIdW:'',busyW:false,msgW:''}">
+    <div class="card-title">
+      <h3>
+        <i data-lucide="link-2" style="color:#2dd4bf"></i>
+        Workflow 3A — Attribuer un badge enrôlé à un ouvrier
+      </h3>
+    </div>
+    <p class="text-dim" style="font-size:12px;margin:4px 0 12px">
+      Lie un badge déjà enrôlé à un ouvrier. Un casque RFID est obligatoire.
+    </p>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:8px;align-items:end">
+      <div>
+        <label class="form-label">Badge en pool</label>
+        <select class="form-select" x-model="badgeIdW">
+          <option value="">— sélectionner un badge —</option>
+          {% for b in pool_employee_badges %}
+            <option value="{{ b.id }}">{{ b.uid }} · {{ b.get_type_display }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="form-label">Ouvrier destinataire</label>
+        <select class="form-select" x-model="workerIdA">
+          <option value="">— sélectionner —</option>
+          {% for w in unbadged_workers %}
+            <option value="{{ w.id }}">{{ w.matricule }} · {{ w.first_name }} {{ w.last_name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="form-label">Casque RFID</label>
+        <select class="form-select" x-model="helmetIdW">
+          <option value="">— casque —</option>
+          {% for h in available_helmets %}<option value="{{ h.id }}">{{ h.serial_number }}</option>{% endfor %}
+        </select>
+      </div>
+      <button class="btn btn-primary" :disabled="!badgeIdW||!workerIdA||!helmetIdW||busyW" @click="
+        busyW=true;msgW='';
+        const body={workflow:'assign_pool',badge_id:parseInt(badgeIdW),worker_id:parseInt(workerIdA),helmet_id:parseInt(helmetIdW)};
+        fetch('/api/v1/devices/badges/issue/',{method:'POST',headers:{'Content-Type':'application/json','X-CSRFToken':document.cookie.split('csrftoken=')[1]?.split(';')[0]||''},body:JSON.stringify(body)})
+          .then(r=>r.json()).then(d=>{busyW=false;msgW=d.uid?('✓ Badge '+d.uid+' attribué à '+d.holder):(d.error||'Erreur');setTimeout(()=>location.reload(),900)});">
+        <i data-lucide="check" style="width:14px;height:14px"></i> <span x-text="busyW?'…':'Attribuer'"></span>
+      </button>
+    </div>
+    <p x-show="msgW" x-text="msgW" class="text-dim mt-2"></p>
+  </section>
+  {% endif %}
+
   <section class="card mb-2" x-data="{workerId:'',helmetId:'',busy:false,msg:''}">
-    <div class="card-title"><h3><i data-lucide="hard-hat" style="color:var(--ks-orange-400)"></i> Workflow 3 — Émettre badge ouvrier (couplé casque)</h3></div>
+    <div class="card-title"><h3><i data-lucide="hard-hat" style="color:var(--ks-orange-400)"></i> Workflow 3B — Émettre badge ouvrier (nouveau UID, couplé casque)</h3></div>
     <div class="grid grid-3 gap-2" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;align-items:end">
       <div>
         <label class="form-label">Ouvrier sans badge</label>

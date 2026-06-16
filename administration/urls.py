@@ -35,10 +35,16 @@ urlpatterns = [
     # Terrain — listes
     path("sites/",            views.SitesView.as_view(),         name="admin-sites"),
     path("devices/",          views.DevicesView.as_view(),       name="admin-devices"),
+    # Assistant 2-étapes "Ajouter un lecteur" (picker techno → form pré-filtré)
+    path("devices/add/",      views.DeviceReaderPickerView.as_view(),
+         name="admin-device-reader-picker"),
+    path("devices/add/<str:kind>/",  views.DeviceReaderCreateView.as_view(),
+         name="admin-device-reader-create"),
     path("cameras/",          views.CamerasView.as_view(),       name="admin-cameras"),
     path("cameras/live/",     views.CamerasLiveView.as_view(),   name="admin-cameras-live"),
     path("cameras/presence/", views.FacePresenceView.as_view(),  name="admin-face-presence"),
     path("badges/",           views.BadgesView.as_view(),        name="admin-badges"),
+    path("badges/enroll/",    views.BadgeEnrollmentView.as_view(),name="admin-badge-enroll"),
     path("badges/scan/",      views.BadgeScanView.as_view(),     name="admin-badge-scan"),
     path("gateways/",         views.GatewaysView.as_view(),      name="admin-gateways"),
 

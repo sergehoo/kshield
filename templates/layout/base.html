@@ -1741,8 +1741,13 @@
       var parentDialog = el.closest("dialog");
       var dropdownParent = (parentDialog && parentDialog.open) ? parentDialog : "body";
 
+      // Préserve l'attribut HTML inline `onchange="..."` AVANT que TomSelect
+      // ne le déplace/cache (TomSelect masque le <select> original).
+      // Garde aussi une ref aux handlers JS attachés via addEventListener.
+      var inlineOnChange = el.getAttribute("onchange");
+
       try {
-        new TomSelect(el, {
+        var ts = new TomSelect(el, {
           create: false,
           allowEmptyOption: true,
           plugins: isMulti ? ["remove_button"] : [],
@@ -1750,6 +1755,26 @@
           searchField: ["text"],
           maxOptions: 500,        // évite que le dropdown explose sur très gros listes
           dropdownParent: dropdownParent,
+          // Garantit le déclenchement des handlers existants à chaque sélection.
+          // TomSelect dispatch normalement un `change` sur le select original,
+          // mais on le double-déclenche manuellement pour fiabilité (Alpine,
+          // HTMX hx-trigger="change", onchange inline → tout marche).
+          onChange: function(value) {
+            // 1) Alpine / addEventListener('change', ...)
+            try {
+              el.dispatchEvent(new Event("change", { bubbles: true }));
+              el.dispatchEvent(new Event("input", { bubbles: true }));
+            } catch (e) { /* old browsers */ }
+            // 2) onchange="..." HTML inline (this.form.submit() etc.)
+            if (inlineOnChange) {
+              try {
+                // Exécute le handler dans le scope du <select>
+                (new Function("event", inlineOnChange)).call(el, null);
+              } catch (e) {
+                console.warn("[TomSelect] handler onchange inline a échoué :", e);
+              }
+            }
+          },
           render: {
             no_results: function(data, escape) {
               return '<div class="no-results">Aucun résultat pour « ' +
@@ -1761,6 +1786,11 @@
             },
           },
         });
+        // Garde la classe form-select sur le wrapper TomSelect pour cohérence
+        // visuelle même si le <select> original l'avait via Django widget.
+        if (el.classList.contains("form-select") && ts.wrapper) {
+          ts.wrapper.classList.add("form-select-tom");
+        }
       } catch (e) {
         console.warn("[TomSelect] init échec sur", el, e);
       }

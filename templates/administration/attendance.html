@@ -24,6 +24,10 @@
   </section>
 
   <nav class="tabs mb-2">
+    <a class="tab {% if tab == 'sheet' %}is-active{% endif %}" href="?tab=sheet">
+      <i data-lucide="calendar-check" style="width:13px;height:13px;vertical-align:-2px"></i>
+      Feuille de pointage
+    </a>
     <a class="tab {% if tab == 'punches' %}is-active{% endif %}" href="?tab=punches">Punches</a>
     <a class="tab {% if tab == 'days' %}is-active{% endif %}" href="?tab=days">Journées</a>
     <a class="tab {% if tab == 'corrections' %}is-active{% endif %}" href="?tab=corrections">Corrections</a>
@@ -32,6 +36,88 @@
     <a class="tab {% if tab == 'overtime' %}is-active{% endif %}" href="?tab=overtime">Heures sup.</a>
     <a class="tab {% if tab == 'rules' %}is-active{% endif %}" href="?tab=rules">Règles HS</a>
   </nav>
+
+  {# ───── TAB Feuille de pointage : agrégat AccessEvent par employé/jour ───── #}
+  {% if tab == "sheet" %}
+    <form method="get" class="card mb-2" style="padding:14px;display:grid;grid-template-columns:repeat(5,1fr) auto;gap:8px;align-items:end">
+      <input type="hidden" name="tab" value="sheet">
+      <div><label class="form-label">Période</label>
+        <select name="period" class="form-select" onchange="this.form.submit()">
+          <option value="day" {% if sheet_period == "day" %}selected{% endif %}>Aujourd'hui</option>
+          <option value="week" {% if sheet_period == "week" %}selected{% endif %}>7 jours</option>
+          <option value="month" {% if sheet_period == "month" %}selected{% endif %}>30 jours</option>
+          <option value="custom" {% if sheet_period == "custom" %}selected{% endif %}>Période personnalisée</option>
+        </select></div>
+      <div><label class="form-label">Du</label>
+        <input type="date" name="start" value="{{ sheet_start }}" class="form-input"></div>
+      <div><label class="form-label">Au</label>
+        <input type="date" name="end" value="{{ sheet_end }}" class="form-input"></div>
+      <div><label class="form-label">Type</label>
+        <select name="holder_kind" class="form-select">
+          <option value="" {% if not sheet_holder_kind %}selected{% endif %}>Tous</option>
+          <option value="employee" {% if sheet_holder_kind == "employee" %}selected{% endif %}>Employés</option>
+          <option value="worker" {% if sheet_holder_kind == "worker" %}selected{% endif %}>Ouvriers</option>
+        </select></div>
+      <div><label class="form-label">Site</label>
+        <select name="site" class="form-select">
+          <option value="">Tous</option>
+          {% for s in sheet_sites %}
+            <option value="{{ s.id }}" {% if sheet_site_id == s.id|stringformat:"s" %}selected{% endif %}>{{ s.name }}</option>
+          {% endfor %}
+        </select></div>
+      <button class="btn btn-primary" type="submit"><i data-lucide="filter"></i> Filtrer</button>
+    </form>
+
+    <section class="statstrip mb-2">
+      <div><div class="label">Personnes pointées</div><div class="value">{{ sheet_total_persons }}</div></div>
+      <div><div class="label">Jours pointés</div><div class="value">{{ sheet_total_days }}</div></div>
+      <div><div class="label">Heures cumulées</div><div class="value text-success">{{ sheet_total_hours }} h</div></div>
+      <div><div class="label">Période</div><div class="value" style="font-size:14px">{{ sheet_start }} → {{ sheet_end }}</div></div>
+    </section>
+
+    <section class="card" style="padding:0">
+      {% if sheet_rows %}
+        <div class="table-wrap"><table class="table">
+          <thead><tr>
+            <th>Date</th>
+            <th>Matricule</th>
+            <th>Nom</th>
+            <th>Type</th>
+            <th>Première entrée</th>
+            <th>Dernière sortie</th>
+            <th>Durée présence</th>
+          </tr></thead>
+          <tbody>
+            {% for r in sheet_rows %}
+            <tr>
+              <td class="mono">{{ r.date|date:"D d/m/Y" }}</td>
+              <td class="mono">{{ r.matricule }}</td>
+              <td>
+                {% if r.holder_kind == "employee" %}
+                  <a href="{% url 'admin-employee-detail' r.holder.pk %}">{{ r.name }}</a>
+                {% else %}
+                  <a href="{% url 'admin-worker-detail' r.holder.pk %}">{{ r.name }}</a>
+                {% endif %}
+              </td>
+              <td>
+                {% if r.holder_kind == "employee" %}
+                  <span class="pill pill-info">Employé</span>
+                {% else %}
+                  <span class="pill pill-warning">Ouvrier</span>
+                {% endif %}
+              </td>
+              <td class="mono">{{ r.first_in|date:"H:i:s" }}</td>
+              <td class="mono">{{ r.last_out|date:"H:i:s" }}</td>
+              <td><strong>{{ r.duration_hms }}</strong></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table></div>
+      {% else %}
+        {% include "administration/_partials/empty_card.html" with icon="calendar-x" title="Aucun pointage" description="Sur la période choisie. Vérifie que les terminaux ZKTeco synchronisent bien sur /devices/." %}
+      {% endif %}
+    </section>
+  {% endif %}
 
   <section class="card" style="padding:0">
     {% if tab == "punches" %}

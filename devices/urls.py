@@ -11,6 +11,12 @@ from .views import (
     DeviceHeartbeatViewSet, DeviceMaintenanceViewSet, DeviceModelViewSet,
     DeviceViewSet, FirmwareVersionViewSet, HelmetViewSet,
     HeartbeatIngestView, OTAFirmwareMetadataView, OTAUpdateViewSet,
+    ReaderDiscoverView,
+    BadgeBulkEnrollView, HelmetBulkEnrollView, ScanInboxView,
+    DeviceConnectivityTestView,
+    ZkSyncNowView, ZkSyncAllView, ZkPushUsersNowView,
+    ZkEnrollSessionView, ZkImportUsersView, ZkPushEmployeeView,
+    ZkAdmsWebhookView,
 )
 
 router = DefaultRouter()
@@ -41,4 +47,24 @@ urlpatterns = [
     path("cameras/discover/",                        CameraOnvifDiscoverView.as_view(), name="camera-onvif-discover"),
     path("cameras/probe-rtsp/",                      CameraRtspProbeView.as_view(),     name="camera-rtsp-probe"),
     path("cameras/probe-rtsp-bulk/",                 CameraRtspProbeMultipleView.as_view(), name="camera-rtsp-probe-bulk"),
+    # Auto-discovery lecteurs RFID UHF / NFC / BLE
+    path("readers/discover/",                        ReaderDiscoverView.as_view(),      name="reader-discover"),
+    # Enrôlement en masse — badges (NFC/UHF/QR) et casques (UHF+BLE)
+    path("badges/bulk-enroll/",                      BadgeBulkEnrollView.as_view(),     name="badge-bulk-enroll"),
+    path("helmets/bulk-enroll/",                     HelmetBulkEnrollView.as_view(),    name="helmet-bulk-enroll"),
+    # Inbox éphémère pour scans live (cache Redis, TTL 10 min)
+    path("scan/inbox/",                              ScanInboxView.as_view(),           name="scan-inbox"),
+    # Test de connectivité d'un équipement (TCP + HTTP + LLRP + ZK)
+    # NB : inclus sous /api/v1/devices/ — pas de double prefix.
+    path("<int:pk>/test-connection/",                DeviceConnectivityTestView.as_view(), name="device-test-connection"),
+    # ZKTeco — sync à la demande + push users + session d'enrôlement live
+    path("zk-sync-all/",                             ZkSyncAllView.as_view(),            name="device-zk-sync-all"),
+    path("employees/<int:pk>/push-to-zk/",           ZkPushEmployeeView.as_view(),       name="employee-zk-push"),
+    # Webhook ADMS — le terminal POST ses events ici (mode push, alternative au pull)
+    path("zk-adms/<str:sn>/cdata",                   ZkAdmsWebhookView.as_view(),        name="zk-adms-cdata"),
+    path("zk-adms/cdata",                            ZkAdmsWebhookView.as_view(),        name="zk-adms-cdata-no-sn"),
+    path("<int:pk>/zk-sync/",                        ZkSyncNowView.as_view(),            name="device-zk-sync"),
+    path("<int:pk>/zk-push-users/",                  ZkPushUsersNowView.as_view(),       name="device-zk-push-users"),
+    path("<int:pk>/enroll-session/",                 ZkEnrollSessionView.as_view(),      name="device-zk-enroll-session"),
+    path("<int:pk>/zk-import-users/",                ZkImportUsersView.as_view(),        name="device-zk-import-users"),
 ] + router.urls

@@ -1,0 +1,865 @@
+{% extends "layout/base.html" %}
+{% load static %}
+
+{% block title %}{{ page_title }} · KAYDAN SHIELD{% endblock %}
+{% block page_title %}{{ page_title }}{% endblock %}
+{% block page_subtitle %}{{ page_subtitle }}{% endblock %}
+{% block breadcrumb %}{{ breadcrumb }}{% endblock %}
+
+{% block page_actions %}
+  <a class="btn btn-ghost" href="{% url 'admin-badges' %}">
+    <i data-lucide="arrow-left" style="width:16px;height:16px"></i> Retour aux badges
+  </a>
+{% endblock %}
+
+{% block content %}
+<style>
+  .enroll-stats {
+    display: grid; gap: 12px;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    margin-bottom: 18px;
+  }
+  .enroll-stat {
+    padding: 14px 16px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface);
+  }
+  .enroll-stat .label {
+    font-size: 11px; color: var(--text-dim);
+    text-transform: uppercase; letter-spacing: .06em;
+  }
+  .enroll-stat .value {
+    font-family: 'Sora', sans-serif;
+    font-size: 26px; font-weight: 700;
+    margin-top: 2px;
+  }
+
+  .enroll-tabs { display:flex; gap:4px; margin-bottom:16px;
+                 border-bottom: 1px solid var(--border); }
+  .enroll-tabs .tab {
+    padding: 10px 18px;
+    border: 0; background: transparent;
+    color: var(--text-dim); font-weight: 600; font-size: 13px;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: color .15s, border-color .15s;
+  }
+  .enroll-tabs .tab:hover { color: var(--text); }
+  .enroll-tabs .tab.is-active {
+    color: var(--ks-orange-400, #F26B1F);
+    border-bottom-color: var(--ks-orange-400, #F26B1F);
+  }
+
+  .pane { display: none; }
+  .pane.is-active { display: block; }
+
+  .mode-grid {
+    display: grid; gap: 16px;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  }
+  .mode-card {
+    padding: 18px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface);
+  }
+  .mode-card h3 {
+    font-family: 'Sora', sans-serif;
+    font-size: 14px; font-weight: 700;
+    margin: 0 0 4px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .mode-card .mode-icon {
+    width: 30px; height: 30px;
+    border-radius: 8px;
+    background: rgba(242, 107, 31, .15);
+    color: var(--ks-orange-400, #F26B1F);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .mode-card .mode-icon svg { width: 16px; height: 16px; }
+  .mode-card p { font-size: 12.5px; color: var(--text-dim); margin: 0 0 12px; line-height: 1.5; }
+  .mode-card textarea, .mode-card input, .mode-card select {
+    width: 100%;
+    padding: 9px 11px;
+    border-radius: 8px;
+    background: var(--surface-strong);
+    color: var(--text);
+    border: 1px solid var(--border);
+    font-size: 13px;
+    font-family: inherit;
+  }
+  .mode-card textarea {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12.5px;
+    min-height: 120px; resize: vertical;
+  }
+  .mode-card .row-inline {
+    display: grid; gap: 8px;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    margin-top: 8px;
+  }
+  .mode-card .btn { margin-top: 10px; }
+
+  .result-box {
+    margin-top: 14px;
+    padding: 12px 14px;
+    border-radius: 10px;
+    font-size: 12.5px;
+    line-height: 1.55;
+    display: none;
+  }
+  .result-box.ok {
+    background: rgba(45, 212, 191, .10);
+    border-left: 3px solid var(--success, #2dd4bf);
+    color: var(--text);
+    display: block;
+  }
+  .result-box.err {
+    background: rgba(248, 113, 113, .10);
+    border-left: 3px solid var(--danger, #f87171);
+    color: var(--text);
+    display: block;
+  }
+  .result-box .num { font-weight: 700; }
+
+  /* Live scan */
+  .live-scan {
+    padding: 18px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface);
+  }
+  .live-list {
+    display: grid; gap: 6px;
+    margin-top: 14px; max-height: 360px; overflow-y: auto;
+    padding-right: 4px;
+  }
+  .live-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-strong);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12.5px;
+  }
+  .live-row .timestamp { color: var(--text-dim); font-size: 11px; min-width:70px; }
+  .live-row.is-new { animation: flash .8s ease-out; }
+  @keyframes flash {
+    0% { background: rgba(45,212,191,.25); }
+    100% { background: var(--surface-strong); }
+  }
+  .live-row .badge-status { font-size: 10.5px; padding: 2px 7px; border-radius: 10px;
+                            text-transform: uppercase; letter-spacing: .05em; }
+  .live-row .badge-status.new { background: rgba(45,212,191,.18); color: #2dd4bf; }
+  .live-row .badge-status.dup { background: rgba(251,191,36,.15); color: #fbbf24; }
+
+  .csv-drop {
+    border: 2px dashed var(--border-strong, rgba(255,255,255,.14));
+    border-radius: 10px;
+    padding: 24px;
+    text-align: center;
+    font-size: 12.5px;
+    color: var(--text-dim);
+    cursor: pointer;
+    transition: border-color .15s, background-color .15s;
+  }
+  .csv-drop:hover, .csv-drop.is-dragover {
+    border-color: var(--ks-orange-400);
+    background: rgba(242,107,31,.05);
+  }
+  .csv-drop svg { width: 28px; height: 28px; margin-bottom: 8px; color: var(--ks-orange-400); }
+  .csv-drop input[type="file"] { display: none; }
+</style>
+
+{# ────────────── Stats pool ────────────── #}
+<div class="enroll-stats">
+  <div class="enroll-stat">
+    <div class="label">Badges en pool</div>
+    <div class="value text-success">{{ count_pool_badges }}</div>
+    <div class="text-dim" style="font-size:11.5px">Disponibles, non attribués</div>
+  </div>
+  <div class="enroll-stat">
+    <div class="label">Casques libres</div>
+    <div class="value">{{ count_unassigned_helmets }}</div>
+    <div class="text-dim" style="font-size:11.5px">Actifs sans ouvrier rattaché</div>
+  </div>
+  <div class="enroll-stat">
+    <div class="label">Lecteurs actifs</div>
+    <div class="value">{{ readers|length }}</div>
+    <div class="text-dim" style="font-size:11.5px">Disponibles pour capture live</div>
+  </div>
+</div>
+
+{# ────────────── Tabs ────────────── #}
+<div class="enroll-tabs">
+  <button class="tab is-active" data-tab="badges">
+    <i data-lucide="credit-card" style="width:14px;height:14px;vertical-align:-2px"></i> Badges (NFC / UHF / QR)
+  </button>
+  <button class="tab" data-tab="helmets">
+    <i data-lucide="hard-hat" style="width:14px;height:14px;vertical-align:-2px"></i> Casques (UHF + BLE)
+  </button>
+  <button class="tab" data-tab="live">
+    <i data-lucide="radio" style="width:14px;height:14px;vertical-align:-2px"></i> Capture en direct
+  </button>
+</div>
+
+{# ────────────── PANE 1 : Badges ────────────── #}
+<div class="pane is-active" data-pane="badges">
+  <div class="mode-grid">
+    {# Mode 1 : saisie batch texte #}
+    <div class="mode-card">
+      <h3><span class="mode-icon"><i data-lucide="text-cursor-input"></i></span> Saisie batch</h3>
+      <p>Collez vos UIDs (un par ligne, ou séparés par virgule / point-virgule).
+         Les badges sont créés en pool, prêts à être attribués.</p>
+      <div class="row-inline">
+        <select id="b-type">
+          <option value="nfc">NFC</option>
+          <option value="uhf">RFID UHF</option>
+          <option value="uhf_xerafy">Xerafy UHF (casque)</option>
+          <option value="qr">QR Code</option>
+        </select>
+        <select id="b-category">
+          <option value="employee_rfid">Badge employé RFID</option>
+          <option value="worker_rfid">Badge ouvrier RFID</option>
+          <option value="visitor_qr">Badge visiteur QR</option>
+        </select>
+      </div>
+      <div class="row-inline">
+        <input type="date" id="b-valid-from" placeholder="Valide à partir de">
+        <input type="date" id="b-valid-until" placeholder="Valide jusqu'à">
+      </div>
+      <textarea id="b-uids" placeholder="AABBCC01&#10;AABBCC02&#10;AABBCC03&#10;…" spellcheck="false"></textarea>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:11px;color:var(--text-dim);margin-top:6px">
+        <span><span id="b-count">0</span> UIDs détectés</span>
+        <button type="button" class="btn btn-ghost" id="b-clear" style="padding:4px 8px;font-size:11px">Effacer</button>
+      </div>
+      <button class="btn btn-primary" id="b-submit">
+        <i data-lucide="check" style="width:14px;height:14px"></i> Enrôler le lot
+      </button>
+      <div class="result-box" id="b-result"></div>
+    </div>
+
+    {# Mode 2 : CSV #}
+    <div class="mode-card">
+      <h3><span class="mode-icon"><i data-lucide="file-spreadsheet"></i></span> Import CSV</h3>
+      <p>Fichier CSV avec colonnes : <code>uid,type,category,valid_from,valid_until</code><br>
+         Seul <code>uid</code> est obligatoire — les autres prennent les valeurs par défaut.</p>
+      <label class="csv-drop" id="b-csv-drop">
+        <i data-lucide="upload-cloud"></i>
+        <div><strong>Glisser un fichier</strong> ou cliquer pour parcourir</div>
+        <div style="font-size:11px;margin-top:3px">.csv (UTF-8) — max 1 Mo</div>
+        <input type="file" id="b-csv-file" accept=".csv,text/csv">
+      </label>
+      <div id="b-csv-preview" style="margin-top:10px;font-size:11.5px;color:var(--text-dim)"></div>
+    </div>
+
+    {# Mode 3 : ligne par ligne avec serial #}
+    <div class="mode-card">
+      <h3><span class="mode-icon"><i data-lucide="list-checks"></i></span> Téléchargement modèle</h3>
+      <p>Téléchargez un modèle CSV pré-rempli pour démarrer rapidement.</p>
+      <a href="data:text/csv;charset=utf-8,uid,type,category,valid_from,valid_until%0AAABBCC01,nfc,employee_rfid,2026-06-01,2027-06-01%0AAABBCC02,nfc,employee_rfid,,%0AAABBCC03,uhf,worker_rfid,,"
+         download="kshield-badges-template.csv"
+         class="btn btn-ghost" style="margin-top:6px">
+        <i data-lucide="download" style="width:14px;height:14px"></i> Modèle badges.csv
+      </a>
+      <a href="data:text/csv;charset=utf-8,serial,uhf,ble%0AHLM-0001,AABBCC01,DEADBEEF01%0AHLM-0002,AABBCC02,DEADBEEF02%0AHLM-0003,AABBCC03,DEADBEEF03"
+         download="kshield-helmets-template.csv"
+         class="btn btn-ghost" style="margin-top:6px">
+        <i data-lucide="download" style="width:14px;height:14px"></i> Modèle helmets.csv
+      </a>
+    </div>
+  </div>
+</div>
+
+{# ────────────── PANE 2 : Casques ────────────── #}
+<div class="pane" data-pane="helmets">
+  <div class="mode-grid">
+    <div class="mode-card">
+      <h3><span class="mode-icon"><i data-lucide="text-cursor-input"></i></span> Saisie batch</h3>
+      <p>Une ligne par casque, format : <code>SERIAL;UHF_UID;BLE_UID</code><br>
+         Le séparateur peut être <code>;</code>, <code>,</code> ou tabulation.</p>
+      <input type="text" id="h-size" placeholder="Taille (M / L / XL — optionnel)">
+      <textarea id="h-rows" placeholder="HLM-0001;AABBCC01;DEADBEEF01&#10;HLM-0002;AABBCC02;DEADBEEF02&#10;…" spellcheck="false"></textarea>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:11px;color:var(--text-dim);margin-top:6px">
+        <span><span id="h-count">0</span> casques détectés</span>
+        <button type="button" class="btn btn-ghost" id="h-clear" style="padding:4px 8px;font-size:11px">Effacer</button>
+      </div>
+      <button class="btn btn-primary" id="h-submit">
+        <i data-lucide="check" style="width:14px;height:14px"></i> Enrôler les casques
+      </button>
+      <div class="result-box" id="h-result"></div>
+    </div>
+
+    <div class="mode-card">
+      <h3><span class="mode-icon"><i data-lucide="file-spreadsheet"></i></span> Import CSV</h3>
+      <p>CSV avec colonnes : <code>serial,uhf,ble</code> (en-tête obligatoire).<br>
+         Une ligne par casque.</p>
+      <label class="csv-drop" id="h-csv-drop">
+        <i data-lucide="upload-cloud"></i>
+        <div><strong>Glisser un fichier</strong> ou cliquer pour parcourir</div>
+        <div style="font-size:11px;margin-top:3px">.csv (UTF-8)</div>
+        <input type="file" id="h-csv-file" accept=".csv,text/csv">
+      </label>
+      <div id="h-csv-preview" style="margin-top:10px;font-size:11.5px;color:var(--text-dim)"></div>
+    </div>
+
+    <div class="mode-card">
+      <h3><span class="mode-icon"><i data-lucide="info"></i></span> Mémo</h3>
+      <p style="line-height:1.7">
+        Un <strong>casque</strong> = 1 tag UHF (lecture longue portée) + 1 beacon BLE (proximité mobile).<br><br>
+        Après enrôlement, les casques sont en pool. L'attribution à un ouvrier se fait
+        via la page <a href="{% url 'admin-badges' %}?tab=helmets" style="color:var(--ks-orange-400)">Casques</a>
+        ou lors de la première lecture du tag par un lecteur configuré pour le pairing auto.
+      </p>
+    </div>
+  </div>
+</div>
+
+{# ────────────── PANE 3 : Capture en direct ────────────── #}
+<div class="pane" data-pane="live">
+  <div class="live-scan">
+    <p style="font-size:13px;color:var(--text-dim);margin:0 0 14px;line-height:1.6">
+      Connectez un lecteur RFID/NFC IP à KAYDAN&nbsp;SHIELD, puis lancez la capture.
+      Chaque badge présenté apparaît ici en temps réel.
+      Cliquez <strong>"Enregistrer le lot"</strong> en bas pour créer tous les badges captés.
+    </p>
+
+    <div class="row-inline" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr));max-width:760px">
+      <select id="l-reader" class="form-select">
+        <option value="">— Choisir un lecteur —</option>
+        {% for r in readers %}
+          <option value="{{ r.id }}">{{ r.model.brand }} {{ r.model.model }} · {{ r.serial_number }}</option>
+        {% endfor %}
+      </select>
+      <select id="l-type" class="form-select">
+        <option value="nfc">NFC</option>
+        <option value="uhf">RFID UHF</option>
+        <option value="uhf_xerafy">Xerafy UHF</option>
+      </select>
+      <select id="l-category" class="form-select">
+        <option value="employee_rfid">Employé</option>
+        <option value="worker_rfid">Ouvrier</option>
+        <option value="visitor_qr">Visiteur</option>
+      </select>
+      <button class="btn btn-primary" id="l-toggle">
+        <i data-lucide="play" style="width:14px;height:14px"></i> <span id="l-toggle-label">Démarrer la capture</span>
+      </button>
+      <button class="btn btn-ghost" id="l-import" title="Récupère tous les users déjà programmés sur le terminal ZKTeco"
+              style="white-space:nowrap">
+        <i data-lucide="download" style="width:14px;height:14px"></i> Importer du terminal
+      </button>
+    </div>
+
+    <div id="l-status" style="margin-top:10px;font-size:12px;color:var(--text-dim)">
+      <i data-lucide="circle" style="width:8px;height:8px;color:var(--text-mute);vertical-align:-1px"></i>
+      En attente — sélectionnez un lecteur et démarrez la capture.
+    </div>
+
+    <div class="live-list" id="l-list"></div>
+
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px;
+                padding-top:12px;border-top:1px solid var(--border)">
+      <span style="font-size:12px;color:var(--text-dim)"><span id="l-count">0</span> badge(s) en attente d'enrôlement</span>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-ghost" id="l-clear"><i data-lucide="x" style="width:13px;height:13px"></i> Vider</button>
+        <button class="btn btn-primary" id="l-save"><i data-lucide="check" style="width:14px;height:14px"></i> Enregistrer le lot</button>
+      </div>
+    </div>
+
+    <div class="result-box" id="l-result"></div>
+
+    <details style="margin-top:14px;font-size:11.5px;color:var(--text-dim)">
+      <summary style="cursor:pointer;color:var(--text);font-weight:600">⚙️ Comment connecter mon lecteur ?</summary>
+      <ul style="margin:10px 0 0;padding-left:18px;line-height:1.7">
+        <li><strong>USB / clavier-émulé</strong> (ACR122, OMNIKEY, RFIDeas pcProx) : le lecteur tape l'UID puis Entrée — focalisez la textarea "Saisie batch" et passez chaque carte.</li>
+        <li><strong>Lecteur IP UHF</strong> (Impinj/Zebra) : configurer le lecteur pour envoyer chaque tag à <code>POST /api/v1/devices/scan/inbox/</code> avec body <code>{"reader_id": &lt;serial&gt;, "uid": "AABBCC01"}</code>. Le lecteur doit être enregistré (page <a href="{% url 'admin-devices' %}">équipements</a>) pour être autorisé.</li>
+        <li><strong>App mobile</strong> (BLE scan) : utiliser l'app KAYDAN SHIELD pour scanner les beacons BLE alentours.</li>
+      </ul>
+    </details>
+  </div>
+</div>
+
+<script>
+(function() {
+  "use strict";
+
+  function csrf() {
+    var m = document.cookie.match(/csrftoken=([^;]+)/);
+    return m ? m[1] : (document.querySelector('[name=csrfmiddlewaretoken]')?.value || '');
+  }
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g,
+      function(c) { return ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]; });
+  }
+  function showResult(box, kind, html) {
+    box.className = "result-box " + kind;
+    box.innerHTML = html;
+  }
+
+  // ─── Tabs ───
+  document.querySelectorAll('.enroll-tabs .tab').forEach(function(t) {
+    t.addEventListener('click', function() {
+      var key = t.dataset.tab;
+      document.querySelectorAll('.enroll-tabs .tab').forEach(function(x) { x.classList.remove('is-active'); });
+      t.classList.add('is-active');
+      document.querySelectorAll('.pane').forEach(function(p) {
+        p.classList.toggle('is-active', p.dataset.pane === key);
+      });
+    });
+  });
+
+  // ─── Parser commun : extrait des UIDs d'un texte ───
+  function parseUids(text) {
+    return (text || "")
+      .split(/[\s,;|\t\n]+/)
+      .map(function(s) { return s.trim().toUpperCase(); })
+      .filter(function(s) { return s && /^[0-9A-F.:_-]{4,64}$/i.test(s); });
+  }
+
+  // ─── BADGES : saisie batch ───
+  var bUids = document.getElementById("b-uids");
+  var bCount = document.getElementById("b-count");
+  var bSubmit = document.getElementById("b-submit");
+  var bClear = document.getElementById("b-clear");
+  var bResult = document.getElementById("b-result");
+
+  function refreshBCount() {
+    bCount.textContent = parseUids(bUids.value).length;
+  }
+  if (bUids) {
+    bUids.addEventListener("input", refreshBCount);
+    bClear.addEventListener("click", function() { bUids.value = ""; refreshBCount(); bResult.style.display="none"; });
+  }
+  if (bSubmit) {
+    bSubmit.addEventListener("click", async function() {
+      var uids = parseUids(bUids.value);
+      if (uids.length === 0) {
+        showResult(bResult, "err", "Aucun UID valide détecté.");
+        return;
+      }
+      bSubmit.disabled = true;
+      var body = {
+        type: document.getElementById("b-type").value,
+        category: document.getElementById("b-category").value,
+        valid_from: document.getElementById("b-valid-from").value || null,
+        valid_until: document.getElementById("b-valid-until").value || null,
+        uids: uids,
+      };
+      try {
+        var res = await fetch("/api/v1/devices/badges/bulk-enroll/", {
+          method: "POST", credentials: "same-origin",
+          headers: {"X-CSRFToken": csrf(), "Content-Type": "application/json"},
+          body: JSON.stringify(body),
+        });
+        var data = await res.json();
+        if (!res.ok) {
+          showResult(bResult, "err", "Erreur " + res.status + ' : ' + esc(data.error || JSON.stringify(data)));
+        } else {
+          showResult(bResult, "ok",
+            '<strong>✓ Enrôlement terminé.</strong> ' +
+            '<span class="num">' + data.created + '</span> badge(s) créé(s), ' +
+            '<span class="num">' + data.skipped + '</span> ignoré(s) (déjà existants ou invalides).' +
+            (data.skipped_existing && data.skipped_existing.length ?
+              '<div style="margin-top:8px;font-family:ui-monospace,monospace;font-size:11px;color:var(--text-dim)">Doublons : ' + data.skipped_existing.slice(0,10).map(esc).join(", ") +
+              (data.skipped_existing.length > 10 ? "…" : "") + '</div>'
+              : ''));
+          if (data.created > 0) bUids.value = ""; refreshBCount();
+        }
+      } catch (e) {
+        showResult(bResult, "err", "Erreur réseau : " + esc(e.message));
+      } finally { bSubmit.disabled = false; }
+    });
+  }
+
+  // ─── BADGES : CSV ───
+  function parseCsv(text) {
+    var lines = text.split(/\r?\n/).filter(Boolean);
+    if (lines.length < 2) return [];
+    var head = lines[0].toLowerCase().split(/[,;\t]/).map(function(s){ return s.trim(); });
+    var rows = [];
+    for (var i = 1; i < lines.length; i++) {
+      var cells = lines[i].split(/[,;\t]/);
+      var row = {};
+      for (var j = 0; j < head.length; j++) row[head[j]] = (cells[j]||"").trim();
+      if (row.uid || row.serial) rows.push(row);
+    }
+    return rows;
+  }
+
+  function hookCsv(dropId, fileId, previewId, onDone) {
+    var drop = document.getElementById(dropId);
+    var file = document.getElementById(fileId);
+    var prev = document.getElementById(previewId);
+    if (!drop || !file) return;
+    file.addEventListener("change", function() {
+      if (file.files && file.files[0]) handleFile(file.files[0]);
+    });
+    drop.addEventListener("dragover", function(e) {
+      e.preventDefault(); drop.classList.add("is-dragover");
+    });
+    drop.addEventListener("dragleave", function() { drop.classList.remove("is-dragover"); });
+    drop.addEventListener("drop", function(e) {
+      e.preventDefault(); drop.classList.remove("is-dragover");
+      if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+    });
+    function handleFile(f) {
+      var reader = new FileReader();
+      reader.onload = function() {
+        var rows = parseCsv(reader.result);
+        prev.innerHTML = rows.length ?
+          '<strong style="color:var(--success,#2dd4bf)">' + rows.length + ' ligne(s)</strong> ' +
+          'détectée(s) dans <em>' + esc(f.name) + '</em>. <button class="btn btn-primary" id="' + previewId + '-go" style="margin-left:8px;padding:5px 10px;font-size:12px"><i data-lucide="check" style="width:13px;height:13px"></i> Envoyer</button>'
+          : '<span style="color:var(--danger,#f87171)">Aucune ligne valide trouvée.</span>';
+        if (window.lucide) window.lucide.createIcons();
+        var btn = document.getElementById(previewId + "-go");
+        if (btn) btn.addEventListener("click", function() { onDone(rows); });
+      };
+      reader.readAsText(f, "UTF-8");
+    }
+  }
+
+  hookCsv("b-csv-drop", "b-csv-file", "b-csv-preview", async function(rows) {
+    // Groupe par (type, category) car l'API attend des lots homogènes
+    var groups = {};
+    rows.forEach(function(r) {
+      var key = (r.type || "nfc") + "|" + (r.category || "employee_rfid");
+      (groups[key] = groups[key] || []).push(r);
+    });
+    var totalCreated = 0, totalSkipped = 0;
+    for (var k in groups) {
+      var parts = k.split("|");
+      var grp = groups[k];
+      var body = {
+        type: parts[0], category: parts[1],
+        valid_from: grp[0].valid_from || null,
+        valid_until: grp[0].valid_until || null,
+        uids: grp.map(function(r) { return r.uid; }).filter(Boolean),
+      };
+      try {
+        var res = await fetch("/api/v1/devices/badges/bulk-enroll/", {
+          method: "POST", credentials: "same-origin",
+          headers: {"X-CSRFToken": csrf(), "Content-Type": "application/json"},
+          body: JSON.stringify(body),
+        });
+        var data = await res.json();
+        if (res.ok) { totalCreated += data.created; totalSkipped += data.skipped; }
+      } catch (e) { /* continue */ }
+    }
+    showResult(bResult, "ok",
+      '<strong>✓ Import terminé.</strong> ' + totalCreated + ' créé(s), ' + totalSkipped + ' ignoré(s).');
+    document.querySelector('[data-tab="badges"]').click();
+  });
+
+  // ─── CASQUES : saisie batch ───
+  var hRows = document.getElementById("h-rows");
+  var hCount = document.getElementById("h-count");
+  var hSubmit = document.getElementById("h-submit");
+  var hClear = document.getElementById("h-clear");
+  var hResult = document.getElementById("h-result");
+
+  function parseHelmetRows(text) {
+    return (text || "").split(/\r?\n/).map(function(line) {
+      var parts = line.split(/[;,\t]/).map(function(p) { return p.trim(); });
+      if (parts.length < 3) return null;
+      var serial = parts[0], uhf = parts[1].toUpperCase(), ble = parts[2].toUpperCase();
+      if (!serial || !uhf || !ble) return null;
+      return {serial: serial, uhf: uhf, ble: ble};
+    }).filter(Boolean);
+  }
+  if (hRows) {
+    hRows.addEventListener("input", function() { hCount.textContent = parseHelmetRows(hRows.value).length; });
+    hClear.addEventListener("click", function() { hRows.value = ""; hCount.textContent = 0; hResult.style.display="none"; });
+  }
+  if (hSubmit) {
+    hSubmit.addEventListener("click", async function() {
+      var rows = parseHelmetRows(hRows.value);
+      if (!rows.length) { showResult(hResult, "err", "Aucune ligne valide. Format : SERIAL;UHF;BLE"); return; }
+      hSubmit.disabled = true;
+      try {
+        var res = await fetch("/api/v1/devices/helmets/bulk-enroll/", {
+          method: "POST", credentials: "same-origin",
+          headers: {"X-CSRFToken": csrf(), "Content-Type": "application/json"},
+          body: JSON.stringify({rows: rows, size: document.getElementById("h-size").value || ""}),
+        });
+        var data = await res.json();
+        if (!res.ok) {
+          showResult(hResult, "err", "Erreur " + res.status + ' : ' + esc(data.error || JSON.stringify(data)));
+        } else {
+          var html = '<strong>✓ Enrôlement terminé.</strong> ' + data.created + ' casque(s) créé(s), ' + data.skipped + ' ignoré(s).';
+          if (data.errors && data.errors.length) {
+            html += '<details style="margin-top:8px;font-size:11.5px"><summary>' + data.errors.length + ' erreur(s)</summary>' +
+                    '<pre style="font-size:11px;margin:6px 0 0;max-height:160px;overflow:auto">' +
+                    esc(JSON.stringify(data.errors, null, 2)) + '</pre></details>';
+          }
+          showResult(hResult, "ok", html);
+          if (data.created > 0) { hRows.value = ""; hCount.textContent = 0; }
+        }
+      } catch (e) { showResult(hResult, "err", "Erreur réseau : " + esc(e.message)); }
+      finally { hSubmit.disabled = false; }
+    });
+  }
+
+  hookCsv("h-csv-drop", "h-csv-file", "h-csv-preview", async function(rows) {
+    var clean = rows.map(function(r) {
+      return {serial: r.serial, uhf: (r.uhf||"").toUpperCase(), ble: (r.ble||"").toUpperCase()};
+    }).filter(function(r) { return r.serial && r.uhf && r.ble; });
+    if (!clean.length) { showResult(hResult, "err", "Aucune ligne CSV valide (colonnes attendues : serial,uhf,ble)."); return; }
+    try {
+      var res = await fetch("/api/v1/devices/helmets/bulk-enroll/", {
+        method: "POST", credentials: "same-origin",
+        headers: {"X-CSRFToken": csrf(), "Content-Type": "application/json"},
+        body: JSON.stringify({rows: clean}),
+      });
+      var data = await res.json();
+      showResult(hResult, res.ok ? "ok" : "err",
+        '<strong>' + (res.ok ? "✓ Import" : "✗ Erreur") + '</strong> ' +
+        (data.created || 0) + ' créé(s), ' + (data.skipped || 0) + ' ignoré(s).');
+      document.querySelector('[data-tab="helmets"]').click();
+    } catch (e) { showResult(hResult, "err", "Erreur réseau : " + esc(e.message)); }
+  });
+
+  // ─── CAPTURE LIVE ───
+  // Polling toutes les 2s sur /api/v1/devices/scan/inbox/?reader_id=<id>&since=<ts>
+  // Endpoint à implémenter côté backend si pas encore fait ; le UI le supporte déjà.
+  var liveCaptured = [];      // [{uid, ts, status: "new"|"dup"}]
+  var liveSeenUids = new Set();
+  var liveTimer = null;
+  var liveSince = null;       // ISO timestamp
+  var lToggle = document.getElementById("l-toggle");
+  var lToggleLabel = document.getElementById("l-toggle-label");
+  var lStatus = document.getElementById("l-status");
+  var lList = document.getElementById("l-list");
+  var lCount = document.getElementById("l-count");
+
+  function renderLive() {
+    lList.innerHTML = liveCaptured.slice().reverse().map(function(c) {
+      return '<div class="live-row">' +
+             '<span class="timestamp">' + c.ts.slice(11, 19) + '</span>' +
+             '<span style="flex:1">' + esc(c.uid) + '</span>' +
+             '<span class="badge-status ' + c.status + '">' + (c.status === "new" ? "nouveau" : "doublon") + '</span>' +
+             '</div>';
+    }).join("");
+    lCount.textContent = liveCaptured.filter(function(c){ return c.status === "new"; }).length;
+  }
+
+  function stopLivePolling(reason) {
+    if (liveTimer) { clearInterval(liveTimer); liveTimer = null; }
+    lToggleLabel.textContent = "Démarrer la capture";
+    setLiveBtnIcon("play");
+    if (reason) lStatus.innerHTML = reason;
+  }
+
+  // Remplace l'icône du bouton play/pause. Lucide convertit les <i> en <svg> au
+  // premier createIcons() — donc on RE-INJECTE un <i data-lucide="…"> puis on
+  // demande à Lucide de re-rendre. Plus de querySelector("i") qui crash.
+  function setLiveBtnIcon(name) {
+    if (!lToggle) return;
+    var first = lToggle.firstElementChild;
+    if (first && (first.tagName === "I" || first.tagName === "svg" || first.tagName === "SVG")) {
+      var i = document.createElement("i");
+      i.setAttribute("data-lucide", name);
+      i.style.width = "14px"; i.style.height = "14px";
+      lToggle.replaceChild(i, first);
+    }
+    if (window.lucide) window.lucide.createIcons();
+  }
+
+  async function pollScans() {
+    var readerId = document.getElementById("l-reader").value;
+    if (!readerId) return;
+    var url = "/api/v1/devices/scan/inbox/?reader_id=" + encodeURIComponent(readerId);
+    if (liveSince) url += "&since=" + encodeURIComponent(liveSince);
+    try {
+      var res = await fetch(url, {credentials: "same-origin"});
+      if (res.status === 404) {
+        // Endpoint absent → STOPPER le polling pour ne pas spammer
+        stopLivePolling(
+          '<i data-lucide="alert-circle" style="width:12px;height:12px;color:var(--warning,#fbbf24);vertical-align:-1px"></i> ' +
+          "L'endpoint <code>/api/v1/devices/scan/inbox/</code> n'est pas disponible. " +
+          "Mettez à jour le serveur ou utilisez la <strong>Saisie batch</strong>."
+        );
+        return;
+      }
+      if (!res.ok) {
+        stopLivePolling(
+          '<i data-lucide="alert-circle" style="width:12px;height:12px;color:var(--danger,#f87171);vertical-align:-1px"></i> ' +
+          "Erreur " + res.status + " — capture stoppée."
+        );
+        return;
+      }
+      var data = await res.json();
+      var scans = data.scans || [];
+      scans.forEach(function(s) {
+        var uid = (s.uid || "").toUpperCase();
+        if (!uid) return;
+        var status = liveSeenUids.has(uid) ? "dup" : "new";
+        liveSeenUids.add(uid);
+        liveCaptured.push({uid: uid, ts: s.timestamp || new Date().toISOString(), status: status});
+      });
+      if (data.now) liveSince = data.now;
+      renderLive();
+    } catch (e) {
+      // Erreur réseau → on continue de tenter sans afficher
+    }
+  }
+
+  async function startEnrollSession(readerId) {
+    try {
+      var res = await fetch("/api/v1/devices/" + readerId + "/enroll-session/", {
+        method: "POST", credentials: "same-origin",
+        headers: {"X-CSRFToken": csrf(), "Content-Type": "application/json"},
+        body: JSON.stringify({action: "start", duration: 600}),
+      });
+      var data = await res.json();
+      if (res.status === 400 && /pas un terminal ZKTeco/.test(data.error || "")) {
+        // Pas grave : pour les UHF/NFC autres on continue en mode pull simple.
+        return {ok: true, zk: false};
+      }
+      if (!res.ok) return {ok: false, error: data.error || ("HTTP " + res.status)};
+      return {ok: true, zk: true, data: data};
+    } catch (e) {
+      return {ok: false, error: String(e.message || e)};
+    }
+  }
+
+  async function stopEnrollSession(readerId) {
+    try {
+      await fetch("/api/v1/devices/" + readerId + "/enroll-session/", {
+        method: "POST", credentials: "same-origin",
+        headers: {"X-CSRFToken": csrf(), "Content-Type": "application/json"},
+        body: JSON.stringify({action: "stop"}),
+      });
+    } catch (e) { /* silent */ }
+  }
+
+  if (lToggle) {
+    lToggle.addEventListener("click", async function() {
+      if (liveTimer) {
+        // Stop polling + stop session ZK si applicable
+        var rid = document.getElementById("l-reader").value;
+        stopLivePolling(
+          '<i data-lucide="circle" style="width:8px;height:8px"></i> Capture arrêtée.'
+        );
+        if (rid) stopEnrollSession(rid);
+      } else {
+        var readerId = document.getElementById("l-reader").value;
+        if (!readerId) {
+          alert("Sélectionnez d'abord un lecteur."); return;
+        }
+        lToggle.disabled = true;
+        lStatus.innerHTML = '<i data-lucide="loader-2" style="width:12px;height:12px;animation:spin 1s linear infinite;vertical-align:-1px"></i> Ouverture de la session…';
+        if (window.lucide) window.lucide.createIcons();
+
+        var s = await startEnrollSession(readerId);
+        lToggle.disabled = false;
+
+        if (!s.ok) {
+          lStatus.innerHTML = '<i data-lucide="alert-triangle" style="width:12px;height:12px;color:var(--warning,#fbbf24);vertical-align:-1px"></i> ' +
+            'Démarrage session : ' + esc(s.error) + ' — bascule en mode polling.';
+          if (window.lucide) window.lucide.createIcons();
+        }
+
+        liveSince = new Date().toISOString();
+        liveTimer = setInterval(pollScans, s.zk ? 1500 : 2500);
+        pollScans();
+        lToggleLabel.textContent = "Arrêter la capture";
+        setLiveBtnIcon("pause");
+        if (s.zk) {
+          lStatus.innerHTML = '<i data-lucide="circle" style="width:8px;height:8px;color:var(--success,#2dd4bf);vertical-align:-1px"></i> ' +
+            'Session ZKTeco active (jusqu\'à 10 min) — présentez les badges sur le terminal ' +
+            'OU ajoutez-les via Menu > User > Add du K14.';
+        } else {
+          lStatus.innerHTML = '<i data-lucide="circle" style="width:8px;height:8px;color:var(--success,#2dd4bf);vertical-align:-1px"></i> ' +
+            'Capture en cours… présentez les badges sur le lecteur.';
+        }
+      }
+      if (window.lucide) window.lucide.createIcons();
+    });
+  }
+  // Importer en bloc tous les users existants du K14 dans l'inbox
+  document.getElementById("l-import").addEventListener("click", async function() {
+    var readerId = document.getElementById("l-reader").value;
+    if (!readerId) { alert("Sélectionnez d'abord un lecteur ZKTeco."); return; }
+    var btn = this;
+    btn.disabled = true;
+    var resBox = document.getElementById("l-result");
+    showResult(resBox, "ok", '<i data-lucide="loader-2" style="width:14px;height:14px;animation:spin 1s linear infinite;vertical-align:-2px"></i> Lecture du terminal…');
+    if (window.lucide) window.lucide.createIcons();
+    try {
+      var res = await fetch("/api/v1/devices/" + readerId + "/zk-import-users/", {
+        method: "POST", credentials: "same-origin",
+        headers: {"X-CSRFToken": csrf(), "Content-Type": "application/json"},
+        body: "{}",
+      });
+      var data = await res.json();
+      if (!res.ok) {
+        showResult(resBox, "err",
+          '<strong>✗ Erreur ' + res.status + '</strong> : ' + esc(data.error || JSON.stringify(data)));
+        return;
+      }
+      showResult(resBox, "ok",
+        '<strong>✓ Import terminal terminé.</strong> ' +
+        '<span class="num">' + data.imported + '</span> carte(s) ajoutée(s) à l\'inbox, ' +
+        '<span class="num">' + data.skipped_no_card + '</span> user(s) sans carte ignoré(s) ' +
+        '(' + data.total_users_on_terminal + ' user(s) total sur le terminal).<br>' +
+        '<em>Démarrez la capture pour les voir dans la liste, ou cliquez ' +
+        '"Enregistrer le lot" maintenant pour les enrôler.</em>');
+      // Pull immédiat pour rafraîchir l'affichage live
+      if (!liveTimer) {
+        // Mode "pas en capture" : déclenche une lecture unique de l'inbox
+        liveSince = null;
+        pollScans();
+      }
+    } catch (e) {
+      showResult(resBox, "err", "Erreur réseau : " + esc(e.message));
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  document.getElementById("l-clear").addEventListener("click", async function() {
+    // Vide l'UI locale
+    liveCaptured = []; liveSeenUids.clear(); lCount.textContent = 0; renderLive();
+    document.getElementById("l-result").style.display = "none";
+    // Vide aussi l'inbox côté serveur si un lecteur est sélectionné
+    var readerId = document.getElementById("l-reader").value;
+    if (readerId) {
+      try {
+        await fetch("/api/v1/devices/scan/inbox/?reader_id=" + encodeURIComponent(readerId), {
+          method: "DELETE", credentials: "same-origin",
+          headers: {"X-CSRFToken": csrf()},
+        });
+        // Reset watermark pour que les anciens pointages ne soient PAS re-poussés
+        liveSince = new Date().toISOString();
+      } catch (e) { /* silent */ }
+    }
+  });
+  document.getElementById("l-save").addEventListener("click", async function() {
+    var newUids = liveCaptured.filter(function(c){ return c.status === "new"; }).map(function(c){ return c.uid; });
+    if (!newUids.length) { alert("Aucun nouveau badge à enregistrer."); return; }
+    var resBox = document.getElementById("l-result");
+    try {
+      var res = await fetch("/api/v1/devices/badges/bulk-enroll/", {
+        method: "POST", credentials: "same-origin",
+        headers: {"X-CSRFToken": csrf(), "Content-Type": "application/json"},
+        body: JSON.stringify({
+          type: document.getElementById("l-type").value,
+          category: document.getElementById("l-category").value,
+          uids: newUids,
+        }),
+      });
+      var data = await res.json();
+      showResult(resBox, res.ok ? "ok" : "err",
+        '<strong>' + (res.ok ? "✓" : "✗") + '</strong> ' + (data.created || 0) + ' badge(s) créé(s), ' +
+        (data.skipped || 0) + ' déjà existant(s).');
+      if (res.ok) {
+        liveCaptured = []; liveSeenUids.clear(); renderLive(); lCount.textContent = 0;
+      }
+    } catch (e) { showResult(resBox, "err", "Erreur réseau : " + esc(e.message)); }
+  });
+})();
+</script>
+{% endblock %}

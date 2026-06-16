@@ -147,7 +147,64 @@ class ZoneForm(StyledModelForm):
 # ===========================================================================
 # Devices, Badges, Helmets
 # ===========================================================================
+#: Technologie → liste des types DeviceModel matching.
+READER_KIND_TYPES = {
+    "uhf": ["reader_uhf_fixed", "reader_uhf_mobile", "portique"],
+    "nfc": ["reader_nfc_fixed", "reader_nfc_mobile"],
+    "ble": ["beacon_ble"],
+    # "zk" — terminaux ZKTeco / Anviz / autres marques à protocole propriétaire.
+    # On les colle techniquement en `reader_nfc_*` car ils lisent typiquement
+    # des cartes 125 kHz EM ou 13.56 MHz MIFARE, mais le wizard les sépare pour
+    # l'UX (configuration spécifique du SDK).
+    "zk":  ["reader_nfc_fixed", "reader_nfc_mobile"],
+}
+
+READER_KIND_META = {
+    "uhf": {
+        "label": "Lecteur RFID UHF",
+        "icon":  "radio-tower",
+        "color": "#F26B1F",
+        "hint":  ("Lecteurs longue portée (1 à 10 m) opérant en bande 865-868 MHz (ETSI) "
+                  "ou 902-928 MHz (FCC). Typiquement utilisés pour portiques d'accès chantier, "
+                  "lecture en mouvement (badges casques)."),
+    },
+    "nfc": {
+        "label": "Lecteur NFC",
+        "icon":  "smartphone-nfc",
+        "color": "#22d3ee",
+        "hint":  ("Lecteurs courte portée (≤ 10 cm) opérant à 13.56 MHz, compatibles "
+                  "ISO 14443A/B, MIFARE, FeliCa. Idéaux pour points de pointage employés "
+                  "et tourniquets."),
+    },
+    "ble": {
+        "label": "Beacon BLE",
+        "icon":  "bluetooth",
+        "color": "#a78bfa",
+        "hint":  ("Balises Bluetooth Low Energy (2.4 GHz). Diffusent un identifiant "
+                  "(iBeacon/Eddystone) capté par l'app mobile pour pointage de proximité "
+                  "et géolocalisation indoor."),
+    },
+    "zk": {
+        "label": "Terminal ZKTeco",
+        "icon":  "fingerprint",
+        "color": "#3b82f6",
+        "hint":  ("Terminaux autonomes de pointage / contrôle d'accès (K14, K20, F18, "
+                  "MA300, iClock…). Communiquent via le SDK ZKAccess sur le port 4370. "
+                  "Gèrent en local la liste des utilisateurs, cartes RFID et empreintes "
+                  "digitales, puis poussent les pointages à Shield."),
+    },
+}
+
+
 class DeviceForm(StyledModelForm):
+    """Form équipement — peut être pré-filtré sur une technologie de lecteur.
+
+    Passer ``reader_kind`` en kwarg (``"uhf"``, ``"nfc"`` ou ``"ble"``) :
+    - restreint la liste des `DeviceModel` aux types compatibles ;
+    - propose une création inline du DeviceModel si aucun n'existe ;
+    - injecte le bon help_text métier sur chaque champ.
+    """
+
     class Meta:
         from devices.models import Device
         model = Device
@@ -159,6 +216,82 @@ class DeviceForm(StyledModelForm):
         widgets = {
             "commissioned_at": forms.DateTimeInput(attrs={"type": "datetime-local"}),
         }
+
+    def __init__(self, *args, reader_kind: str | None = None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.reader_kind = (reader_kind or "").lower() if reader_kind else None
+
+        if self.reader_kind and self.reader_kind in READER_KIND_TYPES:
+            from devices.models import DeviceModel
+            types = READER_KIND_TYPES[self.reader_kind]
+            qs = DeviceModel.objects.filter(type__in=types, is_active=True)
+            # Pour la techno ZKTeco, filtre EN PLUS par marque pour ne pas
+            # mélanger les lecteurs NFC standards avec les terminaux ZK.
+            if self.reader_kind == "zk":
+                qs = qs.filter(brand__iregex=r"zkteco|anviz|biopointer|zk")
+            qs = qs.order_by("brand", "model")
+            self.fields["model"].queryset = qs
+            self.fields["model"].label = "Modèle d'équipement"
+            self.fields["model"].help_text = (
+                "Sélectionnez un modèle pré-enregistré, ou "
+                "<a href='/device-models/new/' target='_blank' rel='noopener'>"
+                "créez-en un</a> si votre matériel n'apparaît pas."
+            )
+
+            # Help text contextuels par technologie
+            meta = READER_KIND_META[self.reader_kind]
+            self.fields["serial_number"].help_text = (
+                "Numéro de série imprimé sur le boîtier "
+                "(souvent au dos ou dans le menu admin du lecteur)."
+            )
+            if self.reader_kind == "uhf":
+                self.fields["mac_address"].help_text = (
+                    "MAC du port Ethernet — pour les lecteurs UHF fixes Impinj/Zebra/CAEN. "
+                    "Laisser vide pour les lecteurs UHF mobiles."
+                )
+                self.fields["ip_address"].help_text = (
+                    "IP fixe du lecteur sur le LAN du site (recommandé : DHCP réservé)."
+                )
+            elif self.reader_kind == "nfc":
+                self.fields["ip_address"].help_text = (
+                    "IP si le lecteur est mis en réseau (Sycreader/HID). "
+                    "Vide si le lecteur est en USB/série."
+                )
+                self.fields["mac_address"].help_text = (
+                    "MAC réseau si applicable. Vide pour USB."
+                )
+            elif self.reader_kind == "ble":
+                self.fields["ip_address"].help_text = (
+                    "Non applicable pour un beacon (transmet en broadcast)."
+                )
+                self.fields["mac_address"].help_text = (
+                    "Adresse MAC BLE — 6 octets (ex. AA:BB:CC:DD:EE:FF). "
+                    "Sert d'identifiant unique de la balise."
+                )
+                self.fields["battery_level"].help_text = (
+                    "État de la pile bouton CR2477 — critique pour la maintenance."
+                )
+            elif self.reader_kind == "zk":
+                self.fields["ip_address"].help_text = (
+                    "IP fixe du terminal sur le LAN — DHCP réservé recommandé. "
+                    "Le SDK ZKAccess écoute sur le port 4370 par défaut."
+                )
+                self.fields["mac_address"].help_text = (
+                    "MAC du terminal — visible dans l'admin du device (Menu → Système → Info)."
+                )
+                self.fields["serial_number"].help_text = (
+                    "Numéro de série imprimé au dos du terminal "
+                    "(ex. <code>CQUJ222460289</code>). Auto-détecté après "
+                    "premier dialogue SDK."
+                )
+                self.fields["firmware_version"].help_text = (
+                    "Sera auto-détecté lors du premier dialogue ZKAccess "
+                    "(<code>Ver 6.60 Sep 19 2019</code>)."
+                )
+
+        # Si un seul DeviceModel matche, on le présélectionne pour gagner un clic
+        if self.reader_kind and len(self.fields["model"].queryset) == 1:
+            self.fields["model"].initial = self.fields["model"].queryset.first()
 
 
 class DeviceModelForm(StyledModelForm):

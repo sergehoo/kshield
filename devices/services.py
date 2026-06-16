@@ -1168,21 +1168,20 @@ class BadgeWorkflowService:
     # ---------------- 2. Employee RFID ----------------
     @classmethod
     def issue_employee_badge(cls, employee, helmet=None):
-        """Émet un badge RFID pour un employé (casque obligatoire si chantier)."""
+        """Émet un badge RFID pour un employé.
+
+        Règle métier : les employés N'ONT PAS de casque RFID. Le paramètre
+        ``helmet`` est ignoré (rétrocompatibilité de l'API publique). Seuls
+        les ouvriers (workflow ``issue_worker_badge``) reçoivent un casque.
+        """
         from django.contrib.contenttypes.models import ContentType
 
         from employees.models import Employee
 
         from .models import Badge, BadgeAssignment
 
-        requires_helmet = employee.work_location in ("field", "both")
-        if requires_helmet and helmet is None:
-            raise ValueError(
-                f"L'employé {employee.matricule} travaille en chantier "
-                "({}) → un casque RFID est obligatoire.".format(employee.work_location)
-            )
-        if not requires_helmet and helmet is not None:
-            helmet = None
+        # Casque ignoré pour employés — réservé aux ouvriers
+        helmet = None
 
         from core.services import get_kaydan_tenant
         tenant = get_kaydan_tenant()
@@ -1198,11 +1197,11 @@ class BadgeWorkflowService:
                 "holder_content_type": ContentType.objects.get_for_model(Employee),
                 "holder_object_id": employee.id,
                 "qr_payload": uid,
-                "paired_helmet": helmet,
+                "paired_helmet": None,
             },
         )
         if not created:
-            badge.paired_helmet = helmet
+            badge.paired_helmet = None
             badge.qr_payload = uid
             badge.status = "active"
             badge.save()
@@ -1214,6 +1213,75 @@ class BadgeWorkflowService:
             holder_label=f"{employee.first_name} {employee.last_name} ({employee.matricule})",
         )
         BadgePDFService.generate_and_save(badge)
+        return badge
+
+    # ---------------- 2bis. Attribuer un badge déjà en pool ----------------
+    @classmethod
+    def assign_pool_badge(cls, badge, holder, helmet=None):
+        """Attribue un badge déjà enrôlé (status="available") à un employé ou ouvrier.
+
+        Utile pour le workflow "j'ai d'abord enrôlé les cartes du K14 en masse,
+        je les attribue ensuite un par un aux employés".
+
+        Args:
+            badge: instance Badge avec status="available" (ou autre, on autorise).
+            holder: instance Employee OU Worker.
+            helmet: instance Helmet ou None (obligatoire pour ouvriers).
+        """
+        from django.contrib.contenttypes.models import ContentType
+
+        from employees.models import Employee
+        from ouvriers.models import Worker
+
+        from .models import BadgeAssignment
+
+        if badge.holder_object_id and badge.status not in ("available", "expired", "revoked", "lost"):
+            raise ValueError(
+                f"Le badge {badge.uid} est déjà attribué à "
+                f"{badge.holder_kind} #{badge.holder_object_id}. "
+                "Révoque-le d'abord."
+            )
+
+        # Détection du type de porteur
+        # Règle métier : seuls les OUVRIERS reçoivent un casque RFID.
+        # Pour les employés, le paramètre helmet est ignoré.
+        if isinstance(holder, Employee):
+            holder_kind = "employee"
+            category = "employee_rfid"
+            helmet = None       # employé → jamais de casque
+        elif isinstance(holder, Worker):
+            holder_kind = "worker"
+            category = "worker_rfid"
+            if helmet is None:
+                raise ValueError(
+                    "Cet ouvrier requiert un casque RFID — "
+                    "fournis-en un via le paramètre `helmet`."
+                )
+        else:
+            raise ValueError("holder doit être Employee ou Worker")
+
+        # Mise à jour atomique du badge
+        badge.holder_kind = holder_kind
+        badge.holder_content_type = ContentType.objects.get_for_model(holder.__class__)
+        badge.holder_object_id = holder.id
+        badge.category = category
+        badge.paired_helmet = helmet
+        badge.status = "active"
+        if not badge.qr_payload:
+            badge.qr_payload = badge.uid
+        badge.save()
+
+        BadgeAssignment.objects.create(
+            badge=badge,
+            holder_kind=holder_kind,
+            holder_object_id=holder.id,
+            holder_label=f"{holder.first_name} {holder.last_name} ({holder.matricule})",
+        )
+        # Génère le PDF + thumbnail maintenant qu'on a un porteur
+        try:
+            BadgePDFService.generate_and_save(badge)
+        except Exception as exc:
+            logger.warning("PDF generation failed for badge %s: %s", badge.uid, exc)
         return badge
 
     # ---------------- 3. Worker RFID ----------------

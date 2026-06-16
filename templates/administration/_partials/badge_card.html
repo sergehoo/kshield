@@ -5,6 +5,113 @@
     <img class="badge-card-img"
          src="{% url 'badge-thumbnail' badge.pk %}"
          alt="Badge {{ badge.uid }}"
-         loading="lazy">
+         loading="lazy"
+         onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+    {# Fallback affiché si l'image ne charge pas (badge en pool sans thumbnail générée) #}
+    <div class="badge-card-fallback" style="display:none">
+      <div class="badge-card-uid">{{ badge.uid }}</div>
+      <div class="badge-card-meta">
+        {{ badge.get_type_display }} · {{ badge.get_status_display }}
+      </div>
+    </div>
   </a>
+  <div class="badge-card-info">
+    <div class="badge-card-uid-row">
+      <strong class="mono">{{ badge.uid }}</strong>
+      {% if badge.status == 'available' %}
+        <span class="pill pill-info" style="font-size:10px">En pool</span>
+      {% elif badge.status == 'assigned' %}
+        <span class="pill pill-warning" style="font-size:10px">Attribué</span>
+      {% elif badge.status == 'active' %}
+        <span class="pill pill-success" style="font-size:10px">Actif</span>
+      {% elif badge.status == 'suspended' %}
+        <span class="pill pill-warning" style="font-size:10px">Suspendu</span>
+      {% elif badge.status == 'expired' %}
+        <span class="pill pill-muted" style="font-size:10px">Expiré</span>
+      {% elif badge.status == 'lost' %}
+        <span class="pill pill-danger" style="font-size:10px">Perdu</span>
+      {% elif badge.status == 'revoked' %}
+        <span class="pill pill-danger" style="font-size:10px">Révoqué</span>
+      {% elif badge.status == 'disabled' %}
+        <span class="pill pill-muted" style="font-size:10px">Désactivé</span>
+      {% endif %}
+    </div>
+    <div class="badge-card-sub">
+      <span>{{ badge.get_type_display }}</span>
+      {% if badge.holder %}
+        · <span title="Porteur">
+          <i data-lucide="user" style="width:10px;height:10px;vertical-align:-1px"></i>
+          {{ badge.holder }}
+        </span>
+      {% else %}
+        · <em class="text-dim">Non attribué</em>
+      {% endif %}
+    </div>
+  </div>
 </div>
+
+<style>
+  /* Style local — n'écrase pas le grid ailleurs */
+  .badge-card-wrap {
+    border-radius: 12px; overflow: hidden;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    transition: transform .12s ease, border-color .15s, box-shadow .15s;
+    display: flex; flex-direction: column;
+  }
+  .badge-card-wrap:hover {
+    transform: translateY(-1px);
+    border-color: var(--ks-orange-400);
+    box-shadow: 0 8px 24px rgba(0,0,0,.18);
+  }
+  .badge-card-img-link {
+    position: relative;
+    display: block;
+    background: var(--surface-strong);
+    text-decoration: none;
+    min-height: 110px;
+  }
+  .badge-card-img {
+    width: 100%; height: auto; display: block;
+    aspect-ratio: 1.6 / 1;
+    object-fit: cover;
+  }
+  .badge-card-fallback {
+    position: absolute; inset: 0;
+    display: none;
+    flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 6px;
+    background: linear-gradient(135deg, var(--surface-strong), rgba(242,107,31,.04));
+    color: var(--text);
+    padding: 16px;
+  }
+  .badge-card-uid {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 18px; font-weight: 700;
+    color: var(--ks-orange-400);
+    letter-spacing: .02em;
+  }
+  .badge-card-meta {
+    font-size: 11px; color: var(--text-dim);
+    text-transform: uppercase; letter-spacing: .04em;
+  }
+  .badge-card-info {
+    padding: 10px 12px;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .badge-card-uid-row {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 6px; margin-bottom: 3px;
+  }
+  .badge-card-uid-row .mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12.5px;
+  }
+  .badge-card-sub {
+    font-size: 11.5px; color: var(--text-dim);
+    line-height: 1.4;
+  }
+  .badge-card-sub em { font-style: normal; }
+</style>

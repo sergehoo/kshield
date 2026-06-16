@@ -248,13 +248,13 @@
   {# ── Barre filtres ── #}
   <form method="get" class="filter-bar">
     <input type="text" name="q" placeholder="Recherche nom / URL / emplacement…" value="{{ search_q }}">
-    <select name="site">
+    <select name="site" class="form-select" onchange="this.form.submit()">
       <option value="">— Tous les sites —</option>
       {% for s in sites_for_filter %}
         <option value="{{ s.id }}" {% if site_filter == s.id|stringformat:"s" %}selected{% endif %}>{{ s.name }}</option>
       {% endfor %}
     </select>
-    <select name="status">
+    <select name="status" class="form-select" onchange="this.form.submit()">
       <option value="">— Tous statuts —</option>
       <option value="online"   {% if status_filter == 'online' %}selected{% endif %}>En ligne</option>
       <option value="offline"  {% if status_filter == 'offline' %}selected{% endif %}>Hors ligne</option>
@@ -355,9 +355,7 @@
         </label>
         <label style="font-size:11.5px;display:flex;flex-direction:column;gap:3px;color:var(--text-dim);flex:1;min-width:180px">
           Site de destination
-          <select id="onvif-site"
-                  style="background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.12);
-                         color:var(--text);padding:7px 10px;border-radius:7px;font-size:12.5px">
+          <select id="onvif-site" class="form-select">
             <option value="">— Choisir un site —</option>
             {% for s in sites_for_filter %}
               <option value="{{ s.id }}">{{ s.name }}</option>

@@ -430,7 +430,7 @@
           Enrôler un visage
         </h4>
         <label for="emp-select" style="font-size:11.5px;color:var(--text-dim)">Employé cible</label>
-        <select id="emp-select" class="form-control" style="margin-top:4px;margin-bottom:10px">
+        <select id="emp-select" class="form-select" style="margin-top:4px;margin-bottom:10px">
           <option value="">— Sélectionner un employé —</option>
           {% for e in employees_for_enroll %}
             <option value="{{ e.id }}">{{ e.last_name }} {{ e.first_name }} · {{ e.matricule }}</option>

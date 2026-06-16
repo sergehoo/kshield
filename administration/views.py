@@ -913,6 +913,160 @@ class DevicesView(BaseAdminView):
 
 
 # ───────────────────────────────────────────────────────────────────────────
+# Enrôlement en masse — badges (NFC/UHF/QR) et casques (UHF+BLE)
+# ───────────────────────────────────────────────────────────────────────────
+class BadgeEnrollmentView(BaseAdminView):
+    """Hub d'enrôlement : saisie batch / CSV / scan live de badges et casques.
+
+    Pas d'attribution ici — les badges créés sont en pool (status="available"),
+    les casques en status="active" sans current_worker. L'attribution se fait
+    ensuite via le workflow badge issue + pairing.
+    """
+    template_name = "administration/badge_enrollment.html"
+    active_nav = "badges"
+    page_title = "Enrôler badges & tags"
+    page_subtitle = (
+        "Pré-enregistrez vos cartes NFC, tags UHF et beacons BLE avant de les "
+        "attribuer aux employés / ouvriers."
+    )
+    breadcrumb = "Badges · Enrôlement"
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        try:
+            from devices.models import Badge, Device, Helmet
+            ctx["count_pool_badges"] = Badge.objects.filter(status="available").count()
+            ctx["count_unassigned_helmets"] = Helmet.objects.filter(
+                current_worker__isnull=True, status="active",
+            ).count()
+            # Lecteurs RFID/NFC/ZK actifs — utilisable pour la capture live
+            ctx["readers"] = list(
+                Device.objects
+                .select_related("model")
+                .filter(model__type__in=[
+                    "reader_uhf_fixed", "reader_uhf_mobile",
+                    "reader_nfc_fixed", "reader_nfc_mobile",
+                    "portique",
+                ], status="active")
+                .order_by("model__brand", "serial_number")[:50]
+            )
+        except Exception:
+            ctx["count_pool_badges"] = 0
+            ctx["count_unassigned_helmets"] = 0
+            ctx["readers"] = []
+        return ctx
+
+
+# ───────────────────────────────────────────────────────────────────────────
+# Équipements — picker technologie + assistant création lecteur
+# ───────────────────────────────────────────────────────────────────────────
+class DeviceReaderPickerView(BaseAdminView):
+    """Étape 1 : choix de la technologie du lecteur à enregistrer."""
+    template_name = "administration/device_reader_picker.html"
+    active_nav = "devices"
+    page_title = "Nouvel équipement"
+    page_subtitle = "Quel type de lecteur souhaitez-vous ajouter ?"
+    breadcrumb = "Équipements · Nouveau"
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        from administration.forms import READER_KIND_META, READER_KIND_TYPES
+        from devices.models import DeviceModel
+
+        # Compteur de DeviceModel par techno → on peut prévenir "0 modèle dispo"
+        counts = {}
+        for kind, types in READER_KIND_TYPES.items():
+            counts[kind] = DeviceModel.objects.filter(
+                type__in=types, is_active=True,
+            ).count()
+        ctx["reader_kinds"] = [
+            {"key": k, **meta, "model_count": counts.get(k, 0)}
+            for k, meta in READER_KIND_META.items()
+        ]
+        return ctx
+
+
+class DeviceReaderCreateView(BaseAdminView):
+    """Étape 2 : formulaire de création pré-filtré sur la technologie choisie."""
+    template_name = "administration/device_reader_form.html"
+    active_nav = "devices"
+    breadcrumb = "Équipements · Nouveau lecteur"
+
+    # On override pour gérer GET (form vide) ET POST (validation) dans une seule View
+    def dispatch(self, request, *args, **kwargs):
+        # garde le contrôle login/RBAC du parent
+        resp = super().dispatch(request, *args, **kwargs)
+        return resp
+
+    def _kind(self):
+        from administration.forms import READER_KIND_META
+        kind = (self.kwargs.get("kind") or "").lower()
+        if kind not in READER_KIND_META:
+            return None
+        return kind
+
+    def get(self, request, *args, **kwargs):
+        from django.shortcuts import redirect
+        kind = self._kind()
+        if not kind:
+            dj_messages.error(request, "Technologie de lecteur inconnue.")
+            return redirect("admin-device-reader-picker")
+        return super().get(request, *args, **kwargs)
+
+    def post(self, request, *args, **kwargs):
+        from django.shortcuts import redirect
+
+        from administration.forms import DeviceForm
+        kind = self._kind()
+        if not kind:
+            dj_messages.error(request, "Technologie de lecteur inconnue.")
+            return redirect("admin-device-reader-picker")
+
+        form = DeviceForm(request.POST, reader_kind=kind)
+        if form.is_valid():
+            obj = form.save(commit=False)
+            # Tenant auto (cf. InjectKaydanTenantMixin)
+            try:
+                from core.services import get_kaydan_tenant
+                obj.tenant = get_kaydan_tenant()
+            except Exception:
+                logger.exception("Impossible d'attacher le tenant Kaydan au device")
+            obj.save()
+            dj_messages.success(
+                request,
+                f"Lecteur {obj.serial_number} enregistré avec succès.",
+            )
+            return redirect("admin-device-detail", pk=obj.pk)
+
+        # Si validation KO → re-render avec erreurs
+        ctx = self.get_context_data(form=form)
+        return self.render_to_response(ctx)
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        from administration.forms import DeviceForm, READER_KIND_META
+
+        kind = self._kind()
+        meta = READER_KIND_META[kind]
+        ctx["reader_kind"] = kind
+        ctx["reader_meta"] = meta
+        ctx["page_title"] = f"Nouveau {meta['label'].lower()}"
+        ctx["page_subtitle"] = meta["hint"]
+
+        if "form" not in ctx:
+            # Pré-remplit depuis les query params (import depuis le scan réseau)
+            initial = {}
+            for key in ("serial_number", "ip_address", "mac_address",
+                        "firmware_version"):
+                v = self.request.GET.get(key)
+                if v:
+                    initial[key] = v
+            ctx["form"] = DeviceForm(reader_kind=kind, initial=initial or None)
+            ctx["imported_from_scan"] = bool(initial)
+        return ctx
+
+
+# ───────────────────────────────────────────────────────────────────────────
 # Caméras IP — liste/config + vue live multi-flux
 # ───────────────────────────────────────────────────────────────────────────
 class CamerasView(BaseAdminView):
@@ -1184,6 +1338,16 @@ class BadgesView(BaseAdminView):
                 paired_badges__status__in=("active", "assigned"),
             ).distinct().order_by("serial_number")[:100]
 
+            # Badges en pool (disponibles, non attribués) — pour le workflow
+            # "Attribuer un badge enrôlé à un employé/ouvrier"
+            ctx["pool_employee_badges"] = Badge.objects.filter(
+                status="available",
+                category__in=("employee_rfid", "worker_rfid"),
+                holder_object_id__isnull=True,
+            ).order_by("uid")[:200]
+            ctx["pool_employee_count"] = ctx["pool_employee_badges"].count() if hasattr(
+                ctx["pool_employee_badges"], "count") else len(ctx["pool_employee_badges"])
+
         except Exception:
             for k in ("visitor_badges", "employee_badges", "worker_badges",
                       "helmets", "unbadged_employees", "unbadged_workers",
@@ -1287,7 +1451,12 @@ class AttendanceView(BaseAdminView):
 
             tab = self.request.GET.get("tab", "punches")
             ctx["tab"] = tab if tab in ("punches", "days", "leaves", "rules",
-                                          "corrections", "rosters", "overtime") else "punches"
+                                          "corrections", "rosters", "overtime",
+                                          "sheet") else "punches"
+
+            # ───── Tab Feuille de pointage : agrégation des AccessEvent ─────
+            if ctx["tab"] == "sheet":
+                ctx.update(self._build_sheet_context())
 
             if ctx["tab"] == "punches":
                 qs = (Punch.objects.select_related("site")
@@ -1336,6 +1505,12 @@ class AttendanceView(BaseAdminView):
                 ctx["page_obj"] = page_obj
                 ctx["overtime_calcs"] = page_qs
 
+            # Compte pour le badge sur l'onglet "sheet"
+            from access_control.models import AccessEvent
+            ctx["events_today_count"] = AccessEvent.objects.filter(
+                timestamp__date=today,
+            ).count()
+
             ctx["punches_today"] = Punch.objects.filter(timestamp__date=today).count()
             ctx["punches_week"] = Punch.objects.filter(timestamp__date__gte=week_ago).count()
             ctx["days_today"] = AttendanceDay.objects.filter(date=today).count()
@@ -1350,6 +1525,139 @@ class AttendanceView(BaseAdminView):
             ctx["page_obj"] = None
             ctx["tab"] = "punches"
         return ctx
+
+    def _build_sheet_context(self):
+        """Agrège les AccessEvent par employé/ouvrier et par jour.
+
+        Filtres GET acceptés :
+          - period : "day" (default today), "week", "month", "custom"
+          - start, end : dates ISO si period=custom
+          - holder_kind : "" / "employee" / "worker"
+          - site : id
+          - q : recherche par nom/matricule
+        """
+        from datetime import date as _date, datetime, timedelta
+
+        from django.contrib.contenttypes.models import ContentType
+        from django.db.models import Max, Min
+        from django.utils import timezone
+
+        from access_control.models import AccessEvent
+        from employees.models import Employee
+        from ouvriers.models import Worker
+        from sites.models import Site
+
+        req = self.request
+        period = req.GET.get("period", "day")
+        site_id = req.GET.get("site") or ""
+        holder_kind = req.GET.get("holder_kind") or ""
+        q = (req.GET.get("q") or "").strip()
+
+        now = timezone.now()
+        today = now.date()
+
+        # Période
+        if period == "week":
+            start_date = today - timedelta(days=6)
+            end_date = today
+        elif period == "month":
+            start_date = today - timedelta(days=29)
+            end_date = today
+        elif period == "custom":
+            try:
+                start_date = datetime.fromisoformat(req.GET.get("start", "")).date()
+            except Exception:
+                start_date = today
+            try:
+                end_date = datetime.fromisoformat(req.GET.get("end", "")).date()
+            except Exception:
+                end_date = today
+            if end_date < start_date:
+                start_date, end_date = end_date, start_date
+        else:    # day
+            start_date = today
+            end_date = today
+
+        # Query base AccessEvent
+        qs = AccessEvent.objects.filter(
+            timestamp__date__gte=start_date,
+            timestamp__date__lte=end_date,
+        )
+        if site_id:
+            qs = qs.filter(site_id=site_id)
+        if holder_kind:
+            qs = qs.filter(holder_kind=holder_kind)
+
+        # Agrégation : pour chaque (holder, date) → first_in, last_out
+        # On utilise des values() + GROUP BY puis on enrichit
+        from django.db.models.functions import TruncDate
+        agg = (qs
+               .exclude(holder_object_id__isnull=True)
+               .annotate(day=TruncDate("timestamp"))
+               .values("holder_kind", "holder_object_id", "day", "site")
+               .annotate(first_in=Min("timestamp"), last_out=Max("timestamp"))
+               .order_by("-day", "holder_kind", "holder_object_id"))
+
+        # Résolve les holders (Employee/Worker) en bulk
+        emp_ids = {r["holder_object_id"] for r in agg if r["holder_kind"] == "employee"}
+        worker_ids = {r["holder_object_id"] for r in agg if r["holder_kind"] == "worker"}
+        emp_map = {e.pk: e for e in Employee.objects.filter(pk__in=emp_ids)}
+        worker_map = {w.pk: w for w in Worker.objects.filter(pk__in=worker_ids)}
+
+        rows = []
+        for r in agg:
+            holder = (emp_map if r["holder_kind"] == "employee" else worker_map).get(
+                r["holder_object_id"])
+            if not holder:
+                continue
+            full_name = f"{holder.first_name} {holder.last_name}".strip()
+            if q and q.lower() not in (
+                holder.matricule.lower() + " " + full_name.lower()
+            ):
+                continue
+            first = r["first_in"]
+            last = r["last_out"]
+            duration_min = 0
+            if first and last and last > first:
+                duration_min = int((last - first).total_seconds() // 60)
+            rows.append({
+                "date": r["day"],
+                "holder_kind": r["holder_kind"],
+                "holder": holder,
+                "matricule": holder.matricule,
+                "name": full_name,
+                "first_in": first,
+                "last_out": last,
+                "duration_min": duration_min,
+                "duration_hms": self._fmt_duration(duration_min),
+                "site_id": r["site"],
+            })
+
+        # Stats
+        total_persons = len({(r["holder_kind"], r["holder"].pk) for r in rows})
+        total_days = len({r["date"] for r in rows})
+        total_minutes = sum(r["duration_min"] for r in rows)
+
+        return {
+            "sheet_rows": rows,
+            "sheet_period": period,
+            "sheet_start": start_date.isoformat(),
+            "sheet_end": end_date.isoformat(),
+            "sheet_site_id": site_id,
+            "sheet_holder_kind": holder_kind,
+            "sheet_q": q,
+            "sheet_sites": list(Site.objects.order_by("name").only("id", "name")),
+            "sheet_total_persons": total_persons,
+            "sheet_total_days": total_days,
+            "sheet_total_hours": round(total_minutes / 60.0, 1),
+        }
+
+    @staticmethod
+    def _fmt_duration(minutes: int) -> str:
+        if not minutes:
+            return "—"
+        h, m = divmod(int(minutes), 60)
+        return f"{h:02d}h{m:02d}"
 
 
 class AntifraudView(BaseAdminView):
@@ -2749,12 +3057,14 @@ class KshieldLoginView(View):
     template_name = "administration/login.html"
 
     def get(self, request):
+        from django.conf import settings
         from django.shortcuts import render
         if request.user.is_authenticated:
             from django.shortcuts import redirect
             return redirect(request.GET.get("next") or "admin-dashboard")
         return render(request, self.template_name, {
             "next": request.GET.get("next", ""),
+            "sso_enabled": getattr(settings, "SSO_ENABLED", False),
         })
 
     def post(self, request):
@@ -2791,9 +3101,11 @@ class KshieldLoginView(View):
                 logger.debug("Redirect next_url=%r invalide, fallback dashboard", next_url, exc_info=True)
                 return redirect("admin-dashboard")
 
+        from django.conf import settings
         return render(request, self.template_name, {
             "error": "Email ou mot de passe invalide.",
             "email": email, "next": next_url,
+            "sso_enabled": getattr(settings, "SSO_ENABLED", False),
         })
 
 
