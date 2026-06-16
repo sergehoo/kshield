@@ -7,15 +7,17 @@
 # Prérequis serveur :
 #   - Traefik v2/v3 déjà installé sur l'hôte, exposé en 80/443
 #     (NE PAS redéployer Traefik ici — on s'y raccroche via le réseau externe)
-#   - Réseau Docker externe "proxy" déjà créé :
-#       docker network create proxy
-#   - Certresolver Let's Encrypt nommé "lets" déjà configuré dans Traefik
-#   - DNS A/AAAA pointant vers le serveur pour :
-#       api.shield.datarium-dev.com        (API Django + admin)
-#       ws.shield.datarium-dev.com         (WebSockets Channels)
-#       minio.shield.datarium-dev.com      (MinIO API S3)
-#       minio-console.shield.datarium-dev.com (console MinIO)
-#       adminer.shield.datarium-dev.com    (admin DB, protégé basic auth)
+#   - Réseau Docker externe configurable via PROXY_NETWORK (default = dokploy-network)
+#       docker network create proxy           (standalone Traefik)
+#       ou Dokploy crée automatiquement dokploy-network
+#   - Certresolver Let's Encrypt nommé via CERT_RESOLVER (default = lets)
+#   - DNS A/AAAA pointant vers le serveur pour BASE_DOMAIN (ex. kaydanshield.com) :
+#       <BASE_DOMAIN>                          (front + redirect www)
+#       api.<BASE_DOMAIN>                      (API Django + admin)
+#       ws.<BASE_DOMAIN>                       (WebSockets Channels)
+#       minio.<BASE_DOMAIN>                    (MinIO API S3)
+#       minio-console.<BASE_DOMAIN>            (console MinIO)
+#       adminer.<BASE_DOMAIN>                  (admin DB, protégé basic auth)
 #
 # Lancement :
 #   docker compose --env-file .env up -d --build
@@ -137,7 +139,7 @@ services:
       TZ: Africa/Abidjan
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-kaydan_minio}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
-      MINIO_BROWSER_REDIRECT_URL: https://minio-console.shield.datarium-dev.com
+      MINIO_BROWSER_REDIRECT_URL: ${MINIO_BROWSER_REDIRECT_URL:-https://minio-console.kaydanshield.com}
     command: server /data --console-address ":9001"
     volumes:
       - kshield_minio_data:/data
@@ -152,18 +154,18 @@ services:
       - traefik.docker.network=proxy
 
       # API S3 (port 9000)
-      - traefik.http.routers.kshield-minio.rule=Host(`minio.shield.datarium-dev.com`)
+      - traefik.http.routers.kshield-minio.rule=Host(`minio.${BASE_DOMAIN:-kaydanshield.com}`)
       - traefik.http.routers.kshield-minio.entrypoints=websecure
       - traefik.http.routers.kshield-minio.tls=true
-      - traefik.http.routers.kshield-minio.tls.certresolver=lets
+      - traefik.http.routers.kshield-minio.tls.certresolver=${CERT_RESOLVER:-letsencrypt}
       - traefik.http.routers.kshield-minio.service=kshield-minio-svc
       - traefik.http.services.kshield-minio-svc.loadbalancer.server.port=9000
 
       # Console (port 9001)
-      - traefik.http.routers.kshield-minio-console.rule=Host(`minio-console.shield.datarium-dev.com`)
+      - traefik.http.routers.kshield-minio-console.rule=Host(`minio-console.${BASE_DOMAIN:-kaydanshield.com}`)
       - traefik.http.routers.kshield-minio-console.entrypoints=websecure
       - traefik.http.routers.kshield-minio-console.tls=true
-      - traefik.http.routers.kshield-minio-console.tls.certresolver=lets
+      - traefik.http.routers.kshield-minio-console.tls.certresolver=${CERT_RESOLVER:-letsencrypt}
       - traefik.http.routers.kshield-minio-console.service=kshield-minio-console-svc
       - traefik.http.services.kshield-minio-console-svc.loadbalancer.server.port=9001
     logging: *logging_rotated
@@ -204,7 +206,7 @@ services:
     healthcheck:
       test:
         - CMD-SHELL
-        - "code=$$(curl -s -o /dev/null -w '%{http_code}' -H 'X-Forwarded-Proto: https' -H 'Host: api.shield.datarium-dev.com' http://127.0.0.1:8000/api/v1/employees/face/status/); [ \"$$code\" -lt 500 ] && [ \"$$code\" -ge 100 ] || exit 1"
+        - "code=$$(curl -s -o /dev/null -w '%{http_code}' -H 'X-Forwarded-Proto: https' -H 'Host: api.${BASE_DOMAIN:-kaydanshield.com}' http://127.0.0.1:8000/api/v1/employees/face/status/); [ \"$$code\" -lt 500 ] && [ \"$$code\" -ge 100 ] || exit 1"
       interval: 30s
       timeout: 10s
       retries: 5
@@ -213,10 +215,10 @@ services:
       - traefik.enable=true
       - traefik.docker.network=proxy
 
-      - traefik.http.routers.kshield-api.rule=Host(`shield.datarium-dev.com`)
+      - traefik.http.routers.kshield-api.rule=Host(`${BASE_DOMAIN:-kaydanshield.com}`)
       - traefik.http.routers.kshield-api.entrypoints=websecure
       - traefik.http.routers.kshield-api.tls=true
-      - traefik.http.routers.kshield-api.tls.certresolver=lets
+      - traefik.http.routers.kshield-api.tls.certresolver=${CERT_RESOLVER:-letsencrypt}
       - traefik.http.routers.kshield-api.service=kshield-api-svc
 
       - traefik.http.services.kshield-api-svc.loadbalancer.server.port=8000
@@ -269,10 +271,10 @@ services:
       - traefik.enable=true
       - traefik.docker.network=proxy
 
-      - traefik.http.routers.kshield-ws.rule=Host(`ws.shield.datarium-dev.com`)
+      - traefik.http.routers.kshield-ws.rule=Host(`ws.${BASE_DOMAIN:-kaydanshield.com}`)
       - traefik.http.routers.kshield-ws.entrypoints=websecure
       - traefik.http.routers.kshield-ws.tls=true
-      - traefik.http.routers.kshield-ws.tls.certresolver=lets
+      - traefik.http.routers.kshield-ws.tls.certresolver=${CERT_RESOLVER:-letsencrypt}
       - traefik.http.routers.kshield-ws.service=kshield-ws-svc
 
       - traefik.http.services.kshield-ws-svc.loadbalancer.server.port=8001
@@ -352,10 +354,10 @@ services:
       - traefik.enable=true
       - traefik.docker.network=proxy
 
-      - traefik.http.routers.kshield-adminer.rule=Host(`adminer.shield.datarium-dev.com`)
+      - traefik.http.routers.kshield-adminer.rule=Host(`adminer.${BASE_DOMAIN:-kaydanshield.com}`)
       - traefik.http.routers.kshield-adminer.entrypoints=websecure
       - traefik.http.routers.kshield-adminer.tls=true
-      - traefik.http.routers.kshield-adminer.tls.certresolver=lets
+      - traefik.http.routers.kshield-adminer.tls.certresolver=${CERT_RESOLVER:-letsencrypt}
       - traefik.http.routers.kshield-adminer.service=kshield-adminer-svc
 
       - traefik.http.services.kshield-adminer-svc.loadbalancer.server.port=8080
