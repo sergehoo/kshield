@@ -591,6 +591,145 @@ class ZkSyncNowView(APIView):
         return Response(result)
 
 
+class BleGatewayIngestView(APIView):
+    """Endpoint d'ingestion des pings BLE depuis une gateway (Aruba, Estimote,
+    Kontakt.io, Minew) ou directement depuis l'app mobile contrôleur.
+
+    Reçoit la liste des beacons détectés (MOKO H7 Lite typiquement) avec leur
+    RSSI. Pour chaque ping :
+      1. Lookup ``Helmet`` par ``ble_beacon_uid`` (MAC ou UUID)
+      2. Crée un ``BLEPresencePing``
+      3. Si le casque est actif et associé à un worker → met à jour
+         ``helmet.last_seen_at``
+
+    URL : POST /api/v1/devices/ble-gateway/<gateway_serial>/ingest/
+
+    Body :
+        {
+          "beacons": [
+            {
+              "mac": "AA:BB:CC:11:22:33",     // ou "uuid": "...", "major": 1, "minor": 42
+              "rssi": -67,
+              "timestamp": "2026-06-16T15:30:00Z",  // optionnel
+              "battery": 88                          // optionnel %
+            },
+            ...
+          ],
+          "site_id": 1                  // optionnel — sinon prend le site de la gateway
+        }
+
+    Réponse : {"ingested": N, "matched": M, "unknown": K}
+
+    Auth : ouvert (les gateways ne signent pas). Sécurité par le fait que
+    le gateway_serial doit matcher un Device enregistré.
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request, gateway_serial=None):
+        from datetime import datetime
+
+        from django.utils import timezone
+
+        from attendance.models import BLEPresencePing
+
+        from .models import Device, Helmet
+
+        # 1) Identifier la gateway
+        if not gateway_serial:
+            return Response({"error": "gateway_serial requis"}, status=400)
+        gateway = Device.objects.filter(serial_number=gateway_serial).first()
+        if not gateway:
+            return Response(
+                {"error": f"Gateway inconnue : {gateway_serial}"},
+                status=404,
+            )
+
+        body = request.data or {}
+        beacons = body.get("beacons") or []
+        if not isinstance(beacons, list):
+            return Response({"error": "beacons doit être une liste"}, status=400)
+
+        site = gateway.site
+        if body.get("site_id"):
+            from sites.models import Site
+            site = Site.objects.filter(pk=body["site_id"]).first() or site
+
+        ingested = 0; matched = 0; unknown = 0
+        unknown_uids = []
+
+        for b in beacons[:1000]:    # cap soft
+            # UID : on accepte MAC ou UUID
+            uid = (b.get("mac") or b.get("uuid") or "").strip().upper()
+            if not uid:
+                continue
+
+            rssi = b.get("rssi")
+            try: rssi = int(rssi) if rssi is not None else None
+            except (TypeError, ValueError): rssi = None
+
+            ts = b.get("timestamp")
+            if isinstance(ts, str):
+                try:
+                    ts = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                except Exception:
+                    ts = timezone.now()
+            elif ts is None:
+                ts = timezone.now()
+            if hasattr(ts, "tzinfo") and ts.tzinfo is None:
+                ts = timezone.make_aware(ts, timezone.get_current_timezone())
+
+            # Lookup Helmet
+            helmet = (Helmet.objects
+                      .filter(tenant=gateway.tenant, ble_beacon_uid=uid)
+                      .first())
+            if not helmet:
+                unknown += 1
+                if len(unknown_uids) < 10:
+                    unknown_uids.append(uid)
+                continue
+
+            # Crée le ping
+            try:
+                BLEPresencePing.objects.create(
+                    helmet=helmet,
+                    zone=getattr(gateway, "zone", None),
+                    timestamp=ts,
+                    rssi=rssi,
+                    is_immobile=bool(b.get("is_immobile", False)),
+                    accelerometer_payload=b.get("accel") or {},
+                )
+                ingested += 1
+                matched += 1
+            except Exception:
+                logger.exception("BLE ping create failed for %s", uid)
+
+            # Met à jour last_seen + battery
+            update_fields = ["last_seen_at"]
+            helmet.last_seen_at = ts
+            battery = b.get("battery")
+            if battery is not None:
+                try:
+                    helmet.last_battery_level = int(battery)
+                    update_fields.append("last_battery_level")
+                except (TypeError, ValueError):
+                    pass
+            try:
+                helmet.save(update_fields=update_fields)
+            except Exception:
+                logger.exception("Helmet save failed %s", helmet.pk)
+
+        # Heartbeat gateway
+        gateway.last_heartbeat_at = timezone.now()
+        gateway.save(update_fields=["last_heartbeat_at"])
+
+        return Response({
+            "ingested": ingested,
+            "matched": matched,
+            "unknown": unknown,
+            "unknown_uids_sample": unknown_uids,
+        })
+
+
 class ZkAdmsWebhookView(APIView):
     """Endpoint ADMS / push HTTP des terminaux ZKTeco.
 

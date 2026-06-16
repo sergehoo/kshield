@@ -47,6 +47,10 @@ urlpatterns = [
     # On déplace l'admin Django vers /django-admin/ (path obscur réservé aux DBA).
     # /admin/ sera capturé par administration.urls et redirigera vers la home.
     path("django-admin/", admin.site.urls),
+    # Endpoints healthcheck publics — pas d'auth, pas de log spam
+    # (utilisés par Docker HEALTHCHECK et Kubernetes liveness/readiness)
+    path("healthz", __import__("core.views", fromlist=["healthz"]).healthz, name="healthz"),
+    path("readyz",  __import__("core.views", fromlist=["readyz"]).readyz,   name="readyz"),
     # Endpoints directs badges (servis hors API)
     path("badges/<int:pk>/pdf/",       BadgePDFDownloadView.as_view(), name="badge-pdf"),
     path("badges/<int:pk>/thumbnail/", BadgeThumbnailView.as_view(),   name="badge-thumbnail"),

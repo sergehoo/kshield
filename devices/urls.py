@@ -13,6 +13,7 @@ from .views import (
     HeartbeatIngestView, OTAFirmwareMetadataView, OTAUpdateViewSet,
     ReaderDiscoverView,
     BadgeBulkEnrollView, HelmetBulkEnrollView, ScanInboxView,
+    BleGatewayIngestView,
     DeviceConnectivityTestView,
     ZkSyncNowView, ZkSyncAllView, ZkPushUsersNowView,
     ZkEnrollSessionView, ZkImportUsersView, ZkPushEmployeeView,
@@ -54,6 +55,8 @@ urlpatterns = [
     path("helmets/bulk-enroll/",                     HelmetBulkEnrollView.as_view(),    name="helmet-bulk-enroll"),
     # Inbox éphémère pour scans live (cache Redis, TTL 10 min)
     path("scan/inbox/",                              ScanInboxView.as_view(),           name="scan-inbox"),
+    # Ingestion BLE depuis gateway site ou app mobile (MOKO H7 Lite & co)
+    path("ble-gateway/<str:gateway_serial>/ingest/", BleGatewayIngestView.as_view(),    name="ble-gateway-ingest"),
     # Test de connectivité d'un équipement (TCP + HTTP + LLRP + ZK)
     # NB : inclus sous /api/v1/devices/ — pas de double prefix.
     path("<int:pk>/test-connection/",                DeviceConnectivityTestView.as_view(), name="device-test-connection"),

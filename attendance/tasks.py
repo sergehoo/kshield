@@ -289,3 +289,178 @@ def aggregate_punches(days_back: int = 2) -> dict:
             "days_updated": days_updated,
             "errors": errors,
             "days_back": days_back}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Calcul heures sup hebdomadaire
+# ─────────────────────────────────────────────────────────────────────────────
+@shared_task(name="attendance.compute_overtime_weekly",
+             autoretry_for=(Exception,),
+             retry_kwargs={"max_retries": 2, "countdown": 120})
+def compute_overtime_weekly(week_offset: int = -1) -> dict:
+    """Calcule les heures supplémentaires de la semaine.
+
+    Args:
+        week_offset: -1 (default) = semaine précédente. 0 = semaine en cours
+            (utile pour preview, mais incomplet).
+
+    Algorithme par employé :
+      1. Somme des `AttendanceDay.duration_minutes` de la semaine
+      2. Récup `OvertimeRule` actif pour la company de l'employé
+      3. Si total ≤ threshold → 100% base
+      4. Heures au-delà du threshold + 8 → +25% (rate_125)
+      5. Heures encore au-delà → +50% (rate_150)
+      6. Heures de nuit (22h–6h) → +50% (night_rate)
+
+    Crée/MAJ ``OvertimeCalculation`` (unique par (employee, week_start)).
+    """
+    from datetime import time as _t
+
+    from attendance.models import (AttendanceDay, OvertimeCalculation,
+                                    OvertimeRule, Punch)
+    from employees.models import Employee
+    from ouvriers.models import Worker
+
+    today = timezone.localdate()
+    monday_this = today - timedelta(days=today.weekday())
+    week_start = monday_this + timedelta(weeks=week_offset)
+    week_end = week_start + timedelta(days=6)
+
+    calc_created = 0
+    calc_updated = 0
+    errors = []
+
+    # Récup default rule
+    default_rule = OvertimeRule.objects.filter(is_active=True).order_by("pk").first()
+    if not default_rule:
+        return {"error": "Aucune OvertimeRule active", "week_start": str(week_start)}
+
+    # Pour chaque (kind, holder_id) ayant au moins 1 AttendanceDay sur la semaine
+    days_qs = (AttendanceDay.objects
+               .filter(date__gte=week_start, date__lte=week_end,
+                       status__in=("present", "partial"))
+               .values("holder_kind", "holder_object_id")
+               .distinct())
+
+    for d in days_qs:
+        holder_kind = d["holder_kind"]
+        holder_id = d["holder_object_id"]
+        try:
+            if holder_kind == "employee":
+                holder = Employee.objects.filter(pk=holder_id).first()
+            else:
+                holder = Worker.objects.filter(pk=holder_id).first()
+            if not holder:
+                continue
+
+            # Récup rule spécifique à la company si dispo
+            rule = default_rule
+            company = getattr(holder, "company", None)
+            if company:
+                custom = OvertimeRule.objects.filter(
+                    company=company, is_active=True,
+                ).first()
+                if custom:
+                    rule = custom
+
+            # Total minutes de la semaine
+            week_days = AttendanceDay.objects.filter(
+                holder_kind=holder_kind, holder_object_id=holder_id,
+                date__gte=week_start, date__lte=week_end,
+            )
+            total_min = sum(ad.duration_minutes for ad in week_days)
+            threshold_min = int(float(rule.weekly_threshold_hours) * 60)
+
+            # Heures sup
+            ot_total_min = max(0, total_min - threshold_min)
+            # Tranche 125% : 8 premières heures sup (= 480 min)
+            ot_125_min = min(ot_total_min, 8 * 60)
+            ot_150_min = ot_total_min - ot_125_min
+            base_min = min(total_min, threshold_min)
+
+            # Heures de nuit — agrégat sur les Punch (22h → 06h)
+            night_min = _compute_night_minutes(
+                holder_kind, holder_id, week_start, week_end,
+            )
+
+            obj, created = OvertimeCalculation.objects.update_or_create(
+                employee=holder if holder_kind == "employee" else None,
+                worker=holder if holder_kind == "worker" else None,
+                week_start=week_start,
+                defaults={
+                    "base_minutes": base_min,
+                    "overtime_125_minutes": ot_125_min,
+                    "overtime_150_minutes": ot_150_min,
+                    "night_minutes": night_min,
+                    "payload": {
+                        "rule": str(rule.pk),
+                        "rule_name": rule.name,
+                        "threshold_hours": float(rule.weekly_threshold_hours),
+                        "rate_125": float(rule.rate_125),
+                        "rate_150": float(rule.rate_150),
+                        "night_rate": float(rule.night_rate),
+                        "total_minutes_worked": total_min,
+                    },
+                },
+            )
+            if created: calc_created += 1
+            else:       calc_updated += 1
+        except Exception as exc:
+            logger.exception("OT calc for %s/%s failed", holder_kind, holder_id)
+            errors.append({"holder_kind": holder_kind, "id": holder_id,
+                            "error": str(exc)[:200]})
+
+    return {
+        "week_start": str(week_start),
+        "calc_created": calc_created,
+        "calc_updated": calc_updated,
+        "errors": errors,
+    }
+
+
+def _compute_night_minutes(holder_kind, holder_id, week_start, week_end):
+    """Calcule les minutes travaillées entre 22h et 06h sur la semaine."""
+    from datetime import time as _t
+
+    from attendance.models import Punch
+
+    punches = (Punch.objects.filter(
+        holder_kind=holder_kind, holder_object_id=holder_id,
+        timestamp__date__gte=week_start, timestamp__date__lte=week_end,
+    ).order_by("timestamp"))
+
+    night_min = 0
+    in_ts = None
+    for p in punches:
+        if p.type in ("morning_in", "break_in"):
+            in_ts = p.timestamp
+        elif p.type in ("evening_out", "break_out") and in_ts:
+            # Calcule l'intersection [in_ts, p.timestamp] avec les fenêtres
+            # de nuit [22h, 06h+1] de chaque jour traversé
+            night_min += _intersect_night(in_ts, p.timestamp)
+            in_ts = None
+    return night_min
+
+
+def _intersect_night(start, end):
+    """Renvoie les minutes entre start et end qui tombent dans 22h–06h."""
+    from datetime import time as _t
+
+    if end <= start:
+        return 0
+    total = 0
+    cur = start
+    while cur < end:
+        # Fenêtre de nuit du jour courant : 22:00 → 06:00 lendemain
+        day = cur.date()
+        night_start = cur.replace(hour=22, minute=0, second=0, microsecond=0)
+        night_end = (cur.replace(hour=6, minute=0, second=0, microsecond=0)
+                     + timedelta(days=1))
+        # Intersection [cur, end] ∩ [night_start, night_end]
+        a = max(cur, night_start)
+        b = min(end, night_end)
+        if b > a:
+            total += int((b - a).total_seconds() // 60)
+        # Passe au jour suivant
+        cur = cur.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+    return total

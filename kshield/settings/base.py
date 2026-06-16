@@ -51,6 +51,7 @@ THIRD_PARTY_APPS = [
     "django_celery_beat",
     "django_celery_results",
     "django_prometheus",   # exporter /metrics + métriques DB/cache auto
+    "axes",                # rate-limit / lockout sur les tentatives auth
     # SSO Keycloak — chargé conditionnellement plus bas si SSO_ENABLED
 ]
 
@@ -65,7 +66,7 @@ LOCAL_APPS = [
     "access_control",
     "attendance",
     "antifraud",
-    "notifications",
+    "notifications.apps.NotificationsConfig",
     "audit",
     "reports",
     "mobile_sync",
@@ -96,6 +97,9 @@ MIDDLEWARE = [
     "core.middleware.SecurityHeadersMiddleware",  # CSP + Permissions-Policy + COOP/CORP
     "core.middleware.TenantContextMiddleware",
     "audit.middleware.AuditContextMiddleware",
+    # django-axes : enregistre IP + UA + email de chaque tentative ; lockout
+    # automatique au-delà du seuil. DOIT être tout en bas (après auth).
+    "axes.middleware.AxesMiddleware",
     "django_prometheus.middleware.PrometheusAfterMiddleware",   # fin monitor
 ]
 
@@ -262,6 +266,22 @@ CELERY_BEAT_SCHEDULE = {
     "attendance_aggregate_punches": {
         "task": "attendance.aggregate_punches",
         "schedule": 300.0,
+    },
+    # Calcul des heures sup — chaque lundi 03:00 (sur la semaine précédente)
+    "attendance_overtime_weekly": {
+        "task": "attendance.compute_overtime_weekly",
+        "schedule": _crontab(hour=3, minute=0, day_of_week="monday"),
+    },
+    # Dispatch des notifications en file — toutes les 60s
+    "notifications_dispatch_queued": {
+        "task": "notifications.dispatch_queued",
+        "schedule": 60.0,
+    },
+    # Polling des portiques UHF (FOCUS ST-G8 & co) — toutes les 30s avec
+    # inventaire LLRP de 5s. À adapter selon trafic attendu sur les portiques.
+    "devices_poll_uhf_gates": {
+        "task": "devices.poll_uhf_gates",
+        "schedule": 30.0,
     },
 }
 
@@ -495,11 +515,53 @@ OIDC_USERNAME_ALGO = "sso.utils.extract_user_claims"  # ignoré, fallback defaul
 LOGIN_REDIRECT_URL = "/"
 LOGOUT_REDIRECT_URL = "/auth/login/"
 
-# Authentication backends — ajoute le backend OIDC quand SSO_ENABLED
+# Authentication backends — ajoute le backend OIDC quand SSO_ENABLED.
+# django-axes EN PREMIER pour intercepter les tentatives avant tout autre check.
 AUTHENTICATION_BACKENDS = [
+    "axes.backends.AxesBackend",
     "django.contrib.auth.backends.ModelBackend",  # fallback local toujours dispo
 ]
 if SSO_ENABLED:
-    AUTHENTICATION_BACKENDS.insert(0, "sso.backends.KaydanOIDCBackend")
+    # Le backend OIDC vient APRÈS Axes mais AVANT ModelBackend
+    AUTHENTICATION_BACKENDS.insert(1, "sso.backends.KaydanOIDCBackend")
     THIRD_PARTY_APPS.append("mozilla_django_oidc")
     INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
+
+# ─────────────────────────────────────────────────────────────────────────────
+# django-axes — protection brute-force sur les login
+# ─────────────────────────────────────────────────────────────────────────────
+AXES_ENABLED = config("AXES_ENABLED", default=True, cast=bool)
+# Nombre max de tentatives échouées avant lockout
+AXES_FAILURE_LIMIT = config("AXES_FAILURE_LIMIT", default=5, cast=int)
+# Durée du lockout (en heures)
+AXES_COOLOFF_TIME = config("AXES_COOLOFF_HOURS", default=1, cast=int)
+# Lockout par combinaison IP + username (plus précis que IP seule)
+AXES_LOCKOUT_PARAMETERS = ["ip_address", "username"]
+# Reset le compteur sur succès — sinon il s'accumule indéfiniment
+AXES_RESET_ON_SUCCESS = True
+# Templates personnalisés (sinon JSON brut côté API)
+AXES_LOCKOUT_TEMPLATE = None    # on retombe sur le HttpResponseForbidden par défaut
+# Pour les requêtes derrière Traefik : récupérer la VRAIE IP via X-Forwarded-For
+AXES_IPWARE_PROXY_COUNT = config("AXES_PROXY_COUNT", default=1, cast=int)
+AXES_IPWARE_META_PRECEDENCE_ORDER = [
+    "HTTP_X_FORWARDED_FOR",
+    "REMOTE_ADDR",
+]
+# Logger explicite pour le SIEM
+AXES_VERBOSE = True
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Notifications auto sur events
+# ─────────────────────────────────────────────────────────────────────────────
+# Master switch — coupe toutes les notifs déclenchées par signaux (refus carte,
+# retard, fraude). Utile en dev pour ne pas spammer les boîtes mail.
+NOTIFICATIONS_AUTO_ENABLED = config(
+    "NOTIFICATIONS_AUTO_ENABLED", default=True, cast=bool,
+)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Multi-tenant
+# ─────────────────────────────────────────────────────────────────────────────
+# Base domain utilisé pour détecter le tenant via sous-domaine :
+# <tenant_code>.kaydanshield.com → Tenant.objects.get(code=tenant_code)
+TENANT_BASE_DOMAIN = config("TENANT_BASE_DOMAIN", default="kaydanshield.com")

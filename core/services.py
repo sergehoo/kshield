@@ -52,5 +52,45 @@ class KaydanTenantService:
 
 
 def get_kaydan_tenant():
-    """Raccourci fonctionnel — équivalent de `KaydanTenantService.get()`."""
+    """Raccourci fonctionnel — équivalent de `KaydanTenantService.get()`.
+
+    ⚠️  Legacy : utilise ``get_current_tenant()`` à la place pour le code
+    multi-tenant. ``get_kaydan_tenant()`` reste pour les usages où aucun
+    request n'est disponible (Celery tasks, management commands).
+    """
     return KaydanTenantService.get()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Tenant courant (multi-tenant aware)
+# ─────────────────────────────────────────────────────────────────────────────
+import threading
+
+_local = threading.local()
+
+
+def set_current_tenant(tenant):
+    """Set le tenant courant pour le thread (appelé par TenantContextMiddleware)."""
+    _local.tenant = tenant
+
+
+def get_current_tenant():
+    """Renvoie le tenant scopé au request en cours, fallback sur Kaydan.
+
+    Usage prioritaire dans tout le code applicatif :
+        from core.services import get_current_tenant
+        tenant = get_current_tenant()
+
+    Dans les Celery tasks : passer explicitement ``tenant_id`` en argument
+    et faire ``Tenant.objects.get(pk=tenant_id)``, car le thread-local
+    n'est pas peuplé hors d'un cycle requête HTTP.
+    """
+    t = getattr(_local, "tenant", None)
+    if t is not None:
+        return t
+    return get_kaydan_tenant()
+
+
+def clear_current_tenant():
+    """Réinitialise le tenant (fin de request)."""
+    _local.tenant = None

@@ -208,6 +208,124 @@ def _fallback_site(device):
     return Site.objects.filter(tenant=device.tenant).first()
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Portiques RFID UHF (FOCUS ST-G8 et autres compatibles LLRP)
+# ─────────────────────────────────────────────────────────────────────────────
+def _uhf_gates_qs():
+    """Queryset des portiques UHF actifs avec IP."""
+    from .models import Device
+    return (Device.objects
+            .select_related("model", "site", "checkpoint")
+            .filter(status="active", ip_address__isnull=False,
+                    model__type="portique"))
+
+
+@shared_task(name="devices.poll_uhf_gates",
+             autoretry_for=(Exception,),
+             retry_kwargs={"max_retries": 1, "countdown": 30})
+def poll_uhf_gates(device_id: int | None = None,
+                   duration_seconds: int = 5) -> dict:
+    """Pour chaque portique UHF actif, lance un inventaire LLRP de N secondes
+    et ingère chaque EPC lu comme un AccessEvent.
+
+    Schedule typique : toutes les 30s (lance un poll de 5s) — laisse 25s de
+    fenêtre vide. À adapter selon le débit attendu.
+    """
+    from access_control.models import AccessEvent
+
+    from .models import Badge, Device, Helmet
+    from .uhf_gate import UhfGateClient
+
+    qs = _uhf_gates_qs()
+    if device_id:
+        qs = qs.filter(pk=device_id)
+
+    polled = 0; events_created = 0; helmets_pinged = 0
+    errors = []
+
+    for device in qs:
+        try:
+            with UhfGateClient(device.ip_address, timeout=4).open() as gate:
+                result = gate.inventory(duration_seconds=duration_seconds)
+        except Exception as exc:
+            errors.append({"device_id": device.pk, "error": str(exc)[:200]})
+            continue
+
+        polled += 1
+        epcs = result.get("epcs") or {}
+        if not epcs:
+            continue
+
+        # Heartbeat OK
+        device.last_heartbeat_at = timezone.now()
+        device.save(update_fields=["last_heartbeat_at"])
+
+        for epc, count in epcs.items():
+            # 1) Lookup Badge (UHF)
+            badge = Badge.objects.filter(
+                tenant=device.tenant, uid=epc,
+            ).first()
+            holder_kind = "unknown"; holder_ct = None; holder_oid = None
+            if badge and badge.holder_object_id:
+                holder_kind = badge.holder_kind or "unknown"
+                holder_ct = badge.holder_content_type
+                holder_oid = badge.holder_object_id
+
+            decision = "granted" if badge else "denied"
+            denial = "" if badge else f"Tag UHF inconnu : {epc}"
+
+            # Direction via checkpoint
+            class _Att: punch = 0
+            direction = _resolve_direction(device=device, badge=badge, att=_Att())
+
+            try:
+                AccessEvent.objects.create(
+                    tenant=device.tenant,
+                    timestamp=timezone.now(),
+                    site=device.site or _fallback_site(device),
+                    zone=getattr(device, "zone", None),
+                    checkpoint=getattr(device, "checkpoint", None),
+                    direction=direction,
+                    method="uhf",
+                    decision=decision,
+                    denial_reason=denial,
+                    device=device,
+                    badge_uid=epc,
+                    holder_kind=holder_kind,
+                    holder_content_type=holder_ct,
+                    holder_object_id=holder_oid,
+                    raw_payload={
+                        "source": "uhf_gate_pull",
+                        "epc": epc,
+                        "read_count": count,
+                        "duration_s": duration_seconds,
+                    },
+                )
+                events_created += 1
+            except Exception as exc:
+                errors.append({"device_id": device.pk, "epc": epc,
+                                 "error": str(exc)[:200]})
+
+            # 2) Lookup Helmet (UHF tag uid)
+            helmet = Helmet.objects.filter(
+                tenant=device.tenant, uhf_tag_uid=epc,
+            ).first()
+            if helmet:
+                helmet.last_seen_at = timezone.now()
+                try:
+                    helmet.save(update_fields=["last_seen_at"])
+                    helmets_pinged += 1
+                except Exception:
+                    logger.exception("Helmet save failed %s", helmet.pk)
+
+    return {
+        "polled_gates": polled,
+        "events_created": events_created,
+        "helmets_pinged": helmets_pinged,
+        "errors": errors,
+    }
+
+
 def _resolve_direction(device, badge, att):
     """Détermine la direction (in/out) en cascade :
 

@@ -5,24 +5,67 @@ from django.conf import settings
 
 
 class TenantContextMiddleware:
-    """Attache request.tenant si le user est authentifié (via FK tenant sur User)."""
+    """Attache request.tenant et peuple le thread-local pour get_current_tenant().
+
+    Détection en cascade :
+      1. ``user.tenant`` si user authentifié (cas standard back-office)
+      2. Header HTTP ``X-Tenant: <code>`` (IoT signé, app mobile)
+      3. Sous-domaine ``<tenant_code>.kaydanshield.com`` (multi-org SaaS)
+      4. Fallback : Kaydan (mono-tenant historique)
+    """
 
     def __init__(self, get_response):
         self.get_response = get_response
 
     def __call__(self, request):
-        request.tenant = None
+        from .services import clear_current_tenant, set_current_tenant
+        request.tenant = self._resolve_tenant(request)
+        set_current_tenant(request.tenant)
+        try:
+            response = self.get_response(request)
+        finally:
+            # Nettoie le thread-local — on est en pool de workers gunicorn,
+            # un thread peut servir un request d'un autre tenant juste après.
+            clear_current_tenant()
+        return response
+
+    def _resolve_tenant(self, request):
+        from .models import Tenant
+
+        # 1) User authentifié
         user = getattr(request, "user", None)
         if user and user.is_authenticated:
-            request.tenant = getattr(user, "tenant", None)
-        # fallback header (utile pour terminaux IoT signés)
-        if request.tenant is None:
-            header_code = request.headers.get("X-Tenant")
-            if header_code:
-                from .models import Tenant
+            t = getattr(user, "tenant", None)
+            if t is not None:
+                return t
 
-                request.tenant = Tenant.objects.filter(code=header_code, is_active=True).first()
-        return self.get_response(request)
+        # 2) Header explicite (IoT, M2M)
+        header_code = request.headers.get("X-Tenant")
+        if header_code:
+            t = Tenant.objects.filter(code=header_code, is_active=True).first()
+            if t:
+                return t
+
+        # 3) Sous-domaine — extrait le 1er segment si DEEP_DOMAIN matches.
+        # Format attendu : <tenant>.kaydanshield.com
+        host = (request.get_host() or "").lower().split(":")[0]
+        from django.conf import settings
+        base = getattr(settings, "TENANT_BASE_DOMAIN", "kaydanshield.com")
+        if host.endswith("." + base):
+            sub = host[: -(len(base) + 1)]
+            # On ignore les sous-domaines techniques fonctionnels
+            if sub not in ("api", "ws", "minio", "minio-console",
+                           "adminer", "www"):
+                # Le 1er segment peut être un code tenant
+                first = sub.split(".")[0]
+                if first:
+                    t = Tenant.objects.filter(code=first, is_active=True).first()
+                    if t:
+                        return t
+
+        # 4) Fallback : mono-tenant historique
+        from .services import get_kaydan_tenant
+        return get_kaydan_tenant()
 
 
 # ---------------------------------------------------------------------------

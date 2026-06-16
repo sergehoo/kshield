@@ -1,0 +1,89 @@
+{
+  "annotations": {"list": []},
+  "title": "KAYDAN SHIELD — Vue d'ensemble",
+  "tags": ["kshield", "kaydan"],
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "30s",
+  "time": {"from": "now-24h", "to": "now"},
+  "panels": [
+    {
+      "title": "Pointages par minute (15 min)",
+      "type": "timeseries",
+      "datasource": "prometheus",
+      "targets": [
+        {"expr": "rate(django_http_requests_total_by_view_transport_method_total{view=~\".*access.*\"}[5m])", "legendFormat": "scans/min"}
+      ],
+      "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8}
+    },
+    {
+      "title": "Latence API (p95)",
+      "type": "timeseries",
+      "datasource": "prometheus",
+      "targets": [
+        {"expr": "histogram_quantile(0.95, rate(django_http_requests_latency_seconds_bucket[5m]))", "legendFormat": "p95"}
+      ],
+      "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8}
+    },
+    {
+      "title": "Workers Celery actifs",
+      "type": "stat",
+      "datasource": "prometheus",
+      "targets": [
+        {"expr": "celery_workers_active"}
+      ],
+      "gridPos": {"x": 0, "y": 8, "w": 4, "h": 4}
+    },
+    {
+      "title": "Tasks queued (Redis)",
+      "type": "stat",
+      "datasource": "prometheus",
+      "targets": [{"expr": "redis_db_keys"}],
+      "gridPos": {"x": 4, "y": 8, "w": 4, "h": 4}
+    },
+    {
+      "title": "Devices ZKTeco online",
+      "type": "stat",
+      "datasource": "prometheus",
+      "targets": [
+        {"expr": "kshield_devices_online", "legendFormat": "online"}
+      ],
+      "gridPos": {"x": 8, "y": 8, "w": 4, "h": 4}
+    },
+    {
+      "title": "Badges actifs",
+      "type": "stat",
+      "datasource": "prometheus",
+      "targets": [{"expr": "kshield_badges_active"}],
+      "gridPos": {"x": 12, "y": 8, "w": 4, "h": 4}
+    },
+    {
+      "title": "AccessEvents 1h (granted vs denied)",
+      "type": "piechart",
+      "datasource": "prometheus",
+      "targets": [
+        {"expr": "increase(kshield_access_events_total{decision=\"granted\"}[1h])", "legendFormat": "Autorisés"},
+        {"expr": "increase(kshield_access_events_total{decision=\"denied\"}[1h])", "legendFormat": "Refusés"}
+      ],
+      "gridPos": {"x": 16, "y": 8, "w": 8, "h": 8}
+    },
+    {
+      "title": "Erreurs HTTP 5xx",
+      "type": "timeseries",
+      "datasource": "prometheus",
+      "targets": [
+        {"expr": "rate(django_http_responses_total_by_status_total{status=~\"5..\"}[5m])", "legendFormat": "{{status}}"}
+      ],
+      "gridPos": {"x": 0, "y": 16, "w": 12, "h": 8}
+    },
+    {
+      "title": "PostgreSQL — Connexions actives",
+      "type": "timeseries",
+      "datasource": "prometheus",
+      "targets": [
+        {"expr": "django_db_execute_total"}
+      ],
+      "gridPos": {"x": 12, "y": 16, "w": 12, "h": 8}
+    }
+  ]
+}
