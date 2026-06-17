@@ -131,8 +131,17 @@ REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"] = {  # noqa: F405
 # ---------------------------------------------------------------------------
 # Sentry (optionnel)
 # ---------------------------------------------------------------------------
-_SENTRY_DSN = config("SENTRY_DSN", default="")
-if _SENTRY_DSN:
+import re as _re_sentry
+
+_SENTRY_DSN = (config("SENTRY_DSN", default="") or "").strip()
+# Valide qu'on a un VRAI DSN Sentry (https://<key>@<host>/<project_id>),
+# pas un placeholder du genre '...' ou 'https://...@sentry.io/...'.
+# Sinon Sentry crash le démarrage.
+_SENTRY_DSN_VALID = bool(_re_sentry.match(
+    r"^https?://[a-z0-9]{16,}@[a-z0-9.\-]+(\:\d+)?/\d+$",
+    _SENTRY_DSN, _re_sentry.IGNORECASE,
+))
+if _SENTRY_DSN and _SENTRY_DSN_VALID:
     try:
         import sentry_sdk
         from sentry_sdk.integrations.celery import CeleryIntegration
@@ -147,6 +156,18 @@ if _SENTRY_DSN:
         )
     except ImportError:
         pass
+    except Exception as _exc:
+        # On loggue mais on ne bloque PAS le démarrage si Sentry est down/mal configuré
+        import logging as _lg
+        _lg.getLogger(__name__).warning("Sentry init failed: %s", _exc)
+elif _SENTRY_DSN:
+    # DSN présent mais malformé → on previent dans les logs
+    import logging as _lg
+    _lg.getLogger(__name__).warning(
+        "SENTRY_DSN défini mais malformé (%r) — Sentry désactivé. "
+        "Format attendu : https://<key>@<host>/<project_id>",
+        _SENTRY_DSN[:40] + "..." if len(_SENTRY_DSN) > 40 else _SENTRY_DSN,
+    )
 
 # ---------------------------------------------------------------------------
 # Logging — JSON-friendly (structlog si dispo, sinon verbose)
