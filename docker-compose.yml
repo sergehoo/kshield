@@ -402,42 +402,70 @@ services:
         set -eu
         echo "[backup] start — retention=$$BACKUP_RETENTION_DAYS jours"
         mkdir -p /backups
-        # Test connexion au démarrage
-        if ! pg_isready -t 5; then
-          echo "[backup] ✗ DB injoignable au démarrage"
-          exit 1
-        fi
+        # Attend que la DB soit prête (jusqu'à 60s)
+        i=0
+        while ! pg_isready -t 5 >/dev/null 2>&1; do
+          i=$$((i+1))
+          if [ $$i -gt 12 ]; then
+            echo "[backup] ✗ DB injoignable après 60s"
+            exit 1
+          fi
+          sleep 5
+        done
+        echo "[backup] ✓ DB accessible"
+
         # Premier dump immédiat (validation)
         if [ ! -f /backups/.first_done ]; then
           STAMP=$$(date +%Y%m%d-%H%M%S)
-          F="/backups/kshield-$$STAMP.sql.gz"
+          F=/backups/kshield-$$STAMP.sql.gz
           echo "[backup] premier dump → $$F"
-          pg_dump --clean --if-exists --no-owner | gzip -9 > "$$F.tmp"
-          mv "$$F.tmp" "$$F"
-          touch /backups/.first_done
-          echo "[backup] ✓ taille $$(du -h $$F | cut -f1)"
+          if pg_dump --clean --if-exists --no-owner | gzip -9 > $$F.tmp; then
+            mv $$F.tmp $$F
+            touch /backups/.first_done
+            echo "[backup] ✓ taille $$(du -h $$F | cut -f1)"
+          else
+            rm -f $$F.tmp
+            echo "[backup] ✗ premier dump échoué"
+          fi
         fi
-        # Boucle quotidienne (sleep 24h entre chaque dump)
+
+        # Calcul du délai jusqu'à 02:00 prochaine occurrence — pur shell POSIX
+        # (date -v de BSD/macOS et date -d 'tomorrow' de GNU ne sont pas
+        # disponibles dans BusyBox/Alpine — on calcule à la main).
+        next_delay() {
+          H=$$(date +%H)
+          M=$$(date +%M)
+          S=$$(date +%S)
+          # supprime les zéros de tête pour éviter "08" interprété en octal
+          H=$$(printf '%d' "$$H")
+          M=$$(printf '%d' "$$M")
+          S=$$(printf '%d' "$$S")
+          if [ "$$H" -lt 2 ]; then
+            # Avant 02:00 → cible aujourd'hui 02:00
+            echo $$(( (2 - H) * 3600 - M * 60 - S ))
+          else
+            # Après 02:00 → cible demain 02:00
+            echo $$(( (24 - H + 2) * 3600 - M * 60 - S ))
+          fi
+        }
+
         while true; do
-          # Calcule secondes jusqu'à 02:00 demain
-          NOW=$$(date +%s)
-          TARGET=$$(date -d "tomorrow 02:00" +%s 2>/dev/null || date -v+1d -v2H -v0M -v0S +%s)
-          DELAY=$$((TARGET - NOW))
+          DELAY=$$(next_delay)
           if [ "$$DELAY" -le 0 ]; then DELAY=86400; fi
           echo "[backup] prochain dump dans $$DELAY secondes"
-          sleep "$$DELAY"
+          sleep $$DELAY
           STAMP=$$(date +%Y%m%d-%H%M%S)
-          F="/backups/kshield-$$STAMP.sql.gz"
+          F=/backups/kshield-$$STAMP.sql.gz
           echo "[backup] dump → $$F"
-          if pg_dump --clean --if-exists --no-owner | gzip -9 > "$$F.tmp"; then
-            mv "$$F.tmp" "$$F"
+          if pg_dump --clean --if-exists --no-owner | gzip -9 > $$F.tmp; then
+            mv $$F.tmp $$F
             echo "[backup] ✓ $$F ($$(du -h $$F | cut -f1))"
           else
-            rm -f "$$F.tmp"
+            rm -f $$F.tmp
             echo "[backup] ✗ dump échoué"
           fi
-          # Rotation
-          find /backups -name "kshield-*.sql.gz" -mtime +$$BACKUP_RETENTION_DAYS -delete
+          # Rotation (BusyBox find supporte -mtime)
+          find /backups -name "kshield-*.sql.gz" -type f -mtime +$$BACKUP_RETENTION_DAYS -delete 2>/dev/null || true
           echo "[backup] rotation : conservés $$(ls /backups/kshield-*.sql.gz 2>/dev/null | wc -l) dumps"
         done
     logging: *logging_rotated
