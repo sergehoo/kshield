@@ -591,6 +591,169 @@ class ZkSyncNowView(APIView):
         return Response(result)
 
 
+class FaceTerminalEventView(APIView):
+    """Webhook générique pour events des terminaux face reco.
+
+    URL : POST /api/v1/devices/face-terminal/<sn>/event/
+    Body accepté (format standardisé, chaque marque peut en dériver) :
+        {
+          "user_id": "42",           // ID interne terminal (ou matricule employé)
+          "timestamp": "2026-07-06T18:00:00Z",
+          "similarity": 0.87,        // 0–1
+          "method": "face" | "card" | "hybrid",
+          "granted": true,
+          "mask_detected": true,
+          "temperature": 36.5,
+          "photo_base64": "..."      // optionnel — snapshot
+        }
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request, sn=None):
+        from datetime import datetime
+
+        from django.utils import timezone
+
+        from access_control.models import AccessEvent
+
+        from .models import Device
+        from .tasks import _fallback_site, _resolve_direction
+
+        if not sn:
+            return Response({"error": "sn requis"}, status=400)
+        device = Device.objects.filter(serial_number=sn).first()
+        if not device:
+            return Response({"error": f"terminal inconnu : {sn}"}, status=404)
+
+        data = request.data or {}
+        user_id = str(data.get("user_id") or "")
+        ts = data.get("timestamp")
+        if isinstance(ts, str):
+            try:
+                ts = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            except Exception:
+                ts = timezone.now()
+        else:
+            ts = timezone.now()
+        if hasattr(ts, "tzinfo") and ts.tzinfo is None:
+            ts = timezone.make_aware(ts, timezone.get_current_timezone())
+
+        # Lookup Employee par matricule/user_id
+        from employees.models import Employee
+        from django.contrib.contenttypes.models import ContentType
+        emp = None
+        if user_id:
+            emp = Employee.objects.filter(
+                tenant=device.tenant, matricule=user_id,
+            ).first() or Employee.objects.filter(
+                tenant=device.tenant, pk=user_id if user_id.isdigit() else 0,
+            ).first()
+
+        holder_kind = "unknown"; holder_ct = None; holder_oid = None
+        if emp:
+            holder_kind = "employee"
+            holder_ct = ContentType.objects.get_for_model(Employee)
+            holder_oid = emp.pk
+
+        granted = bool(data.get("granted", True))
+        decision = "granted" if granted else "denied"
+        denial = "" if granted else (data.get("reason") or "Face non reconnue")
+
+        class _Att: punch = 0
+        direction = _resolve_direction(device=device, badge=None, att=_Att())
+
+        AccessEvent.objects.create(
+            tenant=device.tenant,
+            timestamp=ts,
+            site=device.site or _fallback_site(device),
+            zone=getattr(device, "zone", None),
+            checkpoint=getattr(device, "checkpoint", None),
+            direction=direction,
+            method="face" if data.get("method", "face") == "face" else "nfc",
+            decision=decision,
+            denial_reason=denial,
+            device=device,
+            badge_uid="",
+            holder_kind=holder_kind,
+            holder_content_type=holder_ct,
+            holder_object_id=holder_oid,
+            raw_payload={
+                "source": "face_terminal_webhook",
+                "terminal_user_id": user_id,
+                "similarity": data.get("similarity"),
+                "mask_detected": data.get("mask_detected"),
+                "temperature": data.get("temperature"),
+                "method": data.get("method"),
+            },
+        )
+        device.last_heartbeat_at = timezone.now()
+        device.save(update_fields=["last_heartbeat_at"])
+        return Response({"ok": True, "matched_employee": emp.pk if emp else None})
+
+
+class FacePushEmployeeView(APIView):
+    """POST /api/v1/devices/employees/<pk>/push-face/ — provisionne la photo
+    de l'employé sur TOUS les terminaux face du tenant.
+    """
+    permission_classes = [HasKshieldPermission]
+    kshield_perms = {"read": "employees.view", "write": "employees.manage"}
+
+    def post(self, request, pk):
+        from employees.models import Employee
+
+        from .face_terminal import (FaceRecord, FaceTerminalError, get_adapter,
+                                      is_face_terminal)
+        from .models import Device
+
+        try:
+            emp = Employee.objects.get(pk=pk)
+        except Employee.DoesNotExist:
+            return Response({"error": "employé introuvable"}, status=404)
+
+        if not emp.photo:
+            return Response(
+                {"error": "employé sans photo — uploader d'abord via /employees/<id>/update/"},
+                status=400,
+            )
+
+        try:
+            with emp.photo.open("rb") as f:
+                photo_bytes = f.read()
+        except Exception as exc:
+            return Response({"error": f"photo illisible : {exc}"}, status=400)
+
+        targets = [d for d in Device.objects.filter(
+            tenant=getattr(emp, "tenant", None) or None,
+            status="active", ip_address__isnull=False,
+        ) if is_face_terminal(d)]
+
+        if not targets:
+            return Response({"error": "aucun terminal face actif"}, status=400)
+
+        record = FaceRecord(
+            user_id=str(emp.pk),
+            name=f"{emp.first_name} {emp.last_name}".strip()[:32],
+            photo_bytes=photo_bytes,
+        )
+        results = []
+        for d in targets:
+            try:
+                adapter = get_adapter(d)
+                ok = adapter.push_face(record)
+                results.append({"device": d.serial_number, "ok": bool(ok)})
+            except FaceTerminalError as exc:
+                results.append({"device": d.serial_number, "ok": False,
+                                  "error": str(exc)[:200]})
+
+        return Response({
+            "employee": str(emp),
+            "photo_size_bytes": len(photo_bytes),
+            "devices_targeted": len(targets),
+            "devices_succeeded": sum(1 for r in results if r["ok"]),
+            "results": results,
+        })
+
+
 class BleGatewayIngestView(APIView):
     """Endpoint d'ingestion des pings BLE depuis une gateway (Aruba, Estimote,
     Kontakt.io, Minew) ou directement depuis l'app mobile contrôleur.

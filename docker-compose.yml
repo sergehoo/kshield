@@ -182,15 +182,22 @@ services:
     command: >
       sh -c "
       python manage.py migrate --noinput &&
-      python manage.py makemigrations --check --dry-run --no-input || echo '⚠️  MODÈLES MODIFIÉS SANS MIGRATION — lancer python manage.py makemigrations en local et committer le résultat.' &&
+      python manage.py makemigrations --check --dry-run --no-input || echo '⚠️  MODÈLES MODIFIÉS SANS MIGRATION' &&
       python manage.py collectstatic --noinput &&
       gunicorn kshield.asgi:application
       -k uvicorn.workers.UvicornWorker
       --bind 0.0.0.0:8000
-      --workers 3
-      --timeout 120
+      --workers ${GUNICORN_WORKERS:-4}
+      --worker-connections ${GUNICORN_WORKER_CONNECTIONS:-1000}
+      --max-requests ${GUNICORN_MAX_REQUESTS:-1000}
+      --max-requests-jitter 100
+      --timeout ${GUNICORN_TIMEOUT:-60}
+      --graceful-timeout 30
+      --keep-alive 5
+      --worker-tmp-dir /dev/shm
       --forwarded-allow-ips='*'
       --access-logfile - --error-logfile -
+      --log-level info
       "
     volumes:
       - kshield_static:/app/staticfiles:rw
@@ -238,6 +245,15 @@ services:
       # Rate limit API (uploads visiteurs, webhooks reconnaissance faciale)
       - traefik.http.middlewares.kshield-api-rl.ratelimit.average=300
       - traefik.http.middlewares.kshield-api-rl.ratelimit.burst=500
+
+      # Timeouts serveur backend — évite Gateway Timeout sur les rapports lourds
+      # Ces valeurs configurent le loadbalancer Traefik vers gunicorn.
+      # Doit être >= timeout gunicorn (60s) pour laisser gunicorn répondre.
+      - traefik.http.services.kshield-api-svc.loadbalancer.responseforwarding.flushinterval=100ms
+      - traefik.http.services.kshield-api-svc.loadbalancer.serverstransport=kshield-api-transport@docker
+      - traefik.http.serverstransports.kshield-api-transport.forwardingtimeouts.dialtimeout=10s
+      - traefik.http.serverstransports.kshield-api-transport.forwardingtimeouts.responseheadertimeout=90s
+      - traefik.http.serverstransports.kshield-api-transport.forwardingtimeouts.idleconntimeout=90s
 
   # ===========================================================================
   # WebSockets / Channels (ASGI) — uvicorn

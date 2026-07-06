@@ -21,6 +21,7 @@ class DeviceModel(TimeStampedModel):
         ("door_lock", "Gâche électrique"),
         ("camera", "Caméra"),
         ("portique", "Portique RFID"),
+        ("face_terminal", "Terminal reconnaissance faciale"),
     ]
 
     brand = models.CharField(max_length=120)

@@ -49,8 +49,17 @@ class AIChatView(APIView):
                 id=d["conversation_id"], user=request.user,
             ).first()
         if not conversation:
+            # Résout le tenant en cascade : user.tenant → request.tenant →
+            # get_current_tenant() → get_kaydan_tenant()
+            from core.services import get_current_tenant, get_kaydan_tenant
+            tenant = (
+                getattr(request.user, "tenant", None)
+                or getattr(request, "tenant", None)
+                or get_current_tenant()
+                or get_kaydan_tenant()
+            )
             conversation = AIConversation.objects.create(
-                tenant=getattr(request.user, "tenant", None),
+                tenant=tenant,
                 user=request.user,
                 title=d["message"][:80],
                 site_id=d.get("site"),

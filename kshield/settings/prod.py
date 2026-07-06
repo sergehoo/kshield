@@ -24,6 +24,13 @@ ALLOWED_HOSTS = config("ALLOWED_HOSTS", cast=Csv())
 # HTTPS / proxy
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 SECURE_SSL_REDIRECT = config("SECURE_SSL_REDIRECT", default=True, cast=bool)
+# Endpoints exempts du redirect HTTPS — nécessaire pour les healthchecks Docker
+# qui font des requêtes HTTP brutes en interne (curl localhost:8000).
+SECURE_REDIRECT_EXEMPT = [
+    r"^healthz$",
+    r"^readyz$",
+    r"^metrics$",   # Prometheus scraper interne
+]
 SESSION_COOKIE_SECURE = True
 SESSION_COOKIE_SAMESITE = "Lax"
 SESSION_COOKIE_HTTPONLY = True

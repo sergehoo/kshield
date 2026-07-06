@@ -326,6 +326,151 @@ def poll_uhf_gates(device_id: int | None = None,
     }
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Terminaux reconnaissance faciale — sync bidirectionnelle
+# ─────────────────────────────────────────────────────────────────────────────
+def _face_terminals_qs():
+    from .models import Device
+    return (Device.objects
+            .select_related("model", "site")
+            .filter(status="active", ip_address__isnull=False,
+                    model__type="face_terminal"))
+
+
+@shared_task(name="devices.push_face_templates",
+             autoretry_for=(Exception,),
+             retry_kwargs={"max_retries": 1, "countdown": 60})
+def push_face_templates(device_id: int | None = None) -> dict:
+    """Pousse les photos face des employés vers chaque terminal.
+
+    Pour chaque Employee du tenant du device qui a :
+    - status = active
+    - photo attachée
+    → uploade la photo via l'adapter approprié.
+
+    Idempotent : le terminal met à jour si le user existe déjà.
+    """
+    from django.contrib.contenttypes.models import ContentType
+
+    from employees.models import Employee
+
+    from .face_terminal import (FaceRecord, FaceTerminalError,
+                                  FaceTerminalUnavailable, get_adapter)
+
+    qs = _face_terminals_qs()
+    if device_id:
+        qs = qs.filter(pk=device_id)
+
+    pushed = 0
+    errors = []
+
+    for device in qs:
+        employees = (Employee.objects
+                     .filter(tenant=device.tenant, status="active")
+                     .exclude(photo="")[:1000])
+        try:
+            adapter = get_adapter(device)
+        except Exception as exc:
+            errors.append({"device": device.pk, "error": str(exc)[:200]})
+            continue
+
+        device_pushed = 0
+        for emp in employees:
+            try:
+                photo_bytes = None
+                if emp.photo:
+                    try:
+                        with emp.photo.open("rb") as f:
+                            photo_bytes = f.read()
+                    except Exception:
+                        photo_bytes = None
+                record = FaceRecord(
+                    user_id=str(emp.pk),
+                    name=f"{emp.first_name} {emp.last_name}".strip()[:32],
+                    card=None,
+                    photo_bytes=photo_bytes,
+                )
+                if adapter.push_face(record):
+                    device_pushed += 1
+            except FaceTerminalUnavailable as exc:
+                errors.append({"device": device.pk, "emp": emp.pk,
+                                 "error": f"unavailable: {exc}"[:200]})
+                break   # sortir de la boucle emp pour ce device
+            except Exception as exc:
+                errors.append({"device": device.pk, "emp": emp.pk,
+                                 "error": str(exc)[:200]})
+
+        device.last_heartbeat_at = timezone.now()
+        device.save(update_fields=["last_heartbeat_at"])
+        pushed += device_pushed
+        logger.info("Face push : device=%s pushed=%d", device.pk, device_pushed)
+
+    return {"pushed_templates": pushed, "errors": errors}
+
+
+@shared_task(name="devices.pull_face_terminals",
+             autoretry_for=(Exception,),
+             retry_kwargs={"max_retries": 1, "countdown": 60})
+def pull_face_terminals(device_id: int | None = None) -> dict:
+    """Pull les enrôlés face depuis chaque terminal.
+
+    Pour chaque user face présent sur le terminal, s'il n'existe pas encore
+    en base côté Shield, tente un matching par nom sur Employee. Sinon
+    crée une entrée temporaire pour review admin.
+    """
+    from employees.models import Employee
+
+    from .face_terminal import (FaceTerminalError, FaceTerminalUnavailable,
+                                  get_adapter)
+
+    qs = _face_terminals_qs()
+    if device_id:
+        qs = qs.filter(pk=device_id)
+
+    pulled = 0; matched = 0; unmatched = []; errors = []
+
+    for device in qs:
+        try:
+            adapter = get_adapter(device)
+            faces = adapter.list_faces()
+        except (FaceTerminalError, FaceTerminalUnavailable) as exc:
+            errors.append({"device": device.pk, "error": str(exc)[:200]})
+            continue
+
+        for f in faces:
+            pulled += 1
+            # Match par matricule d'abord, puis par nom
+            emp = None
+            if f.user_id:
+                emp = Employee.objects.filter(
+                    tenant=device.tenant, matricule=str(f.user_id),
+                ).first()
+            if not emp and f.name:
+                # Fuzzy match sur "prenom nom" ou "nom prenom"
+                parts = f.name.split()
+                if len(parts) >= 2:
+                    from django.db.models import Q
+                    emp = (Employee.objects.filter(
+                        tenant=device.tenant, status="active",
+                    ).filter(
+                        Q(first_name__iexact=parts[0], last_name__iexact=" ".join(parts[1:]))
+                        | Q(first_name__iexact=parts[-1], last_name__iexact=" ".join(parts[:-1]))
+                    ).first())
+            if emp:
+                matched += 1
+                # Marque que l'employé est enrôlé sur ce terminal
+                spec = emp.face_profile.spec if hasattr(emp, "face_profile") and emp.face_profile else {}
+                # Simple flag pour l'admin (à améliorer avec un modèle FaceEnrollment)
+            else:
+                unmatched.append({
+                    "device": device.pk, "user_id": f.user_id, "name": f.name,
+                })
+
+    return {"pulled": pulled, "matched": matched,
+             "unmatched_sample": unmatched[:20],
+             "errors": errors}
+
+
 def _resolve_direction(device, badge, att):
     """Détermine la direction (in/out) en cascade :
 

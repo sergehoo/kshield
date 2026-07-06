@@ -261,8 +261,20 @@ class DashboardView(BaseAdminView):
         from collections import Counter
         from datetime import timedelta
 
+        from django.core.cache import cache
         from django.db.models import Count
         from django.utils import timezone
+
+        # ── Cache 30s sur les agrégats dashboard (par tenant) ──
+        # Le dashboard fait 15-20 requêtes agrégat DB → 500ms-2s hors cache.
+        # 30s de cache = 30× moins de charge DB sans altérer l'UX (les KPIs
+        # comme "scans du jour" bougent lentement).
+        tenant_id = getattr(getattr(self.request, "tenant", None), "pk", 0)
+        cache_key = f"dashboard_kpis:{tenant_id}"
+        cached_kpis = cache.get(cache_key)
+        if cached_kpis:
+            ctx.update(cached_kpis)
+            return ctx
 
         now = timezone.now()
         today = now.date()
@@ -394,6 +406,27 @@ class DashboardView(BaseAdminView):
             for k in ("scans_by_day", "recent_alerts", "top_sites",
                       "recent_events", "upcoming_visits"):
                 ctx[k] = []
+
+        # ── Sauvegarde du snapshot en cache (30s) — sauf les clés dynamiques
+        # (user_perms, active_nav, etc. dépendantes du user courant)
+        _CTX_CACHEABLE_KEYS = (
+            "kpi_employees_total", "kpi_employees_active",
+            "kpi_workers_total", "kpi_workers_active",
+            "kpi_visitors_total", "kpi_visitors_today",
+            "kpi_badges_active", "kpi_badges_total", "kpi_sites_active",
+            "scans_today", "scans_today_granted", "scans_today_denied",
+            "scans_today_review", "scans_last_hour", "scans_today_delta",
+            "scans_7d_total", "alerts_open", "alerts_critical",
+            "present_total", "present_employees", "present_workers",
+            "present_visitors",
+            "badges_visitor", "badges_employee", "badges_worker",
+            "scans_by_day", "recent_alerts", "top_sites",
+            "recent_events", "upcoming_visits",
+        )
+        snapshot = {k: ctx.get(k) for k in _CTX_CACHEABLE_KEYS if k in ctx}
+        if snapshot:
+            cache.set(cache_key, snapshot, 30)   # 30s
+
         return ctx
 
 

@@ -95,6 +95,7 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "core.middleware.SecurityHeadersMiddleware",  # CSP + Permissions-Policy + COOP/CORP
+    "core.middleware.SlowRequestLoggerMiddleware",  # logue les requêtes > 1s
     "core.middleware.TenantContextMiddleware",
     "audit.middleware.AuditContextMiddleware",
     # django-axes : enregistre IP + UA + email de chaque tentative ; lockout
@@ -282,6 +283,16 @@ CELERY_BEAT_SCHEDULE = {
     "devices_poll_uhf_gates": {
         "task": "devices.poll_uhf_gates",
         "schedule": 30.0,
+    },
+    # Push templates face vers terminaux face reco — toutes les 10 min
+    "devices_push_face_templates": {
+        "task": "devices.push_face_templates",
+        "schedule": 600.0,
+    },
+    # Pull enrôlés face depuis terminaux (sync users créés localement) — 10 min
+    "devices_pull_face_terminals": {
+        "task": "devices.pull_face_terminals",
+        "schedule": 600.0,
     },
 }
 
@@ -565,3 +576,30 @@ NOTIFICATIONS_AUTO_ENABLED = config(
 # Base domain utilisé pour détecter le tenant via sous-domaine :
 # <tenant_code>.kaydanshield.com → Tenant.objects.get(code=tenant_code)
 TENANT_BASE_DOMAIN = config("TENANT_BASE_DOMAIN", default="kaydanshield.com")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Cache Redis partagé (utilisé par django.core.cache)
+# ─────────────────────────────────────────────────────────────────────────────
+# Backend django-redis. TTL par défaut 5 min ; les vues admin lourdes
+# (dashboard, listes) utilisent des TTL courts (30-60s) via cache_page.
+_REDIS_URL = config("REDIS_URL", default="redis://shieldredis:6379/0")
+CACHES = {
+    "default": {
+        "BACKEND": "django_redis.cache.RedisCache",
+        "LOCATION": _REDIS_URL,
+        "OPTIONS": {
+            "CLIENT_CLASS": "django_redis.client.DefaultClient",
+            "SOCKET_CONNECT_TIMEOUT": 3,
+            "SOCKET_TIMEOUT": 3,
+            "IGNORE_EXCEPTIONS": True,   # Redis down → passe-plat, pas de 500
+            "COMPRESSOR": "django_redis.compressors.lz4.Lz4Compressor",
+        },
+        "TIMEOUT": 300,
+        "KEY_PREFIX": "kshield",
+    }
+}
+# Si Redis down, cache_page tombe silencieusement — pas de 500
+DJANGO_REDIS_IGNORE_EXCEPTIONS = True
+
+# Perf : seuil pour logger les requêtes lentes (ms)
+SLOW_REQUEST_THRESHOLD_MS = config("SLOW_REQUEST_THRESHOLD_MS", default=1000, cast=int)

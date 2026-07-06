@@ -21,6 +21,12 @@
                     title="Provisionne cet employé sur tous les terminaux ZKTeco du tenant — il peut pointer immédiatement sans attendre le worker.">
               <i data-lucide="upload-cloud"></i> Pousser vers les terminaux ZKTeco
             </button>
+            {% if object.photo %}
+            <button type="button" class="btn btn-ghost" id="btn-push-face"
+                    title="Uploade la photo de cet employé sur tous les terminaux face reconnaissance du tenant.">
+              <i data-lucide="scan-face"></i> Pousser photo vers terminaux face
+            </button>
+            {% endif %}
           </div>
           <div id="push-zk-result" style="margin-top:10px;display:none"></div>
         </div>
@@ -34,6 +40,44 @@
           var m = document.cookie.match(/csrftoken=([^;]+)/);
           return m ? m[1] : (document.querySelector('[name=csrfmiddlewaretoken]')?.value || '');
         }
+        // Push face — mêmes UX que push ZKTeco
+        var btnFace = document.getElementById("btn-push-face");
+        if (btnFace) btnFace.addEventListener("click", async function() {
+          var pk = "{{ object.pk }}";
+          var orig = btnFace.innerHTML;
+          btnFace.disabled = true;
+          btnFace.innerHTML = '<i data-lucide="loader-2" style="width:14px;height:14px;animation:spin 1s linear infinite"></i> Push face…';
+          if (window.lucide) window.lucide.createIcons();
+          box.style.display = "none";
+          try {
+            var res = await fetch("/api/v1/devices/employees/" + pk + "/push-face/", {
+              method: "POST", credentials: "same-origin",
+              headers: {"X-CSRFToken": csrf(), "Content-Type": "application/json"},
+              body: "{}",
+            });
+            var data = await res.json();
+            box.style.display = "block";
+            if (!res.ok) {
+              box.style.cssText = "display:block;padding:10px 14px;background:rgba(248,113,113,.10);border-left:3px solid #f87171;border-radius:8px;font-size:12.5px";
+              box.innerHTML = '<strong>✗ Erreur</strong> : ' + (data.error || JSON.stringify(data));
+              return;
+            }
+            box.style.cssText = "display:block;padding:10px 14px;background:rgba(45,212,191,.10);border-left:3px solid #2dd4bf;border-radius:8px;font-size:12.5px";
+            var ok = data.devices_succeeded || 0;
+            var total = data.devices_targeted || 0;
+            box.innerHTML = '<strong>' + (ok === total ? '✓' : '⚠') + '</strong> ' +
+                            ok + '/' + total + ' terminal(s) face provisionné(s) — photo ' + data.photo_size_bytes + ' bytes.';
+          } catch (e) {
+            box.style.display = "block";
+            box.style.cssText = "display:block;padding:10px 14px;background:rgba(248,113,113,.10);border-left:3px solid #f87171;border-radius:8px;font-size:12.5px";
+            box.innerHTML = "Erreur réseau : " + e.message;
+          } finally {
+            btnFace.disabled = false;
+            btnFace.innerHTML = orig;
+            if (window.lucide) window.lucide.createIcons();
+          }
+        });
+
         btn.addEventListener("click", async function() {
           var pk = "{{ object.pk }}";
           btn.disabled = true;

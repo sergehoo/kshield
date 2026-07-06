@@ -1,7 +1,54 @@
-"""Middlewares core : tenant context + CSP / security headers."""
+"""Middlewares core : tenant context + CSP / security headers + slow request log."""
 from __future__ import annotations
 
+import logging
+import time
+
 from django.conf import settings
+from django.db import connection
+
+_perf_logger = logging.getLogger("kshield.perf")
+
+
+class SlowRequestLoggerMiddleware:
+    """Logue chaque requête > SLOW_THRESHOLD_MS (default 1000 ms).
+
+    Log format : ``METHOD PATH → status (Xms, N queries, Yms SQL)``
+    Sert à identifier les vues qui rament sans avoir à installer django-debug-toolbar
+    en production.
+
+    Le seuil est configurable via ``settings.SLOW_REQUEST_THRESHOLD_MS`` (int).
+    """
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+        self.threshold_ms = getattr(settings, "SLOW_REQUEST_THRESHOLD_MS", 1000)
+
+    def __call__(self, request):
+        start = time.monotonic()
+        query_count_start = len(connection.queries)
+        response = self.get_response(request)
+        duration_ms = int((time.monotonic() - start) * 1000)
+
+        # DEBUG=True : connection.queries est peuplé. En prod, il est vide.
+        query_count = len(connection.queries) - query_count_start
+        sql_time_ms = 0
+        if query_count > 0 and settings.DEBUG:
+            sql_time_ms = int(sum(float(q.get("time", 0)) for q in
+                                    connection.queries[query_count_start:]) * 1000)
+
+        if duration_ms >= self.threshold_ms:
+            # Exclut les healthchecks pour ne pas polluer
+            if request.path in ("/healthz", "/readyz", "/metrics"):
+                return response
+            _perf_logger.warning(
+                "[SLOW %dms] %s %s → %s (queries=%d, sql=%dms)",
+                duration_ms, request.method, request.path,
+                response.status_code, query_count, sql_time_ms,
+            )
+        # Header X-Response-Time pour debug côté navigateur
+        response["X-Response-Time-ms"] = str(duration_ms)
+        return response
 
 
 class TenantContextMiddleware:

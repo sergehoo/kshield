@@ -14,6 +14,7 @@ from .views import (
     ReaderDiscoverView,
     BadgeBulkEnrollView, HelmetBulkEnrollView, ScanInboxView,
     BleGatewayIngestView,
+    FaceTerminalEventView, FacePushEmployeeView,
     DeviceConnectivityTestView,
     ZkSyncNowView, ZkSyncAllView, ZkPushUsersNowView,
     ZkEnrollSessionView, ZkImportUsersView, ZkPushEmployeeView,
@@ -57,6 +58,9 @@ urlpatterns = [
     path("scan/inbox/",                              ScanInboxView.as_view(),           name="scan-inbox"),
     # Ingestion BLE depuis gateway site ou app mobile (MOKO H7 Lite & co)
     path("ble-gateway/<str:gateway_serial>/ingest/", BleGatewayIngestView.as_view(),    name="ble-gateway-ingest"),
+    # Terminal reconnaissance faciale — webhook event + push face employé
+    path("face-terminal/<str:sn>/event/",            FaceTerminalEventView.as_view(),   name="face-terminal-event"),
+    path("employees/<int:pk>/push-face/",            FacePushEmployeeView.as_view(),    name="employee-face-push"),
     # Test de connectivité d'un équipement (TCP + HTTP + LLRP + ZK)
     # NB : inclus sous /api/v1/devices/ — pas de double prefix.
     path("<int:pk>/test-connection/",                DeviceConnectivityTestView.as_view(), name="device-test-connection"),
