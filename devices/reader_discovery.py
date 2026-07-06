@@ -54,18 +54,23 @@ class ReaderDiscoveryUnavailable(ReaderDiscoveryError):
 # ─────────────────────────────────────────────────────────────────────────────
 #: Services mDNS par type de lecteur
 _MDNS_SERVICES = {
-    "uhf": ["_llrp._tcp.local.", "_impinj._tcp.local."],
-    "nfc": ["_pcsc._tcp.local.", "_nfc._tcp.local."],
-    "ble": ["_http._tcp.local."],  # gateways BLE exposent une API HTTP
-    "zk":  ["_zkteco._tcp.local.", "_zk._tcp.local."],  # rare mais existe
+    "uhf":  ["_llrp._tcp.local.", "_impinj._tcp.local."],
+    "nfc":  ["_pcsc._tcp.local.", "_nfc._tcp.local."],
+    "ble":  ["_http._tcp.local."],  # gateways BLE exposent une API HTTP
+    "zk":   ["_zkteco._tcp.local.", "_zk._tcp.local."],
+    "face": ["_hikvision._tcp.local.", "_zkteco._tcp.local.",
+             "_dahua._tcp.local.", "_onvif._tcp.local."],
 }
 
 #: Ports caractéristiques à scanner pour chaque techno
 _TCP_PORTS = {
-    "uhf": [5084, 5085, 80, 443, 22],   # LLRP + HTTP admin + SSH
-    "nfc": [8000, 80, 443, 5577],       # HID/Sycreader HTTP + port custom
-    "ble": [80, 443, 8080, 1883],       # gateway HTTP + MQTT
-    "zk":  [4370, 4380, 80, 8081],      # ZKAccess SDK + ADMS push HTTP
+    "uhf":  [5084, 5085, 80, 443, 22],   # LLRP + HTTP admin + SSH
+    "nfc":  [8000, 80, 443, 5577],       # HID/Sycreader HTTP + port custom
+    "ble":  [80, 443, 8080, 1883],       # gateway HTTP + MQTT
+    "zk":   [4370, 4380, 80, 8081],      # ZKAccess SDK + ADMS push HTTP
+    # Terminaux face reco : Hikvision ISAPI (80/443/8000/8443), ZKTeco SpeedFace
+    # (4370 SDK + 80 web), Dahua (80/443 + 37777 NetSDK), Anviz (8000)
+    "face": [80, 443, 4370, 8000, 8081, 8443, 37777],
 }
 
 #: Signatures HTTP → marque + modèle (Server header ou body contains)
@@ -100,6 +105,17 @@ _HTTP_SIGNATURES = {
         ("zkteco",        "ZKTeco",   "Terminal pointage (K14/K20/F18/iClock…)"),
         ("anviz",         "Anviz",    "Terminal pointage"),
         ("zkaccess",      "ZKTeco",   "Terminal ZKAccess"),
+    ],
+    "face": [
+        ("hikvision",     "Hikvision", "Terminal face (DS-K1T671M / MinMoe)"),
+        ("app-webserver", "Hikvision", "Terminal face (embedded webserver)"),
+        ("dnvrs-webs",    "Dahua",    "Terminal face Dahua"),
+        ("mongoose",      "Dahua",    "Terminal face / caméra Dahua (Mongoose httpd)"),
+        ("speedface",     "ZKTeco",   "SpeedFace V4L / M4 / VM10"),
+        ("zkteco",        "ZKTeco",   "Terminal ZKTeco (face reco)"),
+        ("anviz",         "Anviz",    "Terminal Anviz (M7 FacePro…)"),
+        ("suprema",       "Suprema",  "Terminal biométrique Suprema"),
+        ("bioentry",      "Suprema",  "Terminal BioEntry"),
     ],
 }
 

@@ -324,6 +324,7 @@
           <option value="nfc">NFC (réseau IP)</option>
           <option value="ble">BLE (gateways)</option>
           <option value="zk">ZKTeco (port 4370)</option>
+          <option value="face">Terminal face reco (Hikvision/ZKTeco/Dahua…)</option>
         </select>
       </label>
       <label style="font-size:11.5px;display:flex;flex-direction:column;gap:4px;color:var(--text-dim)">
@@ -346,6 +347,27 @@
     </button>
 
     <div id="scan-result" style="margin-top:18px;min-height:60px"></div>
+
+    <div style="margin:22px 0 10px;padding-top:16px;border-top:1px dashed var(--border);
+                 display:flex;align-items:center;justify-content:space-between">
+      <strong style="font-size:12.5px">
+        <i data-lucide="target" style="width:14px;height:14px;vertical-align:-2px;color:var(--ks-orange-500)"></i>
+        Ou identifier directement par IP
+      </strong>
+      <span class="text-dim" style="font-size:11px">
+        Utile si le scan CIDR échoue (LAN isolé, Docker bridge, VLAN cloisonné)
+      </span>
+    </div>
+    <div style="display:flex;gap:8px;align-items:end">
+      <label style="font-size:11.5px;display:flex;flex-direction:column;gap:4px;color:var(--text-dim);flex:1">
+        Adresse IP de l'équipement
+        <input type="text" id="ident-ip" class="form-input" placeholder="10.20.1.66" autocomplete="off">
+      </label>
+      <button class="btn btn-primary" type="button" id="ident-start">
+        <i data-lucide="search" style="width:13px;height:13px"></i> Identifier
+      </button>
+    </div>
+    <div id="ident-result" style="margin-top:12px"></div>
 
     <details style="margin-top:14px;font-size:11.5px;color:var(--text-dim)">
       <summary style="cursor:pointer;color:var(--text);font-weight:600">
@@ -535,6 +557,96 @@
       btnStart.disabled = false;
     }
   });
+
+  // ── Identifier par IP ──
+  var identBtn = document.getElementById("ident-start");
+  var identInput = document.getElementById("ident-ip");
+  var identBox = document.getElementById("ident-result");
+  if (identBtn) {
+    identBtn.addEventListener("click", async function() {
+      var ip = (identInput.value || "").trim();
+      if (!ip) { alert("Renseigne une IP."); return; }
+      identBtn.disabled = true;
+      identBox.innerHTML = '<div style="padding:12px;color:var(--text-dim);font-size:12.5px">' +
+        '<i data-lucide="loader-2" style="width:14px;height:14px;animation:spin 1s linear infinite;vertical-align:-2px"></i> ' +
+        'Test tous protocoles sur ' + esc(ip) + '…</div>';
+      if (window.lucide) window.lucide.createIcons();
+      try {
+        var res = await fetch("/api/v1/devices/identify-by-ip/", {
+          method: "POST", credentials: "same-origin",
+          headers: {"X-CSRFToken": csrf(), "Content-Type": "application/json"},
+          body: JSON.stringify({ip: ip}),
+        });
+        var data = await res.json();
+        if (!res.ok) {
+          identBox.innerHTML = '<div style="padding:14px;color:#f87171">Erreur : ' +
+            esc(data.error || JSON.stringify(data)) + '</div>';
+          return;
+        }
+        var html = '';
+        if (data.reachable) {
+          html += '<div style="padding:12px;border-left:3px solid var(--success,#2dd4bf);' +
+                  'background:rgba(45,212,191,.08);border-radius:6px;margin-bottom:10px">';
+          html +=   '<strong style="color:var(--success,#2dd4bf)">✓ Joignable</strong> — ' +
+                    (data.open_ports || []).length + ' port(s) ouvert(s) : ' +
+                    (data.open_ports || []).join(", ");
+          html += '</div>';
+          if (data.identified) {
+            var id = data.identified;
+            html += '<div style="padding:12px;border:1px solid var(--border);border-radius:8px;' +
+                    'background:var(--surface-strong);margin-bottom:10px">';
+            html +=   '<strong style="font-size:13.5px">' + esc(id.brand || '?') + '</strong>';
+            if (id.model)     html += ' · ' + esc(id.model);
+            if (id.firmware)  html += '<br><span class="text-dim" style="font-size:11.5px">FW ' + esc(id.firmware) + '</span>';
+            if (id.serial)    html += '<span class="text-dim" style="font-size:11.5px"> · SN ' + esc(id.serial) + '</span>';
+            html +=   '<br><span class="text-dim" style="font-size:11.5px">Protocole ' +
+                        esc(id.protocol || '?') + ' sur port ' + esc(id.port || '?') + '</span>';
+            html += '</div>';
+            // Import button — prend le kind selon la marque
+            var kindGuess = "uhf";
+            var b = (id.brand || "").toLowerCase();
+            if (b.indexOf("hikvision") >= 0 || b.indexOf("dahua") >= 0 ||
+                (id.model || "").toLowerCase().indexOf("face") >= 0) kindGuess = "face";
+            else if (b.indexOf("zkteco") >= 0) kindGuess = "zk";
+            var importParams = new URLSearchParams({
+              ip_address: ip,
+              serial_number: id.serial || ("IMP-" + ip.replace(/\./g, "")),
+            });
+            if (id.firmware) importParams.set("firmware_version", id.firmware);
+            html += '<a class="btn btn-primary" href="{% url "admin-device-reader-create" kind="KIND" %}'.replace("KIND", kindGuess) +
+                    '?' + importParams.toString() + '">' +
+                    '<i data-lucide="download" style="width:13px;height:13px"></i> Importer ' + esc(id.brand) + '</a>';
+          } else {
+            html += '<div style="padding:10px;color:var(--warning,#fbbf24);font-size:12.5px">' +
+                    '<i data-lucide="alert-triangle" style="width:12px;height:12px;vertical-align:-1px"></i> ' +
+                    'Aucun protocole KAYDAN SHIELD reconnu. Vérifie le port d\'admin ou fournis les credentials.</div>';
+          }
+        } else {
+          html += '<div style="padding:12px;border-left:3px solid #f87171;background:rgba(248,113,113,.08);border-radius:6px">' +
+                  '<strong style="color:#f87171">✗ Injoignable</strong> depuis Shield.<br>' +
+                  '<span class="text-dim" style="font-size:11.5px">' +
+                  'Cause probable : le container Shield ne voit pas le LAN du terminal ' +
+                  '(routage Docker bridge / VLAN cloisonné). Voir dépannage ci-dessous.</span></div>';
+        }
+        html += '<details style="margin-top:10px;font-size:11.5px"><summary style="cursor:pointer">Détails ports (' +
+                (data.probes || []).length + ')</summary>' +
+                '<div style="display:grid;gap:3px;margin-top:6px">';
+        (data.probes || []).forEach(function(p) {
+          html += '<div style="display:flex;justify-content:space-between;padding:3px 8px;' +
+                  'background:rgba(0,0,0,.15);border-radius:4px;font-family:ui-monospace,monospace">' +
+                  '<span>' + (p.ok ? '✓' : '✗') + ' ' + esc(p.name) + '</span>' +
+                  '<span class="text-dim">' + (p.ms != null ? p.ms + 'ms' : '') + '</span></div>';
+        });
+        html += '</div></details>';
+        identBox.innerHTML = html;
+        if (window.lucide) window.lucide.createIcons();
+      } catch (e) {
+        identBox.innerHTML = '<div style="padding:12px;color:#f87171">Erreur réseau : ' + esc(e.message) + '</div>';
+      } finally {
+        identBtn.disabled = false;
+      }
+    });
+  }
 
   // Petit keyframe spin (au cas où il n'est pas global)
   var styleId = "scan-spin-style";

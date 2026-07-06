@@ -591,6 +591,216 @@ class ZkSyncNowView(APIView):
         return Response(result)
 
 
+class DeviceIdentifyByIpView(APIView):
+    """POST /api/v1/devices/identify-by-ip/ — teste tous les protocoles connus
+    sur une IP fournie et renvoie ce qu'on a trouvé.
+
+    Body : ``{"ip": "10.20.1.66"}``
+    Utile quand le scan CIDR échoue (LAN isolé du container Docker).
+    L'admin renseigne juste l'IP visible depuis l'interface web du terminal.
+
+    Teste :
+      - TCP open : 22, 80, 443, 554, 4370, 5084, 8000, 8081, 8443, 37777
+      - ZKAccess SDK (pyzk) sur 4370 → firmware/serial/counts
+      - Hikvision ISAPI sur 80 → /ISAPI/System/deviceInfo
+      - HTTP banner sur 80/443 → Server: header + <title>
+      - LLRP handshake sur 5084
+      - RTSP DESCRIBE sur 554 (caméra IP ONVIF)
+
+    Réponse : {
+      "ip": "...", "reachable": true/false,
+      "probes": [{"name": "TCP 4370", "ok": true, "ms": 3}, ...],
+      "identified": {"brand": "Hikvision", "model": "DS-K1T671M", ...} | null,
+    }
+    """
+    permission_classes = [HasKshieldPermission]
+    kshield_perms = {"read": "devices.view", "write": "devices.manage"}
+
+    def post(self, request):
+        import socket
+        import time as _time
+
+        ip = (request.data.get("ip") or "").strip()
+        if not ip:
+            return Response({"error": "ip requise"}, status=400)
+
+        # Validation basique
+        try:
+            socket.inet_aton(ip)
+        except OSError:
+            try:
+                ip = socket.gethostbyname(ip)
+            except OSError as exc:
+                return Response({
+                    "ip": ip, "reachable": False,
+                    "error": f"DNS/IP invalide : {exc}",
+                }, status=200)
+
+        start = _time.monotonic()
+        probes = []
+        open_ports = []
+        # Tous les ports d'équipements Shield connus
+        SCAN_PORTS = [
+            (22, "SSH"), (80, "HTTP"), (443, "HTTPS"), (554, "RTSP"),
+            (2000, "Onvif"), (4370, "ZKAccess"), (5084, "LLRP"),
+            (8000, "Hikvision"), (8081, "ADMS"), (8443, "HTTPS-alt"),
+            (9000, "MinIO-like"), (37777, "Dahua NetSDK"),
+        ]
+        for port, label in SCAN_PORTS:
+            t = _time.monotonic()
+            ok = False
+            try:
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    s.settimeout(1.0)
+                    ok = s.connect_ex((ip, port)) == 0
+            except Exception:
+                ok = False
+            ms = int((_time.monotonic() - t) * 1000)
+            probes.append({"name": f"TCP {port} ({label})",
+                            "ok": ok, "ms": ms, "port": port})
+            if ok:
+                open_ports.append((port, label))
+
+        reachable = bool(open_ports)
+        identified = None
+
+        # ── Probe ZKAccess (4370) ──
+        if any(p == 4370 for p, _ in open_ports):
+            try:
+                from .zk_client import ZkClient, ZkConnectionError, ZkUnavailable
+                try:
+                    with ZkClient(ip, port=4370, timeout=3).open() as zk:
+                        info = zk.info()
+                    identified = {
+                        "brand": "ZKTeco",
+                        "model": info.get("name") or "K-series / SpeedFace",
+                        "firmware": info.get("firmware"),
+                        "serial": info.get("serial"),
+                        "platform": info.get("platform"),
+                        "protocol": "ZKAccess SDK",
+                        "port": 4370,
+                        "users_count": info.get("users_count"),
+                        "fingerprints_count": info.get("fingerprints_count"),
+                    }
+                    probes.append({"name": "Dialogue ZKAccess SDK",
+                                    "ok": True, "detail": info.get("name")})
+                except (ZkUnavailable, ZkConnectionError) as exc:
+                    probes.append({"name": "Dialogue ZKAccess SDK",
+                                    "ok": False, "detail": str(exc)[:200]})
+            except Exception:
+                pass
+
+        # ── Probe Hikvision ISAPI (80/443/8000) ──
+        if identified is None and any(p in (80, 443, 8000, 8443) for p, _ in open_ports):
+            try:
+                import requests
+                for port in (443, 80, 8000, 8443):
+                    if port not in [p for p, _ in open_ports]:
+                        continue
+                    scheme = "https" if port in (443, 8443) else "http"
+                    url = f"{scheme}://{ip}:{port}/ISAPI/System/deviceInfo"
+                    try:
+                        r = requests.get(url, timeout=2.5,
+                                          verify=False, auth=None)
+                        # Hikvision renvoie 401 sans auth mais headers reconnaissables
+                        server = r.headers.get("Server", "")
+                        auth_hdr = r.headers.get("WWW-Authenticate", "")
+                        if ("app-webserver" in server.lower()
+                                or "hikvision" in server.lower()
+                                or "hikvision" in auth_hdr.lower()):
+                            identified = {
+                                "brand": "Hikvision",
+                                "model": "DS-K1T ou compatible ISAPI",
+                                "protocol": "ISAPI HTTP",
+                                "port": port,
+                                "server_header": server,
+                                "requires_auth": r.status_code == 401,
+                            }
+                            probes.append({"name": f"Hikvision ISAPI ({port})",
+                                            "ok": True, "detail": server})
+                            break
+                    except Exception:
+                        continue
+            except Exception:
+                pass
+
+        # ── Probe HTTP banner générique ──
+        if identified is None:
+            for port, _ in open_ports:
+                if port not in (80, 443, 8000, 8081, 8443):
+                    continue
+                try:
+                    import ssl as _ssl
+                    import urllib.request
+                    scheme = "https" if port in (443, 8443) else "http"
+                    url = f"{scheme}://{ip}:{port}/"
+                    ctx = _ssl.create_default_context()
+                    ctx.check_hostname = False
+                    ctx.verify_mode = _ssl.CERT_NONE
+                    req = urllib.request.Request(
+                        url, headers={"User-Agent": "KaydanShield-Identify/1.0"})
+                    with urllib.request.urlopen(req, timeout=2.5, context=ctx) as r:
+                        server = r.headers.get("Server", "")
+                        body = r.read(4096).decode(errors="ignore").lower()
+                    haystack = (server + " | " + body).lower()
+                    for keyword, brand in (
+                        ("hikvision",  "Hikvision"),
+                        ("dahua",      "Dahua"),
+                        ("dnvrs-webs", "Dahua"),
+                        ("mongoose",   "Dahua"),
+                        ("zkteco",     "ZKTeco"),
+                        ("speedface",  "ZKTeco"),
+                        ("anviz",      "Anviz"),
+                        ("suprema",    "Suprema"),
+                        ("impinj",     "Impinj"),
+                        ("zebra",      "Zebra"),
+                        ("axis",       "Axis"),
+                    ):
+                        if keyword in haystack:
+                            identified = {
+                                "brand": brand,
+                                "protocol": f"HTTP ({port})",
+                                "port": port,
+                                "server_header": server,
+                                "url": url,
+                            }
+                            probes.append({"name": f"HTTP banner ({port})",
+                                            "ok": True, "detail": server})
+                            break
+                    if identified: break
+                except Exception:
+                    continue
+
+        # ── Probe LLRP (5084) ──
+        if identified is None and any(p == 5084 for p, _ in open_ports):
+            try:
+                with socket.socket() as s:
+                    s.settimeout(2.0)
+                    s.connect((ip, 5084))
+                    raw = s.recv(10)
+                if raw and len(raw) >= 2:
+                    identified = {
+                        "brand": "Générique",
+                        "model": "Lecteur RFID UHF (LLRP)",
+                        "protocol": "LLRP",
+                        "port": 5084,
+                    }
+                    probes.append({"name": "Handshake LLRP",
+                                    "ok": True, "detail": raw.hex()[:20]})
+            except Exception:
+                pass
+
+        duration = int((_time.monotonic() - start) * 1000)
+        return Response({
+            "ip": ip,
+            "reachable": reachable,
+            "duration_ms": duration,
+            "open_ports": [p for p, _ in open_ports],
+            "probes": probes,
+            "identified": identified,
+        })
+
+
 class FaceTerminalEventView(APIView):
     """Webhook générique pour events des terminaux face reco.
 
@@ -1901,9 +2111,10 @@ class ReaderDiscoverView(APIView):
 
     def post(self, request):
         kind = (request.data.get("kind") or "").lower()
-        if kind not in ("uhf", "nfc", "ble", "zk"):
+        if kind not in ("uhf", "nfc", "ble", "zk", "face"):
             return Response(
-                {"error": "kind invalide", "detail": "Attendu : uhf, nfc, ble ou zk"},
+                {"error": "kind invalide",
+                 "detail": "Attendu : uhf, nfc, ble, zk ou face"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 

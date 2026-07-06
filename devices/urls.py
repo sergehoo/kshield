@@ -14,7 +14,7 @@ from .views import (
     ReaderDiscoverView,
     BadgeBulkEnrollView, HelmetBulkEnrollView, ScanInboxView,
     BleGatewayIngestView,
-    FaceTerminalEventView, FacePushEmployeeView,
+    FaceTerminalEventView, FacePushEmployeeView, DeviceIdentifyByIpView,
     DeviceConnectivityTestView,
     ZkSyncNowView, ZkSyncAllView, ZkPushUsersNowView,
     ZkEnrollSessionView, ZkImportUsersView, ZkPushEmployeeView,
@@ -51,6 +51,8 @@ urlpatterns = [
     path("cameras/probe-rtsp-bulk/",                 CameraRtspProbeMultipleView.as_view(), name="camera-rtsp-probe-bulk"),
     # Auto-discovery lecteurs RFID UHF / NFC / BLE
     path("readers/discover/",                        ReaderDiscoverView.as_view(),      name="reader-discover"),
+    # Identifier un équipement par son IP (test tous protocoles)
+    path("identify-by-ip/",                          DeviceIdentifyByIpView.as_view(),  name="device-identify-by-ip"),
     # Enrôlement en masse — badges (NFC/UHF/QR) et casques (UHF+BLE)
     path("badges/bulk-enroll/",                      BadgeBulkEnrollView.as_view(),     name="badge-bulk-enroll"),
     path("helmets/bulk-enroll/",                     HelmetBulkEnrollView.as_view(),    name="helmet-bulk-enroll"),
