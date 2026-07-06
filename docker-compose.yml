@@ -259,9 +259,11 @@ services:
       shieldredis:
         condition: service_healthy
     networks: [kshield_network, proxy]
-    # Override : le port 8001 ne sert que /ws/, pas /api/. On check juste le TCP.
+    # Healthcheck via /healthz (endpoint public exempt de SSL redirect) — évite
+    # les logs "GET / 301 Moved Permanently" toutes les 30s. Fallback sur nc
+    # au cas où gunicorn n'a pas fini de démarrer.
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS -o /dev/null http://127.0.0.1:8001/ || nc -z 127.0.0.1 8001 || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS -o /dev/null http://127.0.0.1:8001/healthz || nc -z 127.0.0.1 8001 || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
