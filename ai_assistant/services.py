@@ -183,10 +183,15 @@ class AIChatService:
     """Chat IA multi-provider avec function-calling.
 
     Boucle d'agent : LLM → tool call → tool exec → réinjection → réponse finale.
-    Limite le nombre d'itérations pour éviter les runaway loops.
+    Limite stricte pour rester sous le timeout gunicorn (60s) :
+      - 3 itérations max
+      - 15s par appel LLM
+      - budget total ~50s
     """
 
-    MAX_TOOL_ITERATIONS = 5
+    MAX_TOOL_ITERATIONS = 3
+    LLM_TIMEOUT_S = 15.0
+    TOTAL_BUDGET_S = 50.0
 
     @classmethod
     def ask(cls, user, message: str, conversation=None,
@@ -221,10 +226,13 @@ class AIChatService:
             client = OpenAI(
                 api_key=cfg["api_key"],
                 base_url=cfg["base_url"],
-                timeout=45.0,
+                timeout=cls.LLM_TIMEOUT_S,
             )
         except Exception as exc:
             return f"Erreur init client IA : {exc}"
+
+        import time as _time
+        _start = _time.monotonic()
 
         messages = [{"role": "system", "content": _SYSTEM_PROMPT}]
         for m in (history or [])[-10:]:
@@ -241,8 +249,15 @@ class AIChatService:
 
         tools = get_tool_schemas_for_llm()
 
-        # Boucle d'agent : max N itérations
+        # Boucle d'agent : max N itérations + budget total
         for iteration in range(cls.MAX_TOOL_ITERATIONS):
+            # Budget global — abandonne proprement si on approche du timeout gunicorn
+            if _time.monotonic() - _start > cls.TOTAL_BUDGET_S:
+                logger.warning("AI budget exceeded after %d iterations", iteration)
+                return (
+                    "⌛ L'assistant a dépassé son budget temps de réponse. "
+                    "Reformule ta question plus précisément ou pose-la en plusieurs étapes."
+                )
             try:
                 resp = client.chat.completions.create(
                     model=cfg["model"],
