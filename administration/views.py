@@ -61,6 +61,39 @@ def paginate(qs, request, per_page: int = 25, page_param: str = "page"):
     return page_obj, list(page_obj.object_list)
 
 
+def _fast_count(model_class) -> int:
+    """Count rapide pour les tables énormes.
+
+    Sur Postgres, ``SELECT COUNT(*)`` fait un scan complet — sur une table
+    de plusieurs millions de lignes, ça peut prendre 5-30 secondes.
+    L'estimation ``pg_class.reltuples`` est immédiate (constant time) et
+    précise à ~5%. Pour de l'affichage KPI, c'est largement suffisant.
+
+    Fallback sur ``objects.count()`` en cas d'erreur (SQLite ou table pas encore
+    vacuum-analyze).
+    """
+    from django.db import connection
+    table_name = model_class._meta.db_table
+    if connection.vendor == "postgresql":
+        try:
+            with connection.cursor() as c:
+                c.execute(
+                    "SELECT reltuples::bigint FROM pg_class WHERE relname = %s",
+                    [table_name],
+                )
+                row = c.fetchone()
+                if row and row[0] is not None:
+                    estimated = int(row[0])
+                    # Si l'estimation est très petite (<1000), on préfère le count exact
+                    # car pg_class.reltuples est peu précis sur les petites tables
+                    if estimated < 1000:
+                        return model_class.objects.count()
+                    return estimated
+        except Exception:
+            pass
+    return model_class.objects.count()
+
+
 class BaseAdminView(TemplateView):
     """Mixin de base pour toutes les pages admin.
 
@@ -1042,20 +1075,37 @@ class DevicesView(BaseAdminView):
                 ctx["page_obj"] = page_obj
                 ctx["ota_updates"] = page_qs
 
-            # Compteurs onglets + devices hors-ligne (pas de heartbeat depuis 5 min)
-            now = timezone.now()
-            cutoff = now - timedelta(minutes=5)
-            ctx["models_count"] = DeviceModel.objects.count()
-            ctx["count_devices"] = Device.objects.count()
-            ctx["count_heartbeats"] = DeviceHeartbeat.objects.count()
-            ctx["count_maintenance"] = DeviceMaintenance.objects.filter(
-                ended_at__isnull=True).count()
-            ctx["count_firmwares"] = FirmwareVersion.objects.count()
-            ctx["count_ota"] = OTAUpdate.objects.filter(
-                status__in=("pending", "in_progress")).count()
-            ctx["devices_offline"] = Device.objects.filter(
-                last_heartbeat_at__isnull=False, last_heartbeat_at__lt=cutoff,
-            ).count() + Device.objects.filter(last_heartbeat_at__isnull=True).count()
+            # Compteurs onglets + devices hors-ligne — CACHE 60s pour éviter
+            # 7 requêtes COUNT à chaque affichage (DeviceHeartbeat peut être
+            # une table de plusieurs millions de lignes en prod).
+            from django.core.cache import cache
+            from django.db.models import Q
+            cache_key = "devices_view_counts"
+            counts = cache.get(cache_key)
+            if counts is None:
+                now = timezone.now()
+                cutoff = now - timedelta(minutes=5)
+                # Une seule requête pour devices_offline (agrégat OR)
+                offline_count = Device.objects.filter(
+                    Q(last_heartbeat_at__isnull=True)
+                    | Q(last_heartbeat_at__lt=cutoff),
+                ).count()
+                # DeviceHeartbeat.count() peut être très lent → on utilise
+                # une estimation Postgres (pg_class.reltuples) si dispo.
+                heartbeats_count = _fast_count(DeviceHeartbeat)
+                counts = {
+                    "models_count":       DeviceModel.objects.count(),
+                    "count_devices":      Device.objects.count(),
+                    "count_heartbeats":   heartbeats_count,
+                    "count_maintenance":  DeviceMaintenance.objects.filter(
+                        ended_at__isnull=True).count(),
+                    "count_firmwares":    FirmwareVersion.objects.count(),
+                    "count_ota":          OTAUpdate.objects.filter(
+                        status__in=("pending", "in_progress")).count(),
+                    "devices_offline":    offline_count,
+                }
+                cache.set(cache_key, counts, 60)   # TTL 60s
+            ctx.update(counts)
         except Exception:
             for k in ("devices", "models", "heartbeats", "maintenances",
                       "firmwares", "ota_updates"):
