@@ -622,11 +622,22 @@
                     'Aucun protocole KAYDAN SHIELD reconnu. Vérifie le port d\'admin ou fournis les credentials.</div>';
           }
         } else {
-          html += '<div style="padding:12px;border-left:3px solid #f87171;background:rgba(248,113,113,.08);border-radius:6px">' +
-                  '<strong style="color:#f87171">✗ Injoignable</strong> depuis Shield.<br>' +
-                  '<span class="text-dim" style="font-size:11.5px">' +
-                  'Cause probable : le container Shield ne voit pas le LAN du terminal ' +
-                  '(routage Docker bridge / VLAN cloisonné). Voir dépannage ci-dessous.</span></div>';
+          html += '<div style="padding:14px;border-left:3px solid #f87171;background:rgba(248,113,113,.08);border-radius:8px">' +
+                  '<strong style="color:#f87171">✗ Injoignable depuis Shield</strong><br>' +
+                  '<span style="font-size:12.5px;color:var(--text)">' +
+                  'Le container Shield tourne sur ton VPS/cloud et ne voit pas ton LAN local. ' +
+                  '<strong>C\'est normal et attendu</strong> en prod hébergée.</span>' +
+                  '<div style="margin-top:10px;padding-top:8px;border-top:1px dashed rgba(255,255,255,.14);font-size:12px">' +
+                  '<strong style="color:var(--ks-orange-400)">→ Solution recommandée : mode PUSH</strong><br>' +
+                  '1. Ajoute le terminal manuellement (bouton ci-dessous)<br>' +
+                  '2. Configure-le côté matériel pour <em>pousser</em> ses events vers Shield<br>' +
+                  '3. Aucun scan ni VPN requis</div>' +
+                  '<a class="btn btn-primary" href="{% url \'admin-device-reader-picker\' %}" style="margin-top:10px">' +
+                  '<i data-lucide="plus" style="width:13px;height:13px"></i> Ajouter manuellement</a>' +
+                  '&nbsp;<button type="button" class="btn btn-ghost" id="ident-copy-webhook" ' +
+                  'data-ip="' + esc(ip) + '" style="margin-top:10px">' +
+                  '<i data-lucide="copy" style="width:13px;height:13px"></i> Copier l\'URL webhook</button>' +
+                  '</div>';
         }
         html += '<details style="margin-top:10px;font-size:11.5px"><summary style="cursor:pointer">Détails ports (' +
                 (data.probes || []).length + ')</summary>' +
@@ -640,6 +651,22 @@
         html += '</div></details>';
         identBox.innerHTML = html;
         if (window.lucide) window.lucide.createIcons();
+        // Bouton "copier l'URL webhook" si présent
+        var btnCopy = document.getElementById("ident-copy-webhook");
+        if (btnCopy) {
+          btnCopy.addEventListener("click", function() {
+            var sn = "AIBIO-" + (this.dataset.ip || "01").replace(/\./g, "-");
+            var url = location.origin + "/api/v1/devices/face-terminal/" + sn + "/event/";
+            navigator.clipboard.writeText(url).then(function() {
+              btnCopy.innerHTML = '<i data-lucide="check" style="width:13px;height:13px"></i> Copié !';
+              if (window.lucide) window.lucide.createIcons();
+              setTimeout(function() {
+                btnCopy.innerHTML = '<i data-lucide="copy" style="width:13px;height:13px"></i> Copier l\'URL webhook';
+                if (window.lucide) window.lucide.createIcons();
+              }, 2000);
+            });
+          });
+        }
       } catch (e) {
         identBox.innerHTML = '<div style="padding:12px;color:#f87171">Erreur réseau : ' + esc(e.message) + '</div>';
       } finally {
