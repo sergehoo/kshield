@@ -29,7 +29,8 @@ SECURE_SSL_REDIRECT = config("SECURE_SSL_REDIRECT", default=True, cast=bool)
 SECURE_REDIRECT_EXEMPT = [
     r"^healthz$",
     r"^readyz$",
-    r"^metrics$",   # Prometheus scraper interne
+    r"^metrics$",       # Prometheus scraper interne
+    r"^iclock/",        # Endpoints ADMS ZKTeco/AiFace (parlent HTTP simple sur certains firmwares)
 ]
 SESSION_COOKIE_SECURE = True
 SESSION_COOKIE_SAMESITE = "Lax"

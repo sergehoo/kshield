@@ -51,6 +51,18 @@ urlpatterns = [
     # (utilisés par Docker HEALTHCHECK et Kubernetes liveness/readiness)
     path("healthz", __import__("core.views", fromlist=["healthz"]).healthz, name="healthz"),
     path("readyz",  __import__("core.views", fromlist=["readyz"]).readyz,   name="readyz"),
+    # Endpoints ADMS ZKTeco-compatibles à la racine (les terminaux AI810 /
+    # AiFace hardcodent le path /iclock/cdata sans préfixe /api/v1/).
+    # Ces routes délèguent à ZkAdmsWebhookView du module devices.
+    path("iclock/cdata",
+         __import__("devices.views", fromlist=["ZkAdmsWebhookView"]).ZkAdmsWebhookView.as_view(),
+         name="iclock-cdata"),
+    path("iclock/getrequest",
+         __import__("devices.views", fromlist=["IclockGetRequestView"]).IclockGetRequestView.as_view(),
+         name="iclock-getrequest"),
+    path("iclock/devicecmd",
+         __import__("devices.views", fromlist=["IclockDeviceCmdView"]).IclockDeviceCmdView.as_view(),
+         name="iclock-devicecmd"),
     # Endpoints directs badges (servis hors API)
     path("badges/<int:pk>/pdf/",       BadgePDFDownloadView.as_view(), name="badge-pdf"),
     path("badges/<int:pk>/thumbnail/", BadgeThumbnailView.as_view(),   name="badge-thumbnail"),

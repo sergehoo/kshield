@@ -1114,6 +1114,65 @@ class BleGatewayIngestView(APIView):
         })
 
 
+class IclockGetRequestView(APIView):
+    """GET /iclock/getrequest?SN=<sn>&INFO=... — heartbeat + demandes de commandes.
+
+    Le terminal ADMS appelle cet endpoint toutes les N secondes pour :
+      - annoncer sa présence (SN + info firmware/IP/version)
+      - récupérer d'éventuelles commandes en attente (ex. "reboot", "clear log")
+
+    Shield renvoie ``OK\\n`` en text/plain (ou la commande à exécuter si dispo).
+    Cet endpoint sert de heartbeat et met à jour ``device.last_heartbeat_at``.
+    """
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        from django.http import HttpResponse
+        from django.utils import timezone
+
+        from .models import Device
+
+        sn = request.query_params.get("SN") or request.query_params.get("sn") or ""
+        info = request.query_params.get("INFO") or ""
+
+        if sn:
+            device = Device.objects.filter(serial_number=sn).first()
+            if device:
+                device.last_heartbeat_at = timezone.now()
+                update = ["last_heartbeat_at"]
+                # Le champ INFO contient souvent version|user_count|log_count|...
+                if info and info != device.firmware_version:
+                    parts = info.split("|")
+                    if parts and parts[0] != device.firmware_version:
+                        device.firmware_version = parts[0][:40]
+                        update.append("firmware_version")
+                device.save(update_fields=update)
+                logger.debug("iclock heartbeat from %s (%s)", sn, info[:40])
+
+        # ADMS attend "OK\n" ou une commande à exécuter.
+        # Pour l'instant on répond juste OK. Plus tard on pourra retourner
+        # des commandes en attente (queue Redis).
+        return HttpResponse("OK\n", content_type="text/plain")
+
+
+class IclockDeviceCmdView(APIView):
+    """POST /iclock/devicecmd?SN=<sn>&ID=<cmd_id> — ack d'une commande exécutée.
+
+    Le terminal ADMS confirme ici qu'il a bien exécuté une commande précédemment
+    reçue via /iclock/getrequest. Utilisé plus tard quand on implémentera
+    l'envoi de commandes (reboot, sync users, etc.).
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        from django.http import HttpResponse
+        return HttpResponse("OK\n", content_type="text/plain")
+
+    def get(self, request):
+        from django.http import HttpResponse
+        return HttpResponse("OK\n", content_type="text/plain")
+
+
 class ZkAdmsWebhookView(APIView):
     """Endpoint ADMS / push HTTP des terminaux ZKTeco.
 
@@ -1140,6 +1199,27 @@ class ZkAdmsWebhookView(APIView):
     """
     permission_classes = [AllowAny]   # webhook depuis le terminal lui-même
 
+    def get(self, request, sn=None):
+        """GET /iclock/cdata?SN=<sn>&options=all — test de disponibilité initial.
+
+        Les terminaux ADMS envoient d'abord un GET pour vérifier que le serveur
+        répond, puis basculent en POST pour les events. On retourne du texte
+        au format attendu par ZKTeco : "GetOption\\nDelay=30\\n..." + OK.
+        """
+        from django.http import HttpResponse
+        # Configuration renvoyée : delay heartbeat 30s, transaction 5s
+        cfg = (
+            "GetOption\n"
+            "Delay=30\n"
+            "TransTimes=00:00\n"
+            "TransInterval=5\n"
+            "TransFlag=1111111111\n"
+            "TimeZone=0\n"
+            "Realtime=1\n"
+            "Encrypt=None\n"
+        )
+        return HttpResponse(cfg, content_type="text/plain")
+
     def post(self, request, sn=None):
         from datetime import datetime
 
@@ -1160,7 +1240,16 @@ class ZkAdmsWebhookView(APIView):
 
         device = Device.objects.filter(serial_number=sn).first()
         if not device:
-            return Response({"error": f"device inconnu : {sn}"}, status=404)
+            # Auto-provisioning : si un terminal push avec un SN inconnu,
+            # on log un warning au lieu de renvoyer 404 (sinon le terminal
+            # retry en boucle). L'admin peut ensuite enregistrer le device
+            # manuellement avec ce SN.
+            logger.warning(
+                "iclock/cdata reçu de SN inconnu '%s' — enregistre le Device dans Shield",
+                sn,
+            )
+            from django.http import HttpResponse
+            return HttpResponse("OK\n", content_type="text/plain")
 
         # Parse les events (JSON ou ATTLOG raw)
         events_in = self._parse_payload(request)
