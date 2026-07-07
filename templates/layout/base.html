@@ -41,6 +41,10 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/css/tom-select.min.css">
   <script src="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/js/tom-select.complete.min.js" defer></script>
 
+  {# ======== Markdown renderer + sanitizer pour l'assistant IA ======== #}
+  <script src="https://cdn.jsdelivr.net/npm/marked@12.0.0/marked.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js" defer></script>
+
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><path d='M50 6 L88 22 V52 C88 74 70 90 50 96 C30 90 12 74 12 52 V22 Z' fill='%230B1B33'/><path d='M50 6 V96 C30 90 12 74 12 52 V22 Z' fill='%23F26B1F'/></svg>">
 
   <style>
@@ -1662,10 +1666,10 @@
               // guider l'admin : clé API manquante, quota dépassé, etc.)
               const errMsg = (data && (data.reply || data.error || data.detail))
                              || ("Erreur HTTP " + res.status);
-              this.messages.push({ role: "bot", content: this.escape(errMsg) });
+              this.messages.push({ role: "bot", content: this.renderMarkdown(errMsg) });
               return;
             }
-            this.messages.push({ role: "bot", content: this.escape(data.reply || "...") });
+            this.messages.push({ role: "bot", content: this.renderMarkdown(data.reply || "...") });
           } catch (err) {
             this.messages.push({
               role: "bot",
@@ -1679,7 +1683,35 @@
           }
         },
         escape(s) {
-          return s.replace(/[&<>]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;" }[c]));
+          return String(s || "").replace(/[&<>]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;" }[c]));
+        },
+        // Rendu Markdown → HTML sécurisé pour les réponses de l'IA
+        renderMarkdown(text) {
+          if (!window.marked) {
+            // marked pas chargé → fallback escape
+            return this.escape(text);
+          }
+          try {
+            const raw = window.marked.parse(text || "", {
+              gfm: true, breaks: true, headerIds: false, mangle: false,
+            });
+            // DOMPurify sanitize — retire scripts, on autorise a href, img src, table…
+            if (window.DOMPurify) {
+              return window.DOMPurify.sanitize(raw, {
+                ALLOWED_TAGS: [
+                  "h1","h2","h3","h4","h5","h6","p","br","hr",
+                  "strong","em","u","s","del","code","pre","blockquote",
+                  "ul","ol","li",
+                  "table","thead","tbody","tr","th","td",
+                  "a","img","span","div",
+                ],
+                ALLOWED_ATTR: ["href","target","rel","src","alt","title","class","style"],
+              });
+            }
+            return raw;
+          } catch (e) {
+            return this.escape(text);
+          }
         },
         init() {
           try {

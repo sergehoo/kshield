@@ -1,30 +1,40 @@
-"""Service IA — orchestration multi-provider (DeepSeek / OpenAI / Anthropic).
+"""Service IA multi-provider (DeepSeek / OpenAI / Anthropic) avec function-calling.
 
-DeepSeek expose une API 100% compatible OpenAI, il suffit de changer :
-- ``base_url`` : ``https://api.deepseek.com/v1``
-- ``api_key``  : ta clé DeepSeek
-- ``model``    : ``deepseek-chat`` ou ``deepseek-reasoner``
+Architecture "agent" :
 
-Configuration via ``settings.KAYDAN_SHIELD`` ou variables d'env :
-    AI_PROVIDER      : "deepseek" (default) | "openai" | "anthropic"
-    AI_MODEL         : override le modèle par défaut du provider
-    DEEPSEEK_API_KEY : clé DeepSeek (obtenue sur https://platform.deepseek.com)
-    OPENAI_API_KEY   : clé OpenAI si AI_PROVIDER=openai
-    ANTHROPIC_API_KEY: clé Anthropic si AI_PROVIDER=anthropic
-    AI_BASE_URL      : override manuel du base_url (utile pour proxies)
+  User posts message
+      │
+      ▼
+  AIChatService.ask()
+      │
+      ▼
+  LLM (avec tools schema)
+      │
+      ├── Décide d'appeler tools (ex: list_offline_devices, count_present_now)
+      │       │
+      │       ▼
+      │   execute_tool() interroge Django ORM → renvoie dict JSON
+      │       │
+      │       └──> réinjecté au LLM
+      │
+      ▼
+  LLM formule la réponse finale en Markdown (tableaux, listes, liens)
+      │
+      ▼
+  Retour au user
 """
 from __future__ import annotations
 
+import json
 import logging
 
 from django.conf import settings
 
+from .tools import execute_tool, get_tool_schemas_for_llm
+
 logger = logging.getLogger(__name__)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Config par provider
-# ─────────────────────────────────────────────────────────────────────────────
 _PROVIDER_DEFAULTS = {
     "deepseek": {
         "base_url":  "https://api.deepseek.com/v1",
@@ -36,13 +46,6 @@ _PROVIDER_DEFAULTS = {
         "model":     "gpt-4o-mini",
         "key_name":  "OPENAI_API_KEY",
     },
-    "azure": {
-        # OpenAI Azure — override base_url via AI_BASE_URL
-        "base_url":  None,
-        "model":     "gpt-4o-mini",
-        "key_name":  "AZURE_OPENAI_API_KEY",
-    },
-    # Anthropic n'utilise pas le SDK OpenAI — handling séparé
     "anthropic": {
         "base_url":  None,
         "model":     "claude-3-5-sonnet-20241022",
@@ -52,144 +55,293 @@ _PROVIDER_DEFAULTS = {
 
 
 def _get_ai_config():
-    """Résolution : lit KAYDAN_SHIELD + variables d'env, applique defaults."""
     cfg = settings.KAYDAN_SHIELD or {}
     provider = (cfg.get("AI_PROVIDER") or "deepseek").lower()
     if provider not in _PROVIDER_DEFAULTS:
         provider = "deepseek"
     p = _PROVIDER_DEFAULTS[provider]
-
-    # Clé API : cherche dans KAYDAN_SHIELD sous plusieurs noms possibles
     api_key = (
-        cfg.get(p["key_name"])
-        or cfg.get("AI_API_KEY")
-        or cfg.get("OPENAI_API_KEY")   # legacy fallback
+        cfg.get(p["key_name"]) or cfg.get("AI_API_KEY") or cfg.get("OPENAI_API_KEY")
     )
-    base_url = cfg.get("AI_BASE_URL") or p["base_url"]
-    model = cfg.get("AI_MODEL") or p["model"]
-
     return {
         "provider": provider,
         "api_key": api_key,
-        "base_url": base_url,
-        "model": model,
+        "base_url": cfg.get("AI_BASE_URL") or p["base_url"],
+        "model": cfg.get("AI_MODEL") or p["model"],
     }
 
 
-class AIChatService:
-    """Service IA multi-provider (DeepSeek, OpenAI, Anthropic)."""
+# ─────────────────────────────────────────────────────────────────────────────
+# Prompt système : contexte KAYDAN SHIELD complet
+# ─────────────────────────────────────────────────────────────────────────────
+_SYSTEM_PROMPT = """Tu es le **copilote intelligent KAYDAN SHIELD** — un assistant expert en \
+contrôle d'accès, pointage biométrique, anti-fraude et supervision de sites (BTP, tertiaire, sûreté).
 
-    _SYSTEM_PROMPT = (
-        "Tu es l'assistant KAYDAN SHIELD, expert en contrôle d'accès, pointage "
-        "biométrique, anti-fraude et gestion de sites (BTP, tertiaire, sûreté). "
-        "Tu connais les workflows : enrôlement de badges NFC/RFID/BLE, "
-        "reconnaissance faciale, portiques UHF, terminaux ZKTeco/Hikvision/AiFace. "
-        "Réponds en FRANÇAIS, de manière concise, actionnable, avec des étapes "
-        "numérotées quand c'est pertinent. Si tu ne sais pas, dis-le et propose "
-        "des pistes de diagnostic."
-    )
+## 🎯 Ta mission
+Aider l'admin à superviser sa plateforme, générer des rapports, exécuter des actions, \
+répondre à toute question sur l'état actuel du système.
+
+## 🗺️ Écosystème KAYDAN SHIELD
+La plateforme comporte les modules suivants (chaque module est une app Django) :
+- **employees** : employés bureau (matricule, contrat, département, badge NFC)
+- **ouvriers** (workers) : ouvriers chantier (casque UHF+BLE obligatoire, sous-traitant)
+- **visitors** : visiteurs (badge QR temporaire, VisitRequest)
+- **sites** : sites physiques (usine, chantier, bureau) + zones + checkpoints
+- **devices** : équipements (badges, casques, lecteurs, portiques, terminaux face, gateways BLE)
+- **access_control** : événements d'accès (AccessEvent), règles, décisions granted/denied
+- **attendance** : pointage (Punch, AttendanceDay), heures sup (OvertimeCalculation)
+- **antifraud** : détection anomalies (FraudAlert), règles configurables
+- **notifications** : email/SMS/webhook/websocket
+- **audit** : journal d'audit
+- **reports** : digests exécutifs hebdo/mensuel
+- **sso** : Keycloak OIDC
+- **ai_assistant** : c'est toi
+
+## 🔌 Équipements supportés
+- **Terminaux face** : ZKTeco SpeedFace, Hikvision DS-K1T, Dahua ASI7213, AiFace AI810 (ADMS)
+- **Terminaux pointage** : ZKTeco K14/K20 (SDK ZKAccess port 4370)
+- **Portiques RFID UHF** : FOCUS ST-G8 (LLRP port 5084)
+- **Beacons BLE casques** : MOKO H7 Lite (via gateways BLE HTTP)
+- **Lecteurs NFC/RFID** : Impinj, Zebra, HID OMNIKEY
+- **Caméras IP** : ONVIF + RTSP + face recognition YOLOv8/InsightFace
+- **Contrôleurs**, **serrures**, **passerelles IoT**
+
+## 📊 Sources de données (via tes tools)
+Tu as accès en LECTURE à :
+- Tous les équipements, sites, entreprises, employés, ouvriers, visiteurs
+- Événements d'accès temps réel, pointages du jour, incidents anti-fraude
+- KPIs plateforme, heartbeat devices, statistiques
+Et en ACTIONS (avec RBAC + audit) :
+- Suspendre / révoquer un badge
+- Synchroniser un terminal ZKTeco à la demande
+- Pousser un employé vers les terminaux
+- Lancer un test de connectivité device
+
+## ⚡ Règles impératives
+
+1. **AUCUNE réponse générique** quand les données existent dans Shield. Toujours appeler \
+un tool pour récupérer l'état RÉEL avant de répondre.
+   - "Quels équipements sont connectés ?" → appelle `list_devices` ou `platform_snapshot`
+   - "Combien de personnes présentes ?" → appelle `count_present_now`
+   - "Derniers incidents ?" → appelle `recent_incidents`
+
+2. **Format Markdown riche** dans tes réponses :
+   - Tableaux avec `|` pour lister des équipements / employés / events
+   - Titres `##` / `###` pour structurer un rapport
+   - Listes `-` ou `1.` numérotées pour étapes actionnables
+   - Liens `[texte](/url)` vers les fiches détaillées (utilise `url` renvoyé par les tools)
+   - Blocs de code ` ``` ` pour les commandes shell / snippets JSON
+
+3. **Toujours proposer des ACTIONS suivantes** pertinentes au contexte :
+   - "→ [Ouvrir la fiche](url)" · "→ Redémarrer" · "→ Consulter les logs"
+
+4. **Confirmer avant toute action** modifiante (suspend, revoke, restart). \
+Ne pas exécuter directement — demande "Confirmez-vous ?" et attends la réponse user.
+
+5. **Si un tool renvoie une erreur** (`{"error": "..."}`), explique-la clairement à l'user \
+avec des pistes de résolution.
+
+6. **Réponses en FRANÇAIS**, concises, actionnables, avec chiffres précis.
+
+## 📝 Rapports professionnels
+Si l'user demande un **rapport** (pointage, activité, incidents, présence…), \
+structure la réponse en Markdown avec :
+- Titre H1
+- Section "Contexte" (période, filtres)
+- Section "Chiffres clés" (KPIs en tableau)
+- Section "Détails" (liste ou tableau des lignes)
+- Section "Constats & recommandations" (analyse actionnable)
+- Fin : lien vers export XLSX ou PDF si dispo
+
+## 🚦 Exemples d'interactions
+
+**User** : *"Quels équipements sont hors ligne ?"*
+**Toi** : Tu appelles `list_offline_devices` puis réponds :
+```
+## 🔴 Équipements hors ligne (3)
+
+Aucun heartbeat depuis > 5 minutes :
+
+| ID | Modèle | Site | Dernier vu |
+|----|--------|------|-----------|
+| #12 | ZKTeco K14/ID | HQ | il y a 34 min |
+| #7 | FOCUS ST-G8 | Chantier Ouest | jamais |
+...
+```
+
+**User** : *"Fais un état des lieux"*
+**Toi** : `platform_snapshot` puis rapport synthétique avec KPIs + alertes.
+
+Prêt à assister. Que faisons-nous ?
+"""
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Service principal
+# ─────────────────────────────────────────────────────────────────────────────
+class AIChatService:
+    """Chat IA multi-provider avec function-calling.
+
+    Boucle d'agent : LLM → tool call → tool exec → réinjection → réponse finale.
+    Limite le nombre d'itérations pour éviter les runaway loops.
+    """
+
+    MAX_TOOL_ITERATIONS = 5
 
     @classmethod
     def ask(cls, user, message: str, conversation=None,
             history: list | None = None) -> str:
         cfg = _get_ai_config()
-
         if not cfg["api_key"]:
-            # Message adapté au provider configuré pour guider l'admin
             key_name = _PROVIDER_DEFAULTS[cfg["provider"]]["key_name"]
             return (
-                f"Assistant en mode démo. Pour activer les réponses live : "
-                f"définissez la variable d'environnement `{key_name}` "
-                f"avec votre clé {cfg['provider'].capitalize()}. "
-                f"(Provider actuel : {cfg['provider']}, modèle : {cfg['model']})"
+                f"Assistant en mode démo. Configure `{key_name}` dans les variables "
+                f"d'environnement Dokploy pour activer les réponses live "
+                f"(provider={cfg['provider']}, model={cfg['model']})."
             )
 
-        # Provider "anthropic" : utilise le SDK anthropic natif
+        # Anthropic — SDK différent, on ne supporte pas function-calling ici pour l'instant
         if cfg["provider"] == "anthropic":
-            return cls._ask_anthropic(cfg, message, history)
+            return cls._ask_anthropic_simple(cfg, message, history)
 
-        # Providers OpenAI-compatibles (DeepSeek, OpenAI, Azure, autres)
-        return cls._ask_openai_compat(cfg, message, history)
+        # OpenAI-compatible (DeepSeek, OpenAI) — function calling activé
+        return cls._ask_with_tools(cfg, user, message, history)
 
+    # ─────────────────────────────────────────────────────────────────────
+    # OpenAI / DeepSeek — avec function calling
+    # ─────────────────────────────────────────────────────────────────────
     @classmethod
-    def _ask_openai_compat(cls, cfg, message, history):
+    def _ask_with_tools(cls, cfg, user, message, history):
         try:
             from openai import OpenAI
         except ImportError:
-            return "Erreur : `openai` non installé (pip install openai)."
+            return "Erreur : SDK `openai` non installé (pip install openai)."
 
         try:
             client = OpenAI(
                 api_key=cfg["api_key"],
                 base_url=cfg["base_url"],
-                timeout=30.0,
+                timeout=45.0,
             )
         except Exception as exc:
-            return f"Erreur d'initialisation client IA : {exc}"
+            return f"Erreur init client IA : {exc}"
 
-        messages = [{"role": "system", "content": cls._SYSTEM_PROMPT}]
+        messages = [{"role": "system", "content": _SYSTEM_PROMPT}]
         for m in (history or [])[-10:]:
-            if m.get("role") in ("user", "assistant"):
-                messages.append({"role": m["role"], "content": m["content"]})
+            role = m.get("role")
+            if role in ("user", "assistant"):
+                # Normaliser : le widget UI envoie parfois "bot" au lieu de "assistant"
+                role = "assistant" if role in ("bot", "assistant") else "user"
+                content = m.get("content") or ""
+                # Sanitize simple — retire les tags HTML du historique
+                import re as _re
+                content = _re.sub(r"<[^>]+>", "", content)
+                messages.append({"role": role, "content": content})
         messages.append({"role": "user", "content": message})
 
-        try:
-            resp = client.chat.completions.create(
-                model=cfg["model"],
-                messages=messages,
-                max_tokens=800,
-                temperature=0.4,   # DeepSeek recommande 0.4-0.7 pour tâches conv
-                stream=False,
-            )
-            reply = (resp.choices[0].message.content or "").strip()
-            if not reply:
-                return "(Réponse vide de l'IA — réessayez.)"
-            return reply
-        except Exception as exc:
-            logger.exception("AI chat failed (provider=%s)", cfg["provider"])
-            # Message d'erreur user-friendly
-            err_str = str(exc)
-            if "401" in err_str or "authentication" in err_str.lower():
-                return (
-                    f"Clé API {cfg['provider']} invalide ou expirée. "
-                    "Vérifiez la variable d'environnement."
-                )
-            if "429" in err_str or "rate" in err_str.lower():
-                return (
-                    "Quota IA dépassé ou rate-limit atteint. Réessayez dans "
-                    "quelques secondes ou upgradez le plan côté provider."
-                )
-            if "timeout" in err_str.lower():
-                return "Timeout côté provider IA — réessayez."
-            return f"Erreur IA ({cfg['provider']}) : {err_str[:200]}"
+        tools = get_tool_schemas_for_llm()
 
+        # Boucle d'agent : max N itérations
+        for iteration in range(cls.MAX_TOOL_ITERATIONS):
+            try:
+                resp = client.chat.completions.create(
+                    model=cfg["model"],
+                    messages=messages,
+                    tools=tools,
+                    tool_choice="auto",
+                    max_tokens=1500,
+                    temperature=0.3,
+                )
+            except Exception as exc:
+                logger.exception("LLM call failed")
+                return cls._format_error(cfg["provider"], exc)
+
+            choice = resp.choices[0]
+            msg = choice.message
+
+            # Cas 1 : le LLM a demandé un ou plusieurs tool calls
+            if getattr(msg, "tool_calls", None):
+                # Ajoute la réponse assistant (avec tool_calls) à l'historique
+                messages.append({
+                    "role": "assistant",
+                    "content": msg.content or "",
+                    "tool_calls": [
+                        {
+                            "id": tc.id,
+                            "type": "function",
+                            "function": {
+                                "name": tc.function.name,
+                                "arguments": tc.function.arguments,
+                            },
+                        }
+                        for tc in msg.tool_calls
+                    ],
+                })
+                # Exécute chaque tool et pousse le résultat
+                for tc in msg.tool_calls:
+                    tool_name = tc.function.name
+                    try:
+                        args = json.loads(tc.function.arguments or "{}")
+                    except json.JSONDecodeError:
+                        args = {}
+                    logger.info("AI tool call : %s(%s)", tool_name, args)
+                    result = execute_tool(tool_name, args, user=user)
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "content": json.dumps(result, default=str, ensure_ascii=False),
+                    })
+                continue    # boucle : le LLM va maintenant formuler la réponse
+
+            # Cas 2 : le LLM a produit une réponse finale (texte)
+            reply = (msg.content or "").strip()
+            return reply or "(Réponse vide de l'IA)"
+
+        return (
+            "⚠️ L'assistant a atteint le nombre max de tool calls "
+            f"({cls.MAX_TOOL_ITERATIONS}). Reformule ta question plus précisément."
+        )
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Anthropic — sans function calling (fallback simple)
+    # ─────────────────────────────────────────────────────────────────────
     @classmethod
-    def _ask_anthropic(cls, cfg, message, history):
+    def _ask_anthropic_simple(cls, cfg, message, history):
         try:
             import anthropic
         except ImportError:
-            return "Erreur : `anthropic` non installé (pip install anthropic)."
+            return "SDK `anthropic` non installé."
         try:
             client = anthropic.Anthropic(api_key=cfg["api_key"], timeout=30.0)
         except Exception as exc:
-            return f"Erreur init client Anthropic : {exc}"
-
+            return f"Erreur init Anthropic : {exc}"
         messages = []
         for m in (history or [])[-10:]:
-            if m.get("role") in ("user", "assistant"):
-                messages.append({"role": m["role"], "content": m["content"]})
+            role = m.get("role")
+            if role in ("user", "assistant"):
+                role = "assistant" if role in ("bot", "assistant") else "user"
+                messages.append({"role": role, "content": m.get("content", "")})
         messages.append({"role": "user", "content": message})
-
         try:
             resp = client.messages.create(
                 model=cfg["model"],
-                system=cls._SYSTEM_PROMPT,
+                system=_SYSTEM_PROMPT,
                 messages=messages,
-                max_tokens=800,
+                max_tokens=1500,
             )
-            # Anthropic renvoie une liste de content blocks
             parts = [b.text for b in resp.content if hasattr(b, "text")]
-            return ("".join(parts) or "").strip() or "(Réponse vide.)"
+            return "".join(parts) or "(vide)"
         except Exception as exc:
-            logger.exception("Anthropic chat failed")
-            return f"Erreur IA (anthropic) : {str(exc)[:200]}"
+            return cls._format_error("anthropic", exc)
+
+    @staticmethod
+    def _format_error(provider, exc):
+        err = str(exc)
+        if "401" in err or "authentication" in err.lower():
+            return (f"🔑 Clé API {provider} invalide ou expirée. "
+                    "Vérifie la variable d'environnement.")
+        if "429" in err or "rate" in err.lower():
+            return "⏱️ Quota IA dépassé. Réessaye dans quelques secondes."
+        if "timeout" in err.lower():
+            return "⌛ Timeout provider IA."
+        return f"❌ Erreur IA ({provider}) : {err[:200]}"
