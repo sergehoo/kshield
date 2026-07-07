@@ -235,6 +235,18 @@ def make_crud(
     class _Detail(AdminContextMixin, DetailView):
         template_name = detail_template or "administration/_detail.html"
 
+        def get_queryset(self):
+            # Pre-load systématique des FK usuels pour éviter les N+1 dans
+            # _build_fields (qui accède à chaque relation via getattr).
+            qs = super().get_queryset()
+            related = []
+            for f in self.model._meta.get_fields():
+                if getattr(f, "is_relation", False) and getattr(f, "many_to_one", False):
+                    related.append(f.name)
+            if related:
+                qs = qs.select_related(*related[:20])   # cap à 20 pour éviter les jointures monstres
+            return qs
+
         def get_context_data(self, **kwargs):
             ctx = super().get_context_data(**kwargs)
             ctx["page_title"] = f"{entity_label} · {self.object}"
