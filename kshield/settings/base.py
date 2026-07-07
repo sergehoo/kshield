@@ -375,9 +375,15 @@ KAYDAN_SHIELD = {
     "API_KEY_CLOCK_SKEW_SEC": 60,
     "VISITOR_ID_RETENTION_DAYS": 365,
     "AUDIT_HASH_ALGO": "sha256",
-    "AI_PROVIDER": config("AI_PROVIDER", default="openai"),
-    "AI_MODEL": config("AI_MODEL", default="gpt-4o-mini"),
+    # Assistant IA — DeepSeek en défaut (moins cher, compatible API OpenAI).
+    # Alternatives : "openai", "anthropic". Pour override le base_url (proxy,
+    # Azure, self-hosted), définir AI_BASE_URL.
+    "AI_PROVIDER": config("AI_PROVIDER", default="deepseek"),
+    "AI_MODEL": config("AI_MODEL", default=""),    # vide = default du provider
+    "AI_BASE_URL": config("AI_BASE_URL", default=""),
+    "DEEPSEEK_API_KEY": config("DEEPSEEK_API_KEY", default=""),
     "OPENAI_API_KEY": config("OPENAI_API_KEY", default=""),
+    "ANTHROPIC_API_KEY": config("ANTHROPIC_API_KEY", default=""),
     "SSO_OFFLINE_CACHE_TTL_HOURS": config(
         "SSO_OFFLINE_CACHE_TTL_HOURS", default=24, cast=int),
     "SMS": {

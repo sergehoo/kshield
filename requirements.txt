@@ -84,6 +84,11 @@ sentry-sdk[django,celery]>=2.10,<3
 # django-axes : bloque l'IP après N tentatives échouées (config dans base.py).
 django-axes>=6.4,<8
 
+# ─── Assistant IA — SDK OpenAI (compat DeepSeek via base_url override) ───
+# DeepSeek = alternative low-cost à OpenAI, même API. Configuré via
+# settings.KAYDAN_SHIELD["AI_PROVIDER"] = "deepseek" (default).
+openai>=1.40,<2
+
 # ─── Discovery réseau lecteurs RFID/NFC/BLE (mDNS / Bonjour) ───
 # Utilisé par devices/reader_discovery.py pour l'auto-détection des lecteurs
 # UHF (LLRP), NFC réseau et gateways BLE sur le LAN.
