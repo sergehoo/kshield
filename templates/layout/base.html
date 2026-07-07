@@ -1649,22 +1649,28 @@
           this.thinking = true;
 
           try {
-            // Endpoint à brancher : voir AIChatService dans ai_assistant/services.py
             const csrf = document.querySelector("[name=csrfmiddlewaretoken]")?.value || "";
             const res = await fetch("/api/v1/ai/chat", {
               method: "POST",
               headers: { "Content-Type": "application/json", "X-CSRFToken": csrf },
               body: JSON.stringify({ message: text, history: this.messages.slice(-10) })
             });
-            if (!res.ok) throw new Error("HTTP " + res.status);
-            const data = await res.json();
-            // Sécurité : on n'autorise que du texte simple depuis l'API
-            // (le serveur peut renvoyer du Markdown -> à convertir/sanitiser côté backend)
+            let data = null;
+            try { data = await res.json(); } catch(e) { data = null; }
+            if (!res.ok) {
+              // Affiche le message d'erreur serveur si dispo (utile pour
+              // guider l'admin : clé API manquante, quota dépassé, etc.)
+              const errMsg = (data && (data.reply || data.error || data.detail))
+                             || ("Erreur HTTP " + res.status);
+              this.messages.push({ role: "bot", content: this.escape(errMsg) });
+              return;
+            }
             this.messages.push({ role: "bot", content: this.escape(data.reply || "...") });
           } catch (err) {
             this.messages.push({
               role: "bot",
-              content: "<em>Le service IA n'est pas encore branché.</em> Je suis en mode démo — connectez l'endpoint <code>/api/v1/ai/chat</code> pour activer les réponses live."
+              content: "Erreur réseau : " + this.escape(String(err.message || err)) +
+                        ". Vérifiez que <code>/api/v1/ai/chat</code> est accessible."
             });
           } finally {
             this.thinking = false;
