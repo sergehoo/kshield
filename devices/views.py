@@ -1173,6 +1173,42 @@ class IclockDeviceCmdView(APIView):
         return HttpResponse("OK\n", content_type="text/plain")
 
 
+class DeviceIclockDebugView(APIView):
+    """GET /api/v1/devices/<id>/iclock-debug/ — dump des derniers POST bruts iclock/cdata.
+
+    Sert à reverse-engineer le format d'un terminal push inconnu (ex. AiFace ai810)
+    quand aucun AccessEvent n'est créé alors que le heartbeat fonctionne.
+
+    Retourne les 20 derniers body preview (2KB max chacun) stockés en cache Redis
+    depuis les hits ZkAdmsWebhookView.post().
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        from django.core.cache import cache
+        from .models import Device
+        try:
+            device = Device.objects.get(pk=pk)
+        except Device.DoesNotExist:
+            return Response({"error": "Device introuvable"}, status=404)
+        sn = device.serial_number or ""
+        if not sn:
+            return Response({
+                "sn": None,
+                "entries": [],
+                "hint": "Ce device n'a pas de serial_number défini.",
+            })
+        entries = cache.get(f"iclock_last_post:{sn}") or []
+        return Response({
+            "sn": sn,
+            "device_id": device.pk,
+            "device_name": device.name,
+            "last_heartbeat_at": device.last_heartbeat_at,
+            "entries_count": len(entries),
+            "entries": entries,
+        })
+
+
 class ZkAdmsWebhookView(APIView):
     """Endpoint ADMS / push HTTP des terminaux ZKTeco.
 
