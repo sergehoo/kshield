@@ -577,7 +577,20 @@
           headers: {"X-CSRFToken": csrf(), "Content-Type": "application/json"},
           body: JSON.stringify({ip: ip}),
         });
-        var data = await res.json();
+        // Parse JSON en résistant aux réponses HTML/texte (Gateway Timeout, 502, etc.)
+        var data;
+        var contentType = res.headers.get("Content-Type") || "";
+        if (contentType.indexOf("application/json") === -1) {
+          var text = await res.text();
+          identBox.innerHTML = '<div style="padding:14px;border-left:3px solid #f87171;' +
+            'background:rgba(248,113,113,.08);border-radius:8px">' +
+            '<strong style="color:#f87171">✗ Erreur serveur (HTTP ' + res.status + ')</strong><br>' +
+            '<span style="font-size:12.5px">' + esc(text.slice(0, 200)) + '</span><br>' +
+            '<span class="text-dim" style="font-size:11.5px;margin-top:6px;display:inline-block">' +
+            '(Réponse non-JSON du proxy — probablement Traefik timeout ou gunicorn down)</span></div>';
+          return;
+        }
+        data = await res.json();
         if (!res.ok) {
           identBox.innerHTML = '<div style="padding:14px;color:#f87171">Erreur : ' +
             esc(data.error || JSON.stringify(data)) + '</div>';

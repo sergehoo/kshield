@@ -637,39 +637,50 @@ class DeviceIdentifyByIpView(APIView):
                 }, status=200)
 
         start = _time.monotonic()
-        probes = []
-        open_ports = []
-        # Tous les ports d'équipements Shield connus
+        # Timeout global : on doit répondre en < 15s pour ne pas atteindre le
+        # timeout gunicorn (60s) ni Traefik (90s). Chaque probe TCP a un timeout
+        # court (500ms) et on parallélise pour ne pas dépasser 1s au total.
         SCAN_PORTS = [
             (22, "SSH"), (80, "HTTP"), (443, "HTTPS"), (554, "RTSP"),
             (2000, "Onvif"), (4370, "ZKAccess"), (5084, "LLRP"),
             (8000, "Hikvision"), (8081, "ADMS"), (8443, "HTTPS-alt"),
             (9000, "MinIO-like"), (37777, "Dahua NetSDK"),
         ]
-        for port, label in SCAN_PORTS:
+        PROBE_TIMEOUT = 0.6      # 600 ms max par port
+
+        def _test_port(port_label):
+            port, label = port_label
             t = _time.monotonic()
             ok = False
             try:
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                    s.settimeout(1.0)
+                    s.settimeout(PROBE_TIMEOUT)
                     ok = s.connect_ex((ip, port)) == 0
             except Exception:
                 ok = False
             ms = int((_time.monotonic() - t) * 1000)
-            probes.append({"name": f"TCP {port} ({label})",
-                            "ok": ok, "ms": ms, "port": port})
-            if ok:
-                open_ports.append((port, label))
+            return {"name": f"TCP {port} ({label})",
+                    "ok": ok, "ms": ms, "port": port,
+                    "label": label}
+
+        from concurrent.futures import ThreadPoolExecutor
+        probes = []
+        open_ports = []
+        with ThreadPoolExecutor(max_workers=12) as pool:
+            for r in pool.map(_test_port, SCAN_PORTS, timeout=2.0):
+                probes.append(r)
+                if r["ok"]:
+                    open_ports.append((r["port"], r["label"]))
 
         reachable = bool(open_ports)
         identified = None
 
-        # ── Probe ZKAccess (4370) ──
+        # ── Probe ZKAccess (4370) — 2s max ──
         if any(p == 4370 for p, _ in open_ports):
             try:
                 from .zk_client import ZkClient, ZkConnectionError, ZkUnavailable
                 try:
-                    with ZkClient(ip, port=4370, timeout=3).open() as zk:
+                    with ZkClient(ip, port=4370, timeout=2).open() as zk:
                         info = zk.info()
                     identified = {
                         "brand": "ZKTeco",
@@ -700,7 +711,7 @@ class DeviceIdentifyByIpView(APIView):
                     scheme = "https" if port in (443, 8443) else "http"
                     url = f"{scheme}://{ip}:{port}/ISAPI/System/deviceInfo"
                     try:
-                        r = requests.get(url, timeout=2.5,
+                        r = requests.get(url, timeout=1.5,
                                           verify=False, auth=None)
                         # Hikvision renvoie 401 sans auth mais headers reconnaissables
                         server = r.headers.get("Server", "")
@@ -739,7 +750,7 @@ class DeviceIdentifyByIpView(APIView):
                     ctx.verify_mode = _ssl.CERT_NONE
                     req = urllib.request.Request(
                         url, headers={"User-Agent": "KaydanShield-Identify/1.0"})
-                    with urllib.request.urlopen(req, timeout=2.5, context=ctx) as r:
+                    with urllib.request.urlopen(req, timeout=1.5, context=ctx) as r:
                         server = r.headers.get("Server", "")
                         body = r.read(4096).decode(errors="ignore").lower()
                     haystack = (server + " | " + body).lower()
@@ -1547,7 +1558,31 @@ class DeviceConnectivityTestView(APIView):
             if ok:
                 open_ports.append((port, label))
 
-        # 3) HTTP probe sur premier port HTTP ouvert
+        # ── Warning si tous les ports semblent ouverts en < 10 ms depuis un
+        # VPS et que l'IP est RFC1918 (probablement un rebond hébergeur) ──
+        import ipaddress as _ipaddr
+        try:
+            _addr = _ipaddr.ip_address(ip)
+            _is_private = _addr.is_private
+        except Exception:
+            _is_private = False
+        if _is_private:
+            fast_opens = [c for c in checks
+                           if c.get("ok") and c.get("ms", 999) < 20]
+            if fast_opens:
+                checks.append({
+                    "name": "⚠️  Alerte routage",
+                    "ok": False,
+                    "detail": (
+                        f"L'IP {ip} est RFC1918 (privée) mais répond en < 20 ms "
+                        f"depuis Shield. Le VPS où tourne Shield est probablement "
+                        f"sur un réseau privé de l'hébergeur qui rebond sur autre "
+                        f"chose. Utilise le MODE PUSH (le terminal envoie ses events "
+                        f"à Shield) au lieu de compter sur ce scan."
+                    ),
+                })
+
+        # 3) HTTP probe sur premier port HTTP ouvert — vérifie la vraie identité
         http_port = next((p for p, l in open_ports
                            if l in ("HTTP", "HTTPS", "HTTP-alt")), None)
         if http_port:
