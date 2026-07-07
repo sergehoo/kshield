@@ -1238,6 +1238,34 @@ class ZkAdmsWebhookView(APIView):
         if not sn:
             return Response({"error": "sn requis"}, status=400)
 
+        # ── Log DEBUG du body brut : indispensable pour reverse-engineer les
+        # firmwares custom (AiFace ai810, etc.) qui utilisent des formats variés.
+        # Chaque POST enregistré dans le cache Redis (TTL 1h) pour debug UI.
+        try:
+            raw_body = request.body.decode(errors="ignore")[:2000]
+            table = request.query_params.get("table") or ""
+            stamp = request.query_params.get("Stamp") or ""
+            logger.info(
+                "[iclock POST] SN=%s table=%s stamp=%s content-type=%s bytes=%d "
+                "body_preview=%r",
+                sn, table, stamp, request.content_type, len(request.body or b""),
+                raw_body[:400],
+            )
+            # Stocke aussi dans le cache pour inspection UI/API
+            from django.core.cache import cache
+            key = f"iclock_last_post:{sn}"
+            entries = cache.get(key) or []
+            entries.append({
+                "at": timezone.now().isoformat(),
+                "table": table,
+                "content_type": request.content_type,
+                "body_preview": raw_body[:1000],
+                "query": dict(request.query_params.items()),
+            })
+            cache.set(key, entries[-20:], 3600)   # garde 20 derniers, 1h
+        except Exception:
+            logger.exception("iclock body logging failed")
+
         device = Device.objects.filter(serial_number=sn).first()
         if not device:
             # Auto-provisioning : si un terminal push avec un SN inconnu,
@@ -1783,6 +1811,38 @@ class DeviceConnectivityTestView(APIView):
         reachable = bool(open_ports) or any(
             c.get("ok") and c["name"].startswith("HTTP GET") for c in checks
         )
+
+        # ── Message contextuel pour les terminaux push-mode ──
+        # Si le device est configuré en push (ADMS/ZKAccess), le fait qu'il soit
+        # injoignable en SORTANT n'est pas grave — il PUSH vers Shield.
+        # On regarde s'il a un heartbeat récent = preuve qu'il communique.
+        recently_seen = False
+        push_mode = False
+        if device.last_heartbeat_at:
+            from datetime import timedelta
+            from django.utils import timezone as _tz
+            recently_seen = (_tz.now() - device.last_heartbeat_at) < timedelta(minutes=10)
+        device_type = device_type or ""
+        push_mode = device_type == "face_terminal" or (
+            device.model
+            and isinstance(device.model.spec, dict)
+            and "push" in str(device.model.spec.get("protocol", "")).lower()
+        )
+
+        if not reachable and push_mode and recently_seen:
+            # Faux négatif attendu — le terminal push, on ne peut pas le pinger.
+            checks.append({
+                "name": "Mode PUSH détecté", "ok": True,
+                "detail": (
+                    f"Ce terminal est configuré en mode PUSH (envoie ses events "
+                    f"vers Shield). Le test ping/TCP échoue parce que Shield ne "
+                    f"peut pas atteindre son LAN local — c'est NORMAL. "
+                    f"Dernier heartbeat reçu il y a "
+                    f"{int((_tz.now() - device.last_heartbeat_at).total_seconds())}s : "
+                    f"le terminal communique correctement."
+                ),
+            })
+            reachable = True   # on considère qu'il est actif
 
         # Met à jour last_heartbeat_at si reachable
         if reachable:
