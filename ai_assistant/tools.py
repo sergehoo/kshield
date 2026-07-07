@@ -86,13 +86,22 @@ def execute_tool(name: str, arguments: dict, user=None) -> dict:
         except Exception:
             logger.exception("Audit log failed for %s", name)
 
+    import time as _time
+    _t0 = _time.monotonic()
     try:
         result = tool["handler"](**(arguments or {}))
         # S'assurer que le résultat est JSON-sérialisable
         json.dumps(result, default=str)
+        _dt = int((_time.monotonic() - _t0) * 1000)
+        if _dt > 1000:
+            logger.warning("[SLOW TOOL] %s took %d ms (args=%s)",
+                            name, _dt, str(arguments)[:80])
+        else:
+            logger.info("[tool] %s ran in %d ms", name, _dt)
         return result
     except Exception as exc:
-        logger.exception("Tool %s failed", name)
+        _dt = int((_time.monotonic() - _t0) * 1000)
+        logger.exception("Tool %s failed after %d ms", name, _dt)
         return {"error": f"Erreur exécution : {str(exc)[:200]}"}
 
 
@@ -252,6 +261,62 @@ def get_device_details(device_id):
     },
 })
 def count_present_now(site_id=None, kind="all"):
+    """Compte les personnes présentes en 1 seule requête SQL (fenêtre analytique).
+
+    Anciennement N+1 : pour chaque personne, une requête pour trouver son
+    dernier direction. Maintenant : DISTINCT ON (holder) ORDER BY timestamp DESC.
+    """
+    from django.db import connection
+    from django.db.models import F, Max
+
+    today = timezone.localdate()
+
+    # Sous-requête : le dernier event de chaque personne aujourd'hui.
+    # On utilise Postgres DISTINCT ON (rapide, 1 seule query).
+    where_clauses = ["timestamp::date = %s",
+                     "decision = 'granted'",
+                     "holder_object_id IS NOT NULL"]
+    params = [today]
+    if site_id:
+        where_clauses.append("site_id = %s")
+        params.append(int(site_id))
+    if kind and kind != "all":
+        where_clauses.append("holder_kind = %s")
+        params.append(kind)
+    where_sql = " AND ".join(where_clauses)
+
+    sql = f"""
+        SELECT holder_kind, COUNT(*) AS n
+        FROM (
+          SELECT DISTINCT ON (holder_kind, holder_object_id)
+                 holder_kind, holder_object_id, direction
+          FROM access_control_accessevent
+          WHERE {where_sql}
+          ORDER BY holder_kind, holder_object_id, timestamp DESC
+        ) latest
+        WHERE direction = 'in'
+        GROUP BY holder_kind
+    """
+    detail = {"employee": 0, "worker": 0, "visitor": 0}
+    try:
+        with connection.cursor() as c:
+            c.execute(sql, params)
+            for row in c.fetchall():
+                detail[row[0]] = row[1]
+    except Exception:
+        # Fallback SQLite / DB non-Postgres : requête ORM plus lente mais safe
+        return _count_present_fallback(site_id, kind)
+
+    return {
+        "total_present": sum(detail.values()),
+        "by_kind": detail,
+        "site_id": site_id,
+        "computed_at": timezone.now().isoformat(),
+    }
+
+
+def _count_present_fallback(site_id, kind):
+    """Fallback ORM (SQLite ou si DISTINCT ON pas supporté)."""
     from access_control.models import AccessEvent
     from django.db.models import Max
     today = timezone.localdate()
@@ -260,31 +325,26 @@ def count_present_now(site_id=None, kind="all"):
         holder_object_id__isnull=False,
     )
     if site_id: qs = qs.filter(site_id=site_id)
-    if kind != "all": qs = qs.filter(holder_kind=kind)
+    if kind and kind != "all": qs = qs.filter(holder_kind=kind)
 
-    # Dernier event par personne
-    latest = (qs.values("holder_kind", "holder_object_id")
-              .annotate(last_ts=Max("timestamp"))
-              .order_by())
+    # Bulk : récup tous les events du jour puis on garde le dernier par personne
+    last_by_person = {}
+    for e in qs.order_by("timestamp").only(
+        "holder_kind", "holder_object_id", "direction",
+    )[:5000]:   # cap sécurité pour éviter d'exploser la mémoire
+        key = (e.holder_kind, e.holder_object_id)
+        last_by_person[key] = e.direction
 
-    # Pour chaque personne, on va chercher son dernier event pour la direction
-    present = 0
     detail = {"employee": 0, "worker": 0, "visitor": 0}
-    for row in latest:
-        last_event = AccessEvent.objects.filter(
-            holder_kind=row["holder_kind"],
-            holder_object_id=row["holder_object_id"],
-            timestamp=row["last_ts"],
-        ).first()
-        if last_event and last_event.direction == "in":
-            present += 1
-            detail[row["holder_kind"]] = detail.get(row["holder_kind"], 0) + 1
-
+    for (hk, _), direction in last_by_person.items():
+        if direction == "in":
+            detail[hk] = detail.get(hk, 0) + 1
     return {
-        "total_present": present,
+        "total_present": sum(detail.values()),
         "by_kind": detail,
         "site_id": site_id,
         "computed_at": timezone.now().isoformat(),
+        "fallback": True,
     }
 
 
@@ -296,30 +356,30 @@ def count_present_now(site_id=None, kind="all"):
     }},
 })
 def attendance_summary_today(site_id=None):
-    from django.db.models import Count
+    """Résumé pointage — 1 seule requête agrégée (au lieu de 5)."""
+    from django.db.models import Count, Q
     from access_control.models import AccessEvent
     today = timezone.localdate()
     qs = AccessEvent.objects.filter(timestamp__date=today)
     if site_id: qs = qs.filter(site_id=site_id)
 
+    # Aggregat en 1 requête via Q filters (au lieu de 5 requêtes séquentielles)
     agg = qs.aggregate(
         total=Count("id"),
-        granted=Count("id", filter={"decision": "granted"} if False else None),
+        granted=Count("id", filter=Q(decision="granted")),
+        denied=Count("id", filter=Q(decision="denied")),
+        entries=Count("id", filter=Q(direction="in", decision="granted")),
+        exits=Count("id", filter=Q(direction="out", decision="granted")),
     )
-    granted = qs.filter(decision="granted").count()
-    denied = qs.filter(decision="denied").count()
-    entries = qs.filter(direction="in", decision="granted").count()
-    exits = qs.filter(direction="out", decision="granted").count()
-
     by_site = list(
         qs.values("site__name").annotate(n=Count("id"))
         .order_by("-n")[:10]
     )
     return {
         "date": today.isoformat(),
-        "total_scans": qs.count(),
-        "granted": granted, "denied": denied,
-        "entries": entries, "exits": exits,
+        "total_scans": agg["total"],
+        "granted": agg["granted"], "denied": agg["denied"],
+        "entries": agg["entries"], "exits": agg["exits"],
         "top_sites": [{"site": s["site__name"] or "?", "scans": s["n"]}
                       for s in by_site],
     }
@@ -551,6 +611,280 @@ def platform_snapshot():
 # ═════════════════════════════════════════════════════════════════════════════
 # TOOLS : ACTIONS (RBAC-checked)
 # ═════════════════════════════════════════════════════════════════════════════
+
+# ═════════════════════════════════════════════════════════════════════════════
+# TOOLS : CRÉATION d'entités métier (RBAC-checked)
+# ═════════════════════════════════════════════════════════════════════════════
+
+@register_tool(
+    schema={
+        "name": "create_sites_bulk",
+        "description": (
+            "Crée plusieurs sites en une seule opération. Idempotent : si un site "
+            "avec le même nom existe déjà, il est skipé (pas de doublon). "
+            "Utilise-moi quand l'user demande de créer plusieurs sites d'un coup."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "names": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Liste des noms de sites à créer",
+                },
+                "company_id": {"type": "integer", "description": "ID de la company associée (optionnel)"},
+                "site_type":  {"type": "string", "default": "office",
+                                "enum": ["office", "warehouse", "site_construction", "site_industrial", "other"]},
+            },
+            "required": ["names"],
+        },
+    },
+    permission="sites.manage",
+    is_action=True,
+)
+def create_sites_bulk(names, company_id=None, site_type="office"):
+    from sites.models import Site
+    from core.services import get_current_tenant, get_kaydan_tenant
+    from django.utils.text import slugify
+
+    if not names or not isinstance(names, list):
+        return {"error": "names doit être une liste non vide"}
+
+    tenant = get_current_tenant() or get_kaydan_tenant()
+    company = None
+    if company_id:
+        try:
+            from core.models import Company
+            company = Company.objects.get(pk=int(company_id))
+        except Exception:
+            company = None
+
+    created = []; skipped = []; errors = []
+    for raw_name in names[:20]:   # cap sécurité
+        name = str(raw_name or "").strip()
+        if not name:
+            continue
+        code = slugify(name)[:32].upper() or f"SITE-{len(created)+1}"
+        try:
+            site, was_created = Site.objects.get_or_create(
+                tenant=tenant, name=name,
+                defaults={
+                    "code": code,
+                    "type": site_type,
+                    "status": "active",
+                    "company": company,
+                },
+            )
+            if was_created:
+                created.append({"id": site.pk, "name": site.name, "code": site.code,
+                                 "url": f"/sites/{site.pk}/"})
+            else:
+                skipped.append({"id": site.pk, "name": site.name})
+        except Exception as exc:
+            errors.append({"name": name, "error": str(exc)[:200]})
+
+    return {
+        "created": created, "created_count": len(created),
+        "skipped": skipped, "skipped_count": len(skipped),
+        "errors": errors,
+        "message": f"{len(created)} sites créés, {len(skipped)} déjà existants, "
+                    f"{len(errors)} erreurs.",
+    }
+
+
+@register_tool(
+    schema={
+        "name": "create_site",
+        "description": "Crée un site (usine, chantier, bureau) unique avec ses paramètres.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "name":       {"type": "string"},
+                "code":       {"type": "string", "description": "Code court (auto si vide)"},
+                "site_type":  {"type": "string", "enum": ["office", "warehouse", "site_construction", "site_industrial", "other"], "default": "office"},
+                "company_id": {"type": "integer"},
+                "address":    {"type": "string"},
+                "latitude":   {"type": "number"},
+                "longitude":  {"type": "number"},
+            },
+            "required": ["name"],
+        },
+    },
+    permission="sites.manage",
+    is_action=True,
+)
+def create_site(name, code=None, site_type="office", company_id=None,
+                address=None, latitude=None, longitude=None):
+    from sites.models import Site
+    from core.services import get_current_tenant, get_kaydan_tenant
+    from django.utils.text import slugify
+
+    tenant = get_current_tenant() or get_kaydan_tenant()
+    company = None
+    if company_id:
+        try:
+            from core.models import Company
+            company = Company.objects.get(pk=int(company_id))
+        except Exception:
+            pass
+
+    if not code:
+        code = slugify(name)[:32].upper()
+
+    defaults = {"code": code, "type": site_type, "status": "active",
+                "company": company}
+    if latitude is not None:  defaults["latitude"] = latitude
+    if longitude is not None: defaults["longitude"] = longitude
+
+    site, created = Site.objects.get_or_create(
+        tenant=tenant, name=name, defaults=defaults,
+    )
+    return {
+        "created": created, "id": site.pk, "name": site.name, "code": site.code,
+        "url": f"/sites/{site.pk}/",
+        "message": (f"✓ Site '{name}' créé (ID {site.pk})" if created
+                    else f"↻ Site '{name}' existait déjà (ID {site.pk})"),
+    }
+
+
+@register_tool(
+    schema={
+        "name": "create_company",
+        "description": "Crée une entreprise / filiale.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "name":       {"type": "string"},
+                "code":       {"type": "string"},
+                "legal_name": {"type": "string"},
+                "sector":     {"type": "string"},
+            },
+            "required": ["name"],
+        },
+    },
+    permission="companies.manage",
+    is_action=True,
+)
+def create_company(name, code=None, legal_name=None, sector=None):
+    from core.models import Company
+    from core.services import get_current_tenant, get_kaydan_tenant
+    from django.utils.text import slugify
+
+    tenant = get_current_tenant() or get_kaydan_tenant()
+    if not code:
+        code = slugify(name)[:24].upper()
+    defaults = {"code": code, "legal_name": legal_name or name,
+                "is_active": True}
+    if sector: defaults["sector"] = sector
+
+    c, created = Company.objects.get_or_create(
+        tenant=tenant, name=name, defaults=defaults,
+    )
+    return {
+        "created": created, "id": c.pk, "name": c.name, "code": c.code,
+        "message": (f"✓ Entreprise '{name}' créée" if created
+                    else f"↻ Entreprise '{name}' existait déjà"),
+    }
+
+
+@register_tool(
+    schema={
+        "name": "create_employee",
+        "description": "Crée un employé (bureau, cadre). Pour un ouvrier chantier, utilise create_worker.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "first_name": {"type": "string"},
+                "last_name":  {"type": "string"},
+                "matricule":  {"type": "string", "description": "Auto-généré si vide"},
+                "email":      {"type": "string"},
+                "phone":      {"type": "string"},
+                "site_id":    {"type": "integer"},
+                "position":   {"type": "string"},
+            },
+            "required": ["first_name", "last_name"],
+        },
+    },
+    permission="employees.manage",
+    is_action=True,
+)
+def create_employee(first_name, last_name, matricule=None, email=None,
+                    phone=None, site_id=None, position=None):
+    from employees.models import Employee
+    from core.services import get_current_tenant, get_kaydan_tenant
+
+    tenant = get_current_tenant() or get_kaydan_tenant()
+    if not matricule:
+        # Auto-générer : EMP-<prefix>-<count>
+        count = Employee.objects.count() + 1
+        matricule = f"EMP-{count:04d}"
+
+    defaults = {"first_name": first_name, "last_name": last_name,
+                "status": "active"}
+    if email:   defaults["email"] = email
+    if phone:   defaults["phone"] = phone
+    if position: defaults["position"] = position
+
+    try:
+        e, created = Employee.objects.get_or_create(
+            tenant=tenant, matricule=matricule, defaults=defaults,
+        )
+    except Exception as exc:
+        return {"error": f"Impossible de créer l'employé : {exc}"}
+    return {
+        "created": created, "id": e.pk, "matricule": e.matricule,
+        "name": f"{e.first_name} {e.last_name}",
+        "url": f"/employees/{e.pk}/",
+    }
+
+
+@register_tool(
+    schema={
+        "name": "create_worker",
+        "description": "Crée un ouvrier chantier (nécessite casque UHF+BLE pour le pointage).",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "first_name":       {"type": "string"},
+                "last_name":        {"type": "string"},
+                "matricule":        {"type": "string"},
+                "phone":            {"type": "string"},
+                "trade":            {"type": "string", "description": "Métier (maçon, électricien, …)"},
+                "subcontractor_id": {"type": "integer"},
+            },
+            "required": ["first_name", "last_name"],
+        },
+    },
+    permission="workers.manage",
+    is_action=True,
+)
+def create_worker(first_name, last_name, matricule=None, phone=None,
+                  trade=None, subcontractor_id=None):
+    from ouvriers.models import Worker
+    from core.services import get_current_tenant, get_kaydan_tenant
+
+    tenant = get_current_tenant() or get_kaydan_tenant()
+    if not matricule:
+        count = Worker.objects.count() + 1
+        matricule = f"WKR-{count:04d}"
+
+    defaults = {"first_name": first_name, "last_name": last_name,
+                "status": "active"}
+    if phone: defaults["phone"] = phone
+    if trade: defaults["trade"] = trade
+
+    try:
+        w, created = Worker.objects.get_or_create(
+            tenant=tenant, matricule=matricule, defaults=defaults,
+        )
+    except Exception as exc:
+        return {"error": f"Impossible de créer l'ouvrier : {exc}"}
+    return {
+        "created": created, "id": w.pk, "matricule": w.matricule,
+        "name": f"{w.first_name} {w.last_name}",
+        "url": f"/workers/{w.pk}/",
+    }
+
 
 @register_tool(
     schema={
