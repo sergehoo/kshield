@@ -18,7 +18,7 @@ from .views import (
     DeviceConnectivityTestView,
     ZkSyncNowView, ZkSyncAllView, ZkPushUsersNowView,
     ZkEnrollSessionView, ZkImportUsersView, ZkPushEmployeeView,
-    ZkAdmsWebhookView, DeviceIclockDebugView,
+    ZkAdmsWebhookView, DeviceIclockDebugView, PubApiDebugView,
 )
 
 router = DefaultRouter()
@@ -78,4 +78,6 @@ urlpatterns = [
     path("<int:pk>/zk-import-users/",                ZkImportUsersView.as_view(),        name="device-zk-import-users"),
     # Debug — dernières requêtes POST iclock/cdata (utile pour reverse-engineer un firmware inconnu)
     path("<int:pk>/iclock-debug/",                   DeviceIclockDebugView.as_view(),    name="device-iclock-debug"),
+    # Debug global — dernières requêtes POST /pub/api (firmwares whitebox inconnus)
+    path("pubapi-debug/",                            PubApiDebugView.as_view(),          name="pubapi-debug"),
 ] + router.urls

@@ -63,6 +63,14 @@ urlpatterns = [
     path("iclock/devicecmd",
          __import__("devices.views", fromlist=["IclockDeviceCmdView"]).IclockDeviceCmdView.as_view(),
          name="iclock-devicecmd"),
+    # Catch-all pour firmwares whitebox qui push sur /pub/api* (AiFace ai810 & co)
+    # Accepte tout, log body brut, répond OK pour empêcher les retry en boucle.
+    path("pub/api",
+         __import__("devices.views", fromlist=["PubApiCatchAllView"]).PubApiCatchAllView.as_view(),
+         name="pub-api-root"),
+    path("pub/api/<path:subpath>",
+         __import__("devices.views", fromlist=["PubApiCatchAllView"]).PubApiCatchAllView.as_view(),
+         name="pub-api-sub"),
     # Endpoints directs badges (servis hors API)
     path("badges/<int:pk>/pdf/",       BadgePDFDownloadView.as_view(), name="badge-pdf"),
     path("badges/<int:pk>/thumbnail/", BadgeThumbnailView.as_view(),   name="badge-thumbnail"),

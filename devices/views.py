@@ -1173,6 +1173,94 @@ class IclockDeviceCmdView(APIView):
         return HttpResponse("OK\n", content_type="text/plain")
 
 
+class PubApiCatchAllView(APIView):
+    """POST/GET /pub/api* — catch-all pour firmwares whitebox qui push events ici.
+
+    Beaucoup de terminaux chinois whitebox (AiFace ai810 et similaires) POSTent
+    leurs events sur un endpoint `/pub/api` au lieu de `/iclock/cdata`. Cet
+    endpoint accepte tout, log le body brut, et répond OK pour empêcher le
+    terminal de retry en boucle.
+
+    Chaque hit est stocké en cache Redis (dernier IP → 20 body preview) pour
+    inspection via /devices/<id>/iclock-debug/ ou via shell Django.
+    """
+    permission_classes = [AllowAny]
+
+    def _handle(self, request):
+        from django.core.cache import cache
+        from django.http import HttpResponse
+        from django.utils import timezone
+
+        # Log body brut + client IP (pour identifier de quel terminal ça vient)
+        raw_body = (request.body or b"").decode(errors="ignore")[:2000]
+        client_ip = (
+            request.META.get("HTTP_X_FORWARDED_FOR", "").split(",")[0].strip()
+            or request.META.get("REMOTE_ADDR", "unknown")
+        )
+        logger.warning(
+            "[pub/api %s] ip=%s path=%s ct=%s bytes=%d qs=%s body=%r",
+            request.method, client_ip, request.path, request.content_type,
+            len(request.body or b""), dict(request.query_params.items()),
+            raw_body[:400],
+        )
+        # Store in cache pour inspection (per-IP, 20 last, 1h TTL)
+        try:
+            key = f"pubapi_hits:{client_ip}"
+            entries = cache.get(key) or []
+            entries.append({
+                "at": timezone.now().isoformat(),
+                "method": request.method,
+                "path": request.path,
+                "content_type": request.content_type,
+                "query": dict(request.query_params.items()),
+                "body_preview": raw_body[:1000],
+                "user_agent": request.META.get("HTTP_USER_AGENT", "")[:200],
+            })
+            cache.set(key, entries[-20:], 3600)
+            # Aussi une liste globale des IPs qui ont push
+            ips = set(cache.get("pubapi_client_ips") or [])
+            ips.add(client_ip)
+            cache.set("pubapi_client_ips", list(ips), 3600)
+        except Exception:
+            logger.exception("pub/api cache logging failed")
+
+        return HttpResponse("OK\n", content_type="text/plain")
+
+    def get(self, request, *args, **kwargs):
+        return self._handle(request)
+
+    def post(self, request, *args, **kwargs):
+        return self._handle(request)
+
+    def put(self, request, *args, **kwargs):
+        return self._handle(request)
+
+
+class PubApiDebugView(APIView):
+    """GET /api/v1/devices/pubapi-debug/ — dump des derniers POST /pub/api par IP.
+
+    Vue admin pour inspecter ce que des équipements inconnus envoient sur
+    /pub/api (chemin utilisé par certains firmwares chinois whitebox).
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from django.core.cache import cache
+        ips = cache.get("pubapi_client_ips") or []
+        result = {}
+        for ip in ips:
+            entries = cache.get(f"pubapi_hits:{ip}") or []
+            result[ip] = {
+                "count": len(entries),
+                "last": entries[-1] if entries else None,
+                "entries": entries[-5:],  # 5 derniers pour compacité
+            }
+        return Response({
+            "ips": list(ips),
+            "detail_by_ip": result,
+        })
+
+
 class DeviceIclockDebugView(APIView):
     """GET /api/v1/devices/<id>/iclock-debug/ — dump des derniers POST bruts iclock/cdata.
 

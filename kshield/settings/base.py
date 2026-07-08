@@ -209,10 +209,32 @@ SPECTACULAR_SETTINGS = {
 # ---------------------------------------------------------------------------
 CORS_ALLOWED_ORIGINS = config(
     "CORS_ALLOWED_ORIGINS",
-    default="http://localhost:3000,http://localhost:8000",
+    # Défauts : Django dev + Vite dev (React front)
+    default="http://localhost:3000,http://localhost:8000,http://localhost:5173,http://127.0.0.1:5173",
     cast=Csv(),
 )
 CORS_ALLOW_CREDENTIALS = True
+
+# Regex : autorise tout sous-domaine du domaine principal (ex. app.kaydanshield.com)
+# Utile pour le front React (app.*) et les sous-tenants (kaydan.*, riviera.*, ...).
+CORS_ALLOWED_ORIGIN_REGEXES = config(
+    "CORS_ALLOWED_ORIGIN_REGEXES",
+    default=r"^https://([a-z0-9-]+\.)?kaydanshield\.com$",
+    cast=Csv(),
+)
+
+# Headers autorisés — le front injecte Authorization: Bearer <jwt>
+CORS_ALLOW_HEADERS = [
+    "accept",
+    "accept-encoding",
+    "authorization",
+    "content-type",
+    "dnt",
+    "origin",
+    "user-agent",
+    "x-csrftoken",
+    "x-requested-with",
+]
 
 # ---------------------------------------------------------------------------
 # Channels (WebSocket) — override en dev pour utiliser InMemory
@@ -589,17 +611,37 @@ TENANT_BASE_DOMAIN = config("TENANT_BASE_DOMAIN", default="kaydanshield.com")
 # Backend django-redis. TTL par défaut 5 min ; les vues admin lourdes
 # (dashboard, listes) utilisent des TTL courts (30-60s) via cache_page.
 _REDIS_URL = config("REDIS_URL", default="redis://shieldredis:6379/0")
+
+# Compresseur cache — LZ4 idéal (rapide + ratio 2-3x) mais nécessite le package
+# Python `lz4`. Si non installé (ex. dev local sans wheel), fallback sur zlib
+# (built-in, un peu plus lent mais ratio similaire), puis aucune compression.
+def _pick_cache_compressor() -> str | None:
+    try:
+        import lz4  # noqa: F401
+        return "django_redis.compressors.lz4.Lz4Compressor"
+    except ImportError:
+        pass
+    try:
+        import zlib  # noqa: F401
+        return "django_redis.compressors.zlib.ZlibCompressor"
+    except ImportError:
+        return None
+
+_CACHE_OPTIONS: dict = {
+    "CLIENT_CLASS": "django_redis.client.DefaultClient",
+    "SOCKET_CONNECT_TIMEOUT": 3,
+    "SOCKET_TIMEOUT": 3,
+    "IGNORE_EXCEPTIONS": True,   # Redis down → passe-plat, pas de 500
+}
+_compressor = _pick_cache_compressor()
+if _compressor:
+    _CACHE_OPTIONS["COMPRESSOR"] = _compressor
+
 CACHES = {
     "default": {
         "BACKEND": "django_redis.cache.RedisCache",
         "LOCATION": _REDIS_URL,
-        "OPTIONS": {
-            "CLIENT_CLASS": "django_redis.client.DefaultClient",
-            "SOCKET_CONNECT_TIMEOUT": 3,
-            "SOCKET_TIMEOUT": 3,
-            "IGNORE_EXCEPTIONS": True,   # Redis down → passe-plat, pas de 500
-            "COMPRESSOR": "django_redis.compressors.lz4.Lz4Compressor",
-        },
+        "OPTIONS": _CACHE_OPTIONS,
         "TIMEOUT": 300,
         "KEY_PREFIX": "kshield",
     }

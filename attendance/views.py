@@ -164,3 +164,142 @@ class AttendanceCorrectionViewSet(viewsets.ModelViewSet):
     filterset_fields = ("attendance_day", "performed_by")
     permission_classes = [HasKshieldPermission]
     kshield_perms = {"read": "attendance.view", "write": "attendance.correct"}
+
+
+class AttendanceSummaryView(APIView):
+    """GET /api/v1/attendance/summary/today/ — KPIs journée pour le dashboard React.
+
+    Retourne un JSON compact avec les compteurs clés :
+        {
+          "date": "2026-07-07",
+          "present_count": 42,
+          "absent_count": 5,
+          "late_count": 3,
+          "total_workers": 50,
+          "events_24h": 187,
+          "total_overtime_minutes": 145,
+        }
+
+    Multi-tenant strict : ne compte que les données du tenant de l'utilisateur.
+    Cache Redis 60s pour éviter de recalculer 4 fois/min quand plusieurs users
+    ouvrent le dashboard simultanément.
+    """
+    from rest_framework.permissions import IsAuthenticated
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from datetime import date, timedelta
+        from django.core.cache import cache
+        from django.db.models import Count, Sum, Q
+        from django.utils import timezone
+
+        today = date.today()
+        yesterday_dt = timezone.now() - timedelta(hours=24)
+
+        # Cache clé par tenant + date (invalide auto à minuit)
+        tenant_id = getattr(request.user, "tenant_id", None) or "public"
+        cache_key = f"att_summary:{tenant_id}:{today.isoformat()}"
+        cached = cache.get(cache_key)
+        if cached:
+            return Response(cached)
+
+        # Scope tenant : on filtre par site__company__tenant si dispo
+        from accounts.scoping import scope_queryset_by_company
+
+        days_qs = scope_queryset_by_company(
+            AttendanceDay.objects.filter(date=today),
+            request.user,
+            "site__company",
+        )
+
+        agg = days_qs.aggregate(
+            total=Count("id"),
+            present=Count("id", filter=Q(status__in=["present", "partial"])),
+            late=Count("id", filter=Q(status="late")),
+            absent=Count("id", filter=Q(status="absent")),
+            total_overtime=Sum("overtime_minutes"),
+        )
+
+        # Événements 24h — via AccessEvent (import late pour éviter cycle)
+        try:
+            from access_control.models import AccessEvent
+            events_qs = scope_queryset_by_company(
+                AccessEvent.objects.filter(timestamp__gte=yesterday_dt),
+                request.user,
+                "site__company",
+            )
+            events_24h = events_qs.count()
+        except Exception:
+            events_24h = 0
+
+        # Total ouvriers connus (pour le ratio X/Y)
+        try:
+            from ouvriers.models import Worker
+            total_workers = scope_queryset_by_company(
+                Worker.objects.filter(is_active=True),
+                request.user,
+                "site__company",
+            ).count()
+        except Exception:
+            total_workers = agg.get("total") or 0
+
+        data = {
+            "date": today.isoformat(),
+            "present_count": agg.get("present") or 0,
+            "absent_count": agg.get("absent") or 0,
+            "late_count": agg.get("late") or 0,
+            "total_workers": total_workers,
+            "events_24h": events_24h,
+            "total_overtime_minutes": int(agg.get("total_overtime") or 0),
+        }
+        cache.set(cache_key, data, 60)
+        return Response(data)
+
+
+class AttendancePresenceLiveView(APIView):
+    """GET /api/v1/attendance/presence/live/ — snapshot 'qui est présent maintenant'.
+
+    Utilise la dernière direction (in/out) par ouvrier pour déterminer sa présence
+    à cet instant. Ne renvoie que les 50 premiers pour rester léger côté dashboard.
+    """
+    from rest_framework.permissions import IsAuthenticated
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from django.utils import timezone
+        from datetime import timedelta
+
+        try:
+            from access_control.models import AccessEvent
+            from accounts.scoping import scope_queryset_by_company
+
+            since = timezone.now() - timedelta(hours=16)
+            qs = scope_queryset_by_company(
+                AccessEvent.objects.filter(
+                    timestamp__gte=since,
+                    decision="granted",
+                ).order_by("holder_object_id", "-timestamp"),
+                request.user,
+                "site__company",
+            )
+            latest_by_holder = {}
+            for e in qs.iterator():
+                key = (e.holder_content_type_id, e.holder_object_id)
+                if key not in latest_by_holder:
+                    latest_by_holder[key] = e
+
+            present = [e for e in latest_by_holder.values() if e.direction == "in"]
+            return Response({
+                "count": len(present),
+                "as_of": timezone.now().isoformat(),
+                "sample": [
+                    {
+                        "holder_name": getattr(e, "holder_name", None) or e.badge_uid,
+                        "site": getattr(e.site, "name", None) if e.site_id else None,
+                        "since": e.timestamp,
+                    }
+                    for e in present[:50]
+                ],
+            })
+        except Exception as exc:
+            return Response({"count": 0, "error": str(exc)[:200]}, status=200)

@@ -1,0 +1,94 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================
+ * KAYDAN SHIELD — global styles
+ * ============================================================ */
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  :root {
+    color-scheme: dark;
+  }
+
+  body {
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    background:
+      radial-gradient(1200px 600px at 10% -10%, rgba(249, 115, 22, 0.08), transparent 60%),
+      radial-gradient(900px 500px at 110% 10%, rgba(56, 189, 248, 0.06), transparent 60%),
+      #0b0f14;
+  }
+
+  ::selection {
+    background: rgba(249, 115, 22, 0.35);
+    color: #fff;
+  }
+
+  /* Scrollbar minimaliste */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.18);
+    border-radius: 8px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(148, 163, 184, 0.3);
+  }
+}
+
+@layer components {
+  .card {
+    @apply rounded-2xl border border-surface-border bg-surface-card/70 backdrop-blur-sm shadow-card;
+  }
+
+  .btn {
+    @apply inline-flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-medium
+           transition-all disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-primary {
+    @apply btn bg-brand-500 hover:bg-brand-600 text-white shadow-lg shadow-brand-500/20;
+  }
+  .btn-ghost {
+    @apply btn border border-surface-border text-ink hover:bg-surface-soft;
+  }
+  .btn-danger {
+    @apply btn bg-danger/90 hover:bg-danger text-white;
+  }
+
+  .field {
+    @apply w-full px-3.5 py-2.5 rounded-lg bg-surface-soft border border-surface-border
+           text-ink placeholder-ink-soft focus:outline-none focus:ring-2 focus:ring-brand-500/40
+           focus:border-brand-500/60 transition-all;
+  }
+
+  .chip {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium;
+  }
+  .chip-ok    { @apply chip bg-ok/10 text-ok border border-ok/20; }
+  .chip-warn  { @apply chip bg-warn/10 text-warn border border-warn/20; }
+  .chip-info  { @apply chip bg-info/10 text-info border border-info/20; }
+  .chip-danger{ @apply chip bg-danger/10 text-danger border border-danger/20; }
+  .chip-muted { @apply chip bg-white/5 text-ink-muted border border-white/10; }
+
+  .table {
+    @apply w-full text-sm;
+  }
+  .table thead th {
+    @apply text-left font-medium text-ink-muted px-4 py-3 text-xs uppercase tracking-wider
+           border-b border-surface-border;
+  }
+  .table tbody td {
+    @apply px-4 py-3 border-b border-surface-border/60;
+  }
+  .table tbody tr:hover {
+    @apply bg-surface-soft/40;
+  }
+}
