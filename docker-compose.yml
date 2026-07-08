@@ -230,30 +230,21 @@ services:
       - traefik.http.services.kshield-api-svc.loadbalancer.server.port=8000
       - traefik.http.services.kshield-api-svc.loadbalancer.server.scheme=http
 
-      - traefik.http.routers.kshield-api.middlewares=kshield-sec-headers@docker,kshield-compress@docker,kshield-api-rl@docker
-
-      # Middlewares partagés
-      - traefik.http.middlewares.kshield-sec-headers.headers.stsSeconds=31536000
-      - traefik.http.middlewares.kshield-sec-headers.headers.stsIncludeSubdomains=true
-      - traefik.http.middlewares.kshield-sec-headers.headers.stsPreload=true
-      - traefik.http.middlewares.kshield-sec-headers.headers.contentTypeNosniff=true
-      - traefik.http.middlewares.kshield-sec-headers.headers.frameDeny=true
-      - traefik.http.middlewares.kshield-sec-headers.headers.referrerPolicy=strict-origin-when-cross-origin
-      - traefik.http.middlewares.kshield-sec-headers.headers.customRequestHeaders.X-Forwarded-Proto=https
-      - traefik.http.middlewares.kshield-compress.compress=true
-
       # Rate limit API (uploads visiteurs, webhooks reconnaissance faciale)
+      # Défini + attaché sur le MÊME container — évite les races cross-container.
       - traefik.http.middlewares.kshield-api-rl.ratelimit.average=300
       - traefik.http.middlewares.kshield-api-rl.ratelimit.burst=500
+      - traefik.http.routers.kshield-api.middlewares=kshield-api-rl
 
-      # Timeouts serveur backend — évite Gateway Timeout sur les rapports lourds
-      # Ces valeurs configurent le loadbalancer Traefik vers gunicorn.
-      # Doit être >= timeout gunicorn (60s) pour laisser gunicorn répondre.
+      # Flush réponses fréquent — utile pour streaming ADMS
       - traefik.http.services.kshield-api-svc.loadbalancer.responseforwarding.flushinterval=100ms
-      - traefik.http.services.kshield-api-svc.loadbalancer.serverstransport=kshield-api-transport@docker
-      - traefik.http.serverstransports.kshield-api-transport.forwardingtimeouts.dialtimeout=10s
-      - traefik.http.serverstransports.kshield-api-transport.forwardingtimeouts.responseheadertimeout=90s
-      - traefik.http.serverstransports.kshield-api-transport.forwardingtimeouts.idleconntimeout=90s
+
+      # NOTE : sec-headers, compression et timeouts custom retirés — les défauts
+      # Traefik suffisent et évitent les races de résolution cross-container qui
+      # causaient des Gateway Timeout au boot.
+      # Compression : WhiteNoise + gzip nginx font déjà le job.
+      # Sec-headers : Django SecurityMiddleware.
+      # Timeouts : Traefik défaut 30s dial + gunicorn --timeout=60s suffisent.
 
   # ===========================================================================
   # WebSockets / Channels (ASGI) — uvicorn
@@ -301,7 +292,8 @@ services:
       - traefik.http.services.kshield-ws-svc.loadbalancer.sticky.cookie.httpOnly=true
       - traefik.http.services.kshield-ws-svc.loadbalancer.sticky.cookie.secure=true
 
-      - traefik.http.routers.kshield-ws.middlewares=kshield-sec-headers@docker,kshield-compress@docker
+      # NOTE : middlewares sec-headers/compress retirés — évite le "middleware does
+      # not exist" au boot. Django SecurityMiddleware et WhiteNoise couvrent déjà.
 
   # ===========================================================================
   # Celery worker — non exposé publiquement
@@ -383,7 +375,7 @@ services:
       # Basic Auth obligatoire — générer avec :
       #   htpasswd -nb admin <password>
       # puis renseigner ADMINER_BASIC_AUTH dans .env (échapper les $ en $$)
-      - traefik.http.routers.kshield-adminer.middlewares=kshield-adminer-auth@docker,kshield-sec-headers@docker
+      - traefik.http.routers.kshield-adminer.middlewares=kshield-adminer-auth
       - traefik.http.middlewares.kshield-adminer-auth.basicauth.users=${ADMINER_BASIC_AUTH:-admin:$$apr1$$change$$me}
     logging: *logging_rotated
 
