@@ -1344,16 +1344,15 @@ class PubApiCatchAllView(APIView):
         })
 
     def _cmd_sendlog(self, cmd, sn, payload):
-        """Le terminal envoie une batch de logs (events de scan face).
+        """Le terminal envoie un batch de logs (scans de vérif).
 
-        Format attendu du log[] :
-            [
-              {"enrollid":123, "time":"2026-07-08 12:15:32", "mode":8,
-               "inout":0, "event":0, ...},
-              ...
-            ]
+        Format observé (firmware ai810_fp80v_v5.20) :
+            {"cmd":"sendlog","sn":"...","count":4,"logindex":0,
+             "record":[{"enrollid":3,"name":"innocent","time":"2026-07-08 10:32:28",
+                        "mode":1,"inout":0,"event":0}, ...]}
 
-        mode : 8=face, 1=fingerprint, 4=card, 2=palm, 16=password
+        Clés vues côté firmware pour la liste : "record" (ai810), "log", "logs".
+        mode : 1=fingerprint, 2=palm, 4=card, 8=face, 16=password (bitmask)
         inout: 0=in, 1=out
         event: 0=verify ok, 1=verify fail
         """
@@ -1363,20 +1362,50 @@ class PubApiCatchAllView(APIView):
 
         from access_control.models import AccessEvent
         from .models import Device
+        from sites.models import Site
 
         device = Device.objects.filter(serial_number=sn).first()
         if not device:
             logger.warning("AiFace sendlog reçu de SN inconnu '%s'", sn)
             return JsonResponse({"ret": "sendlog", "result": True, "count": 0})
 
-        logs = payload.get("log") or payload.get("logs") or []
+        # Le firmware ai810 utilise "record" (pas "log"/"logs")
+        logs = (payload.get("record")
+                or payload.get("log")
+                or payload.get("logs")
+                or payload.get("data")
+                or [])
         if isinstance(logs, dict):
             logs = [logs]
 
+        # Fallback site : si le Device n'a pas de site rattaché, on prend le
+        # premier site actif du tenant. Sans ça, les events ne peuvent pas
+        # être enregistrés (site est NOT NULL sur AccessEvent).
         site = device.site
         if not site:
-            logger.warning("AiFace %s: device sans site — events non enregistrés", sn)
-            return JsonResponse({"ret": "sendlog", "result": True, "count": 0})
+            site = Site.objects.filter(
+                tenant=device.tenant, status="active",
+            ).order_by("created_at").first()
+            if site:
+                # Auto-attribution : on rattache le device au site trouvé pour
+                # que les prochains events soient tracés correctement.
+                device.site = site
+                device.save(update_fields=["site"])
+                logger.warning(
+                    "AiFace %s: device sans site — auto-attribution au site '%s' (id=%s). "
+                    "Modifiable via l'admin.",
+                    sn, site.name, site.id,
+                )
+            else:
+                logger.error(
+                    "AiFace %s: pas de site actif dans le tenant — events perdus. "
+                    "Crée au moins un site puis rebind le device.", sn,
+                )
+                # ACK quand même pour éviter le retry en boucle
+                return JsonResponse({
+                    "ret": "sendlog", "result": True,
+                    "count": len(logs), "logindex": payload.get("logindex", 0) + len(logs),
+                })
 
         created = 0
         for entry in logs:
@@ -1459,11 +1488,19 @@ class PubApiCatchAllView(APIView):
         device.last_heartbeat_at = timezone.now()
         device.save(update_fields=["last_heartbeat_at"])
 
-        logger.info("AiFace %s: %d event(s) créés (batch de %d)", sn, created, len(logs))
+        logger.info(
+            "AiFace %s: %d event(s) créés (batch de %d, logindex=%s)",
+            sn, created, len(logs), payload.get("logindex"),
+        )
+        # ACK avec logindex incrémenté — indispensable pour que le firmware
+        # marque ces logs comme "envoyés" et ne les retente pas en boucle.
+        received_index = payload.get("logindex", 0)
         return JsonResponse({
             "ret": "sendlog",
             "result": True,
-            "count": created,
+            "count": len(logs),               # nb reçus (pas nb créés) → ack au firmware
+            "logindex": received_index + len(logs),  # prochain index attendu
+            "nextindex": received_index + len(logs), # alias
             "cloudtime": timezone.now().strftime("%Y-%m-%d %H:%M:%S"),
         })
 
