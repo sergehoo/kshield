@@ -1312,13 +1312,35 @@ class PubApiCatchAllView(APIView):
                 "AiFace reg reçu de SN inconnu '%s' — enregistre le Device", sn,
             )
 
-        # Réponse dans le format attendu par le firmware
+        # Réponse dans le format attendu par le firmware.
+        # On envoie TOUS les flags connus des variantes de firmware AiFace/AI810
+        # pour maximiser les chances de trigger le push des logs.
+        now_str = timezone.now().strftime("%Y-%m-%d %H:%M:%S")
         return JsonResponse({
+            # Champs standard
             "ret": "reg",
             "result": True,
-            "cloudtime": timezone.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "nosenduser": False,     # false → le terminal peut pousser users/logs
-            "needlog": True,         # oui, envoie-moi tes logs
+            "cloudtime": now_str,
+            "cloud_time": now_str,   # alias
+            "servertime": now_str,   # autre alias possible
+            "code": 0,               # certains firmwares veulent code:0
+            "message": "OK",
+
+            # Flags de contrôle — le firmware push les logs si:
+            "nosenduser": False,       # push users OK
+            "nosendlog": False,        # push logs OK
+            "nosendface": False,       # push faces OK
+            "nosendfp": False,
+            "nosendpalm": False,
+            "nosendcard": False,
+            "nosendpwd": False,
+            "needlog": True,           # variante : demande explicite
+            "sendlog": True,           # variante
+            "getalllog": True,         # variante : envoie TOUS les logs, pas seulement les nouveaux
+            "trans_flag": "1111111111",  # ZKTeco-style flags (11 chiffres)
+            "realtime": 1,             # activer push realtime
+            "encrypt": 0,              # pas de chiffrement
+            "log_upload": 1,           # upload logs
         })
 
     def _cmd_sendlog(self, cmd, sn, payload):
