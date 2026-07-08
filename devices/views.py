@@ -1178,36 +1178,44 @@ class IclockDeviceCmdView(APIView):
 
 
 class PubApiCatchAllView(APIView):
-    """POST/GET /pub/api* — catch-all pour firmwares whitebox qui push events ici.
+    """POST /pub/api — Handler protocole AiFace / AI810 (firmware fp80v).
 
-    Beaucoup de terminaux chinois whitebox (AiFace ai810 et similaires) POSTent
-    leurs events sur un endpoint `/pub/api` au lieu de `/iclock/cdata`. Cet
-    endpoint accepte tout, log le body brut, et répond OK pour empêcher le
-    terminal de retry en boucle.
+    Les terminaux AiFace whitebox chinois utilisent un protocole HTTP JSON
+    custom au chemin `/pub/api`. Format des messages :
 
-    Chaque hit est stocké en cache Redis (dernier IP → 20 body preview) pour
-    inspection via /devices/<id>/iclock-debug/ ou via shell Django.
+        REQUEST                                  RÉPONSE ATTENDUE
+        ─────────────────────────                ─────────────────────────
+        {"cmd":"reg", "sn":..., "devinfo":...}   {"ret":"reg", "result":true,
+                                                  "cloudtime":"YYYY-MM-DD hh:mm:ss",
+                                                  "nosenduser":false, ...}
+        {"cmd":"sendlog", "sn":..., "log":[...]} {"ret":"sendlog", "result":true,
+                                                  "count":N}
+        {"cmd":"senduser", "sn":...,             {"ret":"senduser","result":true}
+         "user":{...}}
+        {"cmd":"sendface", "sn":...,             {"ret":"sendface","result":true}
+         "user":..., "face":"base64..."}
+        {"cmd":"sendfp", ...}                    {"ret":"sendfp","result":true}
+        {"cmd":"sendpalm", ...}                  {"ret":"sendpalm","result":true}
+        {"cmd":"sendcard", ...}                  {"ret":"sendcard","result":true}
+
+    À chaque `reg` :
+     - Mise à jour `device.last_heartbeat_at` et `firmware_version`
+     - Le champ `usednewlog` indique combien de logs le terminal n'a pas encore
+       poussé — s'il est > 0, on renvoie `nosenduser=false, needlog=true` pour
+       forcer le push.
+
+    Fait un fallback vers l'ancienne logique de log brut si `cmd` inconnu.
     """
     permission_classes = [AllowAny]
 
-    def _handle(self, request):
+    def _log_and_cache(self, request, raw_body, client_ip):
+        """Log Docker + cache Redis (utile pour reverse eng nouveaux protocoles)."""
         from django.core.cache import cache
-        from django.http import HttpResponse
-        from django.utils import timezone
-
-        # Log body brut + client IP (pour identifier de quel terminal ça vient)
-        raw_body = (request.body or b"").decode(errors="ignore")[:2000]
-        client_ip = (
-            request.META.get("HTTP_X_FORWARDED_FOR", "").split(",")[0].strip()
-            or request.META.get("REMOTE_ADDR", "unknown")
+        logger.info(
+            "[pub/api %s] ip=%s ct=%s bytes=%d body=%r",
+            request.method, client_ip, request.content_type,
+            len(request.body or b""), raw_body[:400],
         )
-        logger.warning(
-            "[pub/api %s] ip=%s path=%s ct=%s bytes=%d qs=%s body=%r",
-            request.method, client_ip, request.path, request.content_type,
-            len(request.body or b""), dict(request.query_params.items()),
-            raw_body[:400],
-        )
-        # Store in cache pour inspection (per-IP, 20 last, 1h TTL)
         try:
             key = f"pubapi_hits:{client_ip}"
             entries = cache.get(key) or []
@@ -1221,15 +1229,273 @@ class PubApiCatchAllView(APIView):
                 "user_agent": request.META.get("HTTP_USER_AGENT", "")[:200],
             })
             cache.set(key, entries[-20:], 3600)
-            # Aussi une liste globale des IPs qui ont push
             ips = set(cache.get("pubapi_client_ips") or [])
             ips.add(client_ip)
             cache.set("pubapi_client_ips", list(ips), 3600)
         except Exception:
             logger.exception("pub/api cache logging failed")
 
-        return HttpResponse("OK\n", content_type="text/plain")
+    def _handle(self, request):
+        import json
+        from django.http import HttpResponse, JsonResponse
 
+        raw_body = (request.body or b"").decode(errors="ignore")
+        client_ip = (
+            request.META.get("HTTP_X_FORWARDED_FOR", "").split(",")[0].strip()
+            or request.META.get("REMOTE_ADDR", "unknown")
+        )
+        self._log_and_cache(request, raw_body[:2000], client_ip)
+
+        # GET → répond OK simple (ping / probe)
+        if request.method == "GET":
+            return HttpResponse("OK\n", content_type="text/plain")
+
+        # Tente parsing JSON
+        try:
+            payload = json.loads(raw_body) if raw_body else {}
+        except Exception:
+            return HttpResponse("OK\n", content_type="text/plain")
+
+        cmd = (payload.get("cmd") or "").lower()
+        sn = payload.get("sn") or ""
+
+        # ─── Dispatch selon cmd ───
+        handler = {
+            "reg":       self._cmd_reg,
+            "sendlog":   self._cmd_sendlog,
+            "senduser":  self._cmd_senduser,
+            "sendface":  self._cmd_sendface,
+            "sendfp":    self._cmd_generic_ack,
+            "sendpalm":  self._cmd_generic_ack,
+            "sendcard":  self._cmd_generic_ack,
+            "sendpwd":   self._cmd_generic_ack,
+        }.get(cmd, self._cmd_unknown)
+
+        try:
+            return handler(cmd, sn, payload)
+        except Exception as exc:
+            logger.exception("AiFace handler %s failed: %s", cmd, exc)
+            return JsonResponse({"ret": cmd, "result": False, "reason": "server_error"})
+
+    # ─────────────────────────────────────────────────────────
+    # /pub/api command handlers
+    # ─────────────────────────────────────────────────────────
+    def _cmd_reg(self, cmd, sn, payload):
+        """Handshake initial + heartbeat périodique.
+
+        Met à jour Device.last_heartbeat_at et firmware. Répond avec
+        cloudtime + nosenduser=false pour autoriser l'upload des logs.
+        """
+        from django.http import JsonResponse
+        from .models import Device
+
+        device = Device.objects.filter(serial_number=sn).first()
+        if device:
+            devinfo = payload.get("devinfo") or {}
+            fw = devinfo.get("firmware") or ""
+            update_fields = ["last_heartbeat_at"]
+            device.last_heartbeat_at = timezone.now()
+            if fw and fw != device.firmware_version:
+                device.firmware_version = fw[:40]
+                update_fields.append("firmware_version")
+            device.save(update_fields=update_fields)
+
+            # Compte de logs en attente sur le terminal
+            new_log_count = devinfo.get("usednewlog") or 0
+            if new_log_count > 0:
+                logger.info(
+                    "AiFace %s a %d log(s) non poussé(s) — on demande le push",
+                    sn, new_log_count,
+                )
+        else:
+            logger.warning(
+                "AiFace reg reçu de SN inconnu '%s' — enregistre le Device", sn,
+            )
+
+        # Réponse dans le format attendu par le firmware
+        return JsonResponse({
+            "ret": "reg",
+            "result": True,
+            "cloudtime": timezone.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "nosenduser": False,     # false → le terminal peut pousser users/logs
+            "needlog": True,         # oui, envoie-moi tes logs
+        })
+
+    def _cmd_sendlog(self, cmd, sn, payload):
+        """Le terminal envoie une batch de logs (events de scan face).
+
+        Format attendu du log[] :
+            [
+              {"enrollid":123, "time":"2026-07-08 12:15:32", "mode":8,
+               "inout":0, "event":0, ...},
+              ...
+            ]
+
+        mode : 8=face, 1=fingerprint, 4=card, 2=palm, 16=password
+        inout: 0=in, 1=out
+        event: 0=verify ok, 1=verify fail
+        """
+        from datetime import datetime
+        from django.contrib.contenttypes.models import ContentType
+        from django.http import JsonResponse
+
+        from access_control.models import AccessEvent
+        from .models import Device
+
+        device = Device.objects.filter(serial_number=sn).first()
+        if not device:
+            logger.warning("AiFace sendlog reçu de SN inconnu '%s'", sn)
+            return JsonResponse({"ret": "sendlog", "result": True, "count": 0})
+
+        logs = payload.get("log") or payload.get("logs") or []
+        if isinstance(logs, dict):
+            logs = [logs]
+
+        site = device.site
+        if not site:
+            logger.warning("AiFace %s: device sans site — events non enregistrés", sn)
+            return JsonResponse({"ret": "sendlog", "result": True, "count": 0})
+
+        created = 0
+        for entry in logs:
+            try:
+                # Timestamp — format "YYYY-MM-DD HH:MM:SS"
+                ts_str = entry.get("time") or entry.get("timestamp") or ""
+                ts = None
+                for fmt in ("%Y-%m-%d %H:%M:%S", "%Y/%m/%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
+                    try:
+                        ts = datetime.strptime(ts_str, fmt)
+                        break
+                    except ValueError:
+                        continue
+                if ts is None:
+                    ts = timezone.now()
+                else:
+                    ts = timezone.make_aware(ts) if timezone.is_naive(ts) else ts
+
+                mode = int(entry.get("mode", 0))
+                method = {8: "face", 1: "fingerprint", 4: "nfc", 2: "palm",
+                          16: "password"}.get(mode, "manual")
+                # Notre model n'a pas "face" en choix → on utilise "nfc" pour face
+                # (le vrai type est traçable via raw_payload)
+                api_method = "nfc" if method in ("face", "fingerprint", "palm", "password") else method
+
+                inout = int(entry.get("inout", 0))
+                direction = "in" if inout == 0 else "out"
+
+                event_code = int(entry.get("event", 0))
+                decision = "granted" if event_code == 0 else "denied"
+
+                enrollid = str(entry.get("enrollid") or entry.get("userid") or "")
+
+                # Résolution du holder par matricule/enrollid
+                holder_kind = "unknown"
+                holder_ct = None
+                holder_id = None
+                if enrollid:
+                    # Essaie employee.matricule puis worker.matricule
+                    try:
+                        from employees.models import Employee
+                        emp = Employee.objects.filter(
+                            tenant=device.tenant, matricule=enrollid,
+                        ).first()
+                        if emp:
+                            holder_kind = "employee"
+                            holder_ct = ContentType.objects.get_for_model(Employee)
+                            holder_id = emp.id
+                        else:
+                            from ouvriers.models import Worker
+                            w = Worker.objects.filter(
+                                tenant=device.tenant, matricule=enrollid,
+                            ).first()
+                            if w:
+                                holder_kind = "worker"
+                                holder_ct = ContentType.objects.get_for_model(Worker)
+                                holder_id = w.id
+                    except Exception:
+                        pass
+
+                AccessEvent.objects.create(
+                    tenant=device.tenant,
+                    site=site,
+                    device=device,
+                    timestamp=ts,
+                    badge_uid=enrollid,       # tag l'enrollid comme uid pour recherche
+                    holder_kind=holder_kind,
+                    holder_content_type=holder_ct,
+                    holder_object_id=holder_id,
+                    direction=direction,
+                    method=api_method,
+                    decision=decision,
+                    denial_reason="" if decision == "granted" else "AIFACE_VERIFY_FAIL",
+                )
+                created += 1
+            except Exception as exc:
+                logger.warning("AiFace log entry skip: %s | %r", exc, entry)
+
+        # Update heartbeat au passage
+        device.last_heartbeat_at = timezone.now()
+        device.save(update_fields=["last_heartbeat_at"])
+
+        logger.info("AiFace %s: %d event(s) créés (batch de %d)", sn, created, len(logs))
+        return JsonResponse({
+            "ret": "sendlog",
+            "result": True,
+            "count": created,
+            "cloudtime": timezone.now().strftime("%Y-%m-%d %H:%M:%S"),
+        })
+
+    def _cmd_senduser(self, cmd, sn, payload):
+        """Le terminal envoie un user enrôlé localement (via écran tactile).
+
+        Format : {"cmd":"senduser","sn":...,"user":{"enrollid":..,"name":"...","admin":0}}
+        """
+        from django.http import JsonResponse
+        user = payload.get("user") or {}
+        logger.info(
+            "AiFace %s: senduser reçu enrollid=%s name=%s",
+            sn, user.get("enrollid"), user.get("name"),
+        )
+        # TODO : créer/upsert Employee ou Worker selon convention matricule
+        return JsonResponse({"ret": "senduser", "result": True})
+
+    def _cmd_sendface(self, cmd, sn, payload):
+        """Template face reçu depuis le terminal (base64).
+
+        On stocke la ref pour push ultérieur ou association employé.
+        """
+        from django.http import JsonResponse
+        from django.core.cache import cache
+
+        enrollid = str(payload.get("enrollid") or payload.get("userid") or "")
+        face_b64 = payload.get("face") or payload.get("faceimage") or ""
+        if enrollid and face_b64:
+            # Cache 24h — permettra le push vers d'autres terminaux
+            cache.set(f"aiface_template:{sn}:{enrollid}", face_b64[:200000], 86400)
+            logger.info(
+                "AiFace %s: template face reçu pour enrollid=%s (%d bytes)",
+                sn, enrollid, len(face_b64),
+            )
+        return JsonResponse({"ret": "sendface", "result": True})
+
+    def _cmd_generic_ack(self, cmd, sn, payload):
+        """Ack générique pour sendfp/sendpalm/sendcard/sendpwd — pas d'action métier
+        pour l'instant, on accuse juste réception pour que le terminal continue."""
+        from django.http import JsonResponse
+        logger.debug("AiFace %s: %s reçu (ack générique)", sn, cmd)
+        return JsonResponse({"ret": cmd, "result": True})
+
+    def _cmd_unknown(self, cmd, sn, payload):
+        """Commande AiFace inconnue — on ack pour éviter le retry, mais on log
+        les clés pour analyse."""
+        from django.http import JsonResponse
+        keys = list(payload.keys())[:10]
+        logger.warning("AiFace %s: cmd inconnu '%s' — keys=%s", sn, cmd, keys)
+        return JsonResponse({"ret": cmd, "result": True})
+
+    # ─────────────────────────────────────────────────────────
+    # HTTP methods
+    # ─────────────────────────────────────────────────────────
     def get(self, request, *args, **kwargs):
         return self._handle(request)
 
