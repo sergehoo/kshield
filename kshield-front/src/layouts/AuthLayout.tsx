@@ -1,6 +1,7 @@
 import { Outlet, Navigate } from "react-router-dom";
 import { useAuthStore } from "@/lib/auth";
 import { ShieldCheck } from "lucide-react";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 export function AuthLayout() {
   const isAuthed = useAuthStore((s) => s.isAuthenticated);
@@ -34,7 +35,11 @@ export function AuthLayout() {
         </div>
       </aside>
 
-      <main className="flex items-center justify-center p-6">
+      <main className="flex items-center justify-center p-6 relative">
+        {/* Toggle thème coin haut-droit */}
+        <div className="absolute top-4 right-4">
+          <ThemeToggle compact />
+        </div>
         <Outlet />
       </main>
     </div>

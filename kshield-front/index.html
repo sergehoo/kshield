@@ -1,10 +1,37 @@
 <!doctype html>
-<html lang="fr" class="dark">
+<html lang="fr">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#0b0f14" />
+
+    <!-- Script anti-flash : applique le thème avant que React ne monte,
+         évite le "flash of unstyled content" quand on est en dark mode. -->
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem("kshield-theme");
+          var mode = "system";
+          if (stored) {
+            try {
+              var parsed = JSON.parse(stored);
+              mode = parsed?.state?.mode || parsed?.mode || "system";
+            } catch (_) {}
+          }
+          var isDark =
+            mode === "dark" ||
+            (mode === "system" &&
+              window.matchMedia("(prefers-color-scheme: dark)").matches);
+          if (isDark) document.documentElement.classList.add("dark");
+          document.documentElement.style.colorScheme = isDark ? "dark" : "light";
+        } catch (e) {
+          /* silent */
+        }
+      })();
+    </script>
+
+    <meta name="theme-color" content="#0b0f14" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#fafafb" media="(prefers-color-scheme: light)" />
     <title>KAYDAN SHIELD</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -13,7 +40,7 @@
       rel="stylesheet"
     />
   </head>
-  <body class="min-h-screen bg-surface text-ink antialiased">
+  <body class="min-h-screen antialiased">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

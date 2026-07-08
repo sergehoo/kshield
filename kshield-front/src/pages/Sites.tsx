@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -21,6 +22,7 @@ export function SitesPage() {
   const [code, setCode] = useState("");
   const [address, setAddress] = useState("");
   const qc = useQueryClient();
+  const navigate = useNavigate();
 
   const { data, isLoading } = useQuery({
     queryKey: ["sites", q],
@@ -136,6 +138,7 @@ export function SitesPage() {
           loading={isLoading}
           rowKey={(s) => s.id}
           emptyLabel="Aucun site — cliquez sur 'Nouveau site' pour commencer"
+          onRowClick={(s) => navigate(`/sites/${s.id}`)}
         />
       </Card>
 

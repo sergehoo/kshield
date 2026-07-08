@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -19,6 +20,7 @@ export function CompaniesPage() {
   const [openNew, setOpenNew] = useState(false);
   const [form, setForm] = useState({ name: "", code: "", legal_form: "", ncc: "" });
   const qc = useQueryClient();
+  const navigate = useNavigate();
 
   const { data, isLoading } = useQuery({
     queryKey: ["companies", q],
@@ -117,6 +119,7 @@ export function CompaniesPage() {
           rows={data?.results || []}
           loading={isLoading}
           rowKey={(c) => c.id}
+          onRowClick={(c) => navigate(`/companies/${c.id}`)}
         />
       </Card>
 

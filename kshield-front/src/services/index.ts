@@ -187,3 +187,184 @@ export const systemService = {
   status: () => api.get<any>("/api/v1/core/system/status/"),
   healthz: () => api.get<any>("/healthz"),
 };
+
+// ─────────────────────────────────────────────────────────────
+// Cameras — vidéosurveillance ONVIF/RTSP
+// ─────────────────────────────────────────────────────────────
+export const camerasService = {
+  list: (params?: Record<string, any>) =>
+    api.get<Paginated<any>>("/api/v1/devices/cameras/", { params }),
+  get: (id: number) => api.get<any>(`/api/v1/devices/cameras/${id}/`),
+  create: (body: any) => api.post<any>("/api/v1/devices/cameras/", body),
+  update: (id: number, body: any) =>
+    api.patch<any>(`/api/v1/devices/cameras/${id}/`, body),
+  remove: (id: number) => api.delete(`/api/v1/devices/cameras/${id}/`),
+  discover: () => api.post<any>("/api/v1/devices/cameras/discover/"),
+  probeRtsp: (url: string) =>
+    api.post<any>("/api/v1/devices/cameras/probe-rtsp/", { url }),
+  streamUrl: (id: number) => `/api/v1/devices/cameras/${id}/stream.mjpg`,
+};
+
+// ─────────────────────────────────────────────────────────────
+// Visitors — gestion visiteurs + badges temporaires
+// ─────────────────────────────────────────────────────────────
+export const visitorsService = {
+  list: (params?: Record<string, any>) =>
+    api.get<Paginated<any>>("/api/v1/visitors/visitors/", { params }),
+  get: (id: number) => api.get<any>(`/api/v1/visitors/visitors/${id}/`),
+  create: (body: any) => api.post<any>("/api/v1/visitors/visitors/", body),
+  update: (id: number, body: any) =>
+    api.patch<any>(`/api/v1/visitors/visitors/${id}/`, body),
+  remove: (id: number) => api.delete(`/api/v1/visitors/visitors/${id}/`),
+  checkIn: (id: number) => api.post(`/api/v1/visitors/visitors/${id}/checkin/`),
+  checkOut: (id: number) => api.post(`/api/v1/visitors/visitors/${id}/checkout/`),
+};
+
+// ─────────────────────────────────────────────────────────────
+// Reports — export & agrégations
+// ─────────────────────────────────────────────────────────────
+export const reportsService = {
+  list: (params?: Record<string, any>) =>
+    api.get<Paginated<any>>("/api/v1/reports/reports/", { params }),
+  attendanceExcel: (params: { date_from?: string; date_to?: string; site?: number }) =>
+    api.get("/api/v1/reports/attendance/excel/", { params, responseType: "blob" }),
+  attendancePdf: (params: { date_from?: string; date_to?: string; site?: number }) =>
+    api.get("/api/v1/reports/attendance/pdf/", { params, responseType: "blob" }),
+  overtimeExcel: (params: { week_start?: string; site?: number }) =>
+    api.get("/api/v1/reports/overtime/excel/", { params, responseType: "blob" }),
+  eventsExcel: (params: any) =>
+    api.get("/api/v1/reports/events/excel/", { params, responseType: "blob" }),
+};
+
+// ─────────────────────────────────────────────────────────────
+// Anti-fraude
+// ─────────────────────────────────────────────────────────────
+export const antifraudService = {
+  alertsList: (params?: Record<string, any>) =>
+    api.get<Paginated<any>>("/api/v1/antifraud/alerts/", { params }),
+  alertResolve: (id: number, note?: string) =>
+    api.post(`/api/v1/antifraud/alerts/${id}/resolve/`, { note }),
+  alertDismiss: (id: number, note?: string) =>
+    api.post(`/api/v1/antifraud/alerts/${id}/dismiss/`, { note }),
+  rulesList: () => api.get<Paginated<any>>("/api/v1/antifraud/rules/"),
+  rulesUpdate: (id: number, body: any) =>
+    api.patch(`/api/v1/antifraud/rules/${id}/`, body),
+};
+
+// ─────────────────────────────────────────────────────────────
+// Attendance — plannings & congés & overtime rules
+// ─────────────────────────────────────────────────────────────
+export const rosterService = {
+  list: (params?: Record<string, any>) =>
+    api.get<Paginated<any>>("/api/v1/attendance/rosters/", { params }),
+  create: (body: any) => api.post("/api/v1/attendance/rosters/", body),
+  update: (id: number, body: any) =>
+    api.patch(`/api/v1/attendance/rosters/${id}/`, body),
+  remove: (id: number) => api.delete(`/api/v1/attendance/rosters/${id}/`),
+};
+
+export const leavesService = {
+  list: (params?: Record<string, any>) =>
+    api.get<Paginated<any>>("/api/v1/attendance/leaves/", { params }),
+  create: (body: any) => api.post("/api/v1/attendance/leaves/", body),
+  approve: (id: number) => api.patch(`/api/v1/attendance/leaves/${id}/`, { status: "approved" }),
+  reject: (id: number) => api.patch(`/api/v1/attendance/leaves/${id}/`, { status: "rejected" }),
+};
+
+export const overtimeRulesService = {
+  list: (params?: Record<string, any>) =>
+    api.get<Paginated<any>>("/api/v1/attendance/overtime-rules/", { params }),
+  create: (body: any) => api.post("/api/v1/attendance/overtime-rules/", body),
+  update: (id: number, body: any) =>
+    api.patch(`/api/v1/attendance/overtime-rules/${id}/`, body),
+};
+
+// ─────────────────────────────────────────────────────────────
+// Face recognition
+// ─────────────────────────────────────────────────────────────
+export const faceService = {
+  status: () => api.get<any>("/api/v1/employees/face/status/"),
+  enrollEmployee: (id: number, photo: File) => {
+    const fd = new FormData();
+    fd.append("photo", photo);
+    return api.post(`/api/v1/employees/${id}/face-enroll/`, fd, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+  },
+  pushToTerminals: () =>
+    api.post<any>("/api/v1/devices/face/push-templates/"),
+  pullFromTerminals: () =>
+    api.post<any>("/api/v1/devices/face/pull-templates/"),
+};
+
+// ─────────────────────────────────────────────────────────────
+// OTA / firmwares
+// ─────────────────────────────────────────────────────────────
+export const firmwaresService = {
+  list: (params?: Record<string, any>) =>
+    api.get<Paginated<any>>("/api/v1/devices/firmwares/", { params }),
+  create: (body: any) => api.post("/api/v1/devices/firmwares/", body),
+  otaList: (params?: Record<string, any>) =>
+    api.get<Paginated<any>>("/api/v1/devices/ota/", { params }),
+  scheduleUpdate: (body: any) => api.post("/api/v1/devices/ota/", body),
+};
+
+// ─────────────────────────────────────────────────────────────
+// Users / Roles / API keys (RBAC)
+// ─────────────────────────────────────────────────────────────
+export const usersService = {
+  list: (params?: Record<string, any>) =>
+    api.get<Paginated<any>>("/api/v1/auth/users/", { params }),
+  get: (id: number) => api.get<any>(`/api/v1/auth/users/${id}/`),
+  create: (body: any) => api.post<any>("/api/v1/auth/users/", body),
+  update: (id: number, body: any) =>
+    api.patch<any>(`/api/v1/auth/users/${id}/`, body),
+  remove: (id: number) => api.delete(`/api/v1/auth/users/${id}/`),
+};
+
+export const rolesService = {
+  list: () => api.get<Paginated<any>>("/api/v1/auth/roles/"),
+  create: (body: any) => api.post("/api/v1/auth/roles/", body),
+  update: (id: number, body: any) => api.patch(`/api/v1/auth/roles/${id}/`, body),
+  remove: (id: number) => api.delete(`/api/v1/auth/roles/${id}/`),
+};
+
+export const roleAssignmentsService = {
+  list: (params?: Record<string, any>) =>
+    api.get<Paginated<any>>("/api/v1/auth/role-assignments/", { params }),
+  create: (body: any) => api.post("/api/v1/auth/role-assignments/", body),
+  remove: (id: number) => api.delete(`/api/v1/auth/role-assignments/${id}/`),
+};
+
+export const apiKeysService = {
+  list: (params?: Record<string, any>) =>
+    api.get<Paginated<any>>("/api/v1/auth/api-keys/", { params }),
+  create: (body: any) => api.post<any>("/api/v1/auth/api-keys/", body),
+  remove: (id: number) => api.delete(`/api/v1/auth/api-keys/${id}/`),
+};
+
+// ─────────────────────────────────────────────────────────────
+// Audit log
+// ─────────────────────────────────────────────────────────────
+export const auditService = {
+  list: (params?: Record<string, any>) =>
+    api.get<Paginated<any>>("/api/v1/audit/entries/", { params }),
+};
+
+// ─────────────────────────────────────────────────────────────
+// Employees — enrich existing service
+// ─────────────────────────────────────────────────────────────
+Object.assign(employeesService, {
+  get: (id: number) => api.get<any>(`/api/v1/employees/employees/${id}/`),
+  pushToZk: (id: number) => api.post(`/api/v1/employees/${id}/push-to-zk/`),
+});
+
+// ─────────────────────────────────────────────────────────────
+// Sites detail + companies detail
+// ─────────────────────────────────────────────────────────────
+Object.assign(sitesService, {
+  get: (id: number) => api.get<any>(`/api/v1/sites/sites/${id}/`),
+});
+Object.assign(companiesService, {
+  get: (id: number) => api.get<any>(`/api/v1/sites/companies/${id}/`),
+});

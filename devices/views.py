@@ -1,3 +1,5 @@
+import logging
+
 from django.http import Http404, HttpResponse, StreamingHttpResponse
 from django.utils import timezone
 from django.views import View
@@ -12,6 +14,8 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from accounts.hmac_auth import HMACAPIKeyAuthentication
 from accounts.permissions import IsAuthenticatedOrAPIKey
 from accounts.rbac import HasKshieldPermission
+
+logger = logging.getLogger(__name__)
 
 from .models import (
     Badge, BadgeAssignment, BadgeHelmetPairing, Camera, Device, DeviceHeartbeat,

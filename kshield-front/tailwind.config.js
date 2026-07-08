@@ -5,7 +5,7 @@ export default {
   theme: {
     extend: {
       colors: {
-        // KAYDAN SHIELD palette (aligned with Django templates layout/base.html)
+        // Palette de marque (identique en light/dark)
         brand: {
           50: "#fff7ed",
           100: "#ffedd5",
@@ -14,28 +14,31 @@ export default {
           600: "#ea580c",
           700: "#c2410c",
         },
+        // Surfaces & texte — pilotées par CSS variables (voir styles/index.css)
+        // rgb(<var> / <alpha-value>) permet à Tailwind d'appliquer bg-surface/70 etc.
         surface: {
-          DEFAULT: "#0b0f14",
-          soft: "#111823",
-          card: "#0f1620",
-          border: "rgba(148,163,184,0.14)",
+          DEFAULT: "rgb(var(--c-surface) / <alpha-value>)",
+          soft:    "rgb(var(--c-surface-soft) / <alpha-value>)",
+          card:    "rgb(var(--c-surface-card) / <alpha-value>)",
+          border:  "rgb(var(--c-surface-border) / <alpha-value>)",
         },
         ink: {
-          DEFAULT: "#e5e7eb",
-          muted: "#94a3b8",
-          soft: "#64748b",
+          DEFAULT: "rgb(var(--c-ink) / <alpha-value>)",
+          muted:   "rgb(var(--c-ink-muted) / <alpha-value>)",
+          soft:    "rgb(var(--c-ink-soft) / <alpha-value>)",
         },
-        ok: "#22c55e",
-        warn: "#f59e0b",
+        // Sémantiques
+        ok:     "#22c55e",
+        warn:   "#f59e0b",
         danger: "#f87171",
-        info: "#38bdf8",
+        info:   "#38bdf8",
       },
       fontFamily: {
         sans: ["Inter", "ui-sans-serif", "system-ui", "sans-serif"],
         mono: ["JetBrains Mono", "ui-monospace", "monospace"],
       },
       boxShadow: {
-        card: "0 6px 24px rgba(0,0,0,0.35)",
+        card: "0 6px 24px rgb(0 0 0 / var(--shadow-strength, 0.35))",
       },
       animation: {
         "pulse-dot": "pulse-dot 1.4s ease-in-out infinite",

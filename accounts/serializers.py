@@ -41,7 +41,14 @@ class LoginSerializer(serializers.Serializer):
     mfa_code = serializers.CharField(required=False, allow_blank=True)
 
     def validate(self, data):
-        user = authenticate(email=data["email"], password=data["password"])
+        # django-axes (AxesBackend) exige un argument `request=` sur authenticate()
+        # pour tracker les tentatives et appliquer son rate-limiting anti-bruteforce.
+        request = self.context.get("request")
+        user = authenticate(
+            request=request,
+            email=data["email"],
+            password=data["password"],
+        )
         if not user:
             raise serializers.ValidationError("Identifiants invalides")
         if not user.is_active:

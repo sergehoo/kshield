@@ -22,7 +22,9 @@ class LoginView(APIView):
         import traceback
         logger = logging.getLogger("accounts.login")
 
-        serializer = LoginSerializer(data=request.data)
+        # Contexte : LoginSerializer.validate() a besoin du request pour
+        # appeler authenticate(request=…) (obligatoire avec django-axes).
+        serializer = LoginSerializer(data=request.data, context={"request": request})
         try:
             success = serializer.is_valid()
         except Exception as exc:

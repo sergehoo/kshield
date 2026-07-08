@@ -13,11 +13,13 @@ import type { Badge as ApiBadge } from "@/types/api";
 import { Search, CreditCard, Ban, PauseCircle, PlayCircle } from "lucide-react";
 import toast from "react-hot-toast";
 
-function techTone(t: string) {
-  return t === "nfc" ? "info" : t === "uhf" ? "brand" : t === "qr" ? "warn" : "muted";
+function techTone(t?: string | null) {
+  const v = (t || "").toLowerCase();
+  return v === "nfc" ? "info" : v === "uhf" ? "brand" : v === "qr" ? "warn" : "muted";
 }
-function statusTone(s: string) {
-  return s === "active" ? "ok" : s === "suspended" ? "warn" : s === "revoked" ? "danger" : "muted";
+function statusTone(s?: string | null) {
+  const v = (s || "").toLowerCase();
+  return v === "active" ? "ok" : v === "suspended" ? "warn" : v === "revoked" ? "danger" : "muted";
 }
 
 export function BadgesPage() {
@@ -80,7 +82,11 @@ export function BadgesPage() {
     {
       key: "tech",
       header: "Techno",
-      render: (b) => <UIBadge tone={techTone(b.tech)}>{b.tech.toUpperCase()}</UIBadge>,
+      render: (b) => (
+        <UIBadge tone={techTone(b.tech)}>
+          {(b.tech || "—").toUpperCase()}
+        </UIBadge>
+      ),
     },
     { key: "holder", header: "Porteur", render: (b) => b.holder_name || "—" },
     {
@@ -88,7 +94,7 @@ export function BadgesPage() {
       header: "Statut",
       render: (b) => (
         <UIBadge tone={statusTone(b.status)} dot>
-          {b.status}
+          {b.status || "—"}
         </UIBadge>
       ),
     },

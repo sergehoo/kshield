@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { PageHeader } from "@/components/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -12,6 +13,7 @@ import { Search } from "lucide-react";
 
 export function EmployeesPage() {
   const [q, setQ] = useState("");
+  const navigate = useNavigate();
 
   const { data, isLoading } = useQuery({
     queryKey: ["employees", q],
@@ -85,6 +87,7 @@ export function EmployeesPage() {
           rows={data?.results || []}
           loading={isLoading}
           rowKey={(e) => e.id}
+          onRowClick={(e) => navigate(`/employees/${e.id}`)}
         />
       </Card>
     </div>
