@@ -845,6 +845,24 @@ class EdgeGatewayPackage(TimeStampedModel):
     def __str__(self):
         return f"{self.name} ({self.version})"
 
+    def save(self, *args, **kwargs):
+        # Auto-calcul checksum SHA256 + taille dès qu'un fichier est uploadé.
+        if self.file and hasattr(self.file, "path"):
+            try:
+                import hashlib, os
+                path = self.file.path
+                if os.path.exists(path):
+                    self.size_bytes = os.path.getsize(path)
+                    if not self.checksum_sha256:
+                        h = hashlib.sha256()
+                        with open(path, "rb") as f:
+                            for chunk in iter(lambda: f.read(65536), b""):
+                                h.update(chunk)
+                        self.checksum_sha256 = h.hexdigest()
+            except Exception:
+                pass
+        super().save(*args, **kwargs)
+
 
 # ═══════════════════════════════════════════════════════════════════
 # Historique des alertes système (Vague 5)
