@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- Kaydan Shield — bouclier stylisé aux couleurs brand -->
+  <defs>
+    <linearGradient id="grad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#fb923c"/>
+      <stop offset="100%" stop-color="#c2410c"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Silhouette du bouclier -->
+  <path
+    d="M32 4 L58 12 V32 C58 47 47 57 32 60 C17 57 6 47 6 32 V12 L32 4 Z"
+    fill="url(#grad)"
+    stroke="#7c2d12"
+    stroke-width="2"
+    stroke-linejoin="round"
+  />
+
+  <!-- Reflet lumineux (haut gauche) -->
+  <path
+    d="M32 8 L54 15 V20 C48 14 40 10 32 10 Z"
+    fill="#ffedd5"
+    opacity="0.35"
+  />
+
+  <!-- Lettre K centrale — semi-serif géométrique -->
+  <path
+    d="M22 20 L22 46 M22 33 L38 20 M22 33 L38 46"
+    stroke="#ffffff"
+    stroke-width="4.5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    fill="none"
+  />
+
+  <!-- Petit point sécurité en bas (indicateur de statut actif) -->
+  <circle cx="46" cy="42" r="2.5" fill="#22c55e"/>
+</svg>
