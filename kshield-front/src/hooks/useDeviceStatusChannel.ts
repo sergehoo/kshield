@@ -10,15 +10,28 @@ import { useAuthStore } from "@/lib/auth";
 export type StatusWsStatus = "idle" | "connecting" | "open" | "closed" | "error";
 
 function resolveWsBase(): string {
-  const apiBase = (import.meta.env.VITE_API_URL as string) || "http://localhost:8000";
-  try {
-    const u = new URL(apiBase);
-    const proto = u.protocol === "https:" ? "wss:" : "ws:";
-    return `${proto}//${u.host}`;
-  } catch {
-    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    return `${proto}//${window.location.host}`;
+  // En prod (HTTPS + front servi depuis le même domaine que l'API), on dérive
+  // TOUJOURS depuis window.location — plus fiable que VITE_API_URL qui peut
+  // ne pas être défini au build ou pointer sur localhost par défaut.
+  //
+  // En dev (http://localhost:5173) → utilise VITE_API_URL si défini
+  // (ex. http://localhost:8000), sinon window.location.
+  const isProdSameOrigin = window.location.protocol === "https:";
+  if (isProdSameOrigin) {
+    return `wss://${window.location.host}`;
   }
+  const apiBase = (import.meta.env.VITE_API_URL as string) || "";
+  if (apiBase) {
+    try {
+      const u = new URL(apiBase);
+      const proto = u.protocol === "https:" ? "wss:" : "ws:";
+      return `${proto}//${u.host}`;
+    } catch {
+      /* fallback ci-dessous */
+    }
+  }
+  const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${proto}//${window.location.host}`;
 }
 
 export function useDeviceStatusChannel({

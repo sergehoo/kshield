@@ -20,16 +20,21 @@ export interface EnrollmentSessionHookOptions {
  * Résout l'URL WebSocket à partir de l'URL API (http:// → ws://, https:// → wss://).
  */
 function resolveWsBase(): string {
-  const apiBase = (import.meta.env.VITE_API_URL as string) || "http://localhost:8000";
-  try {
-    const u = new URL(apiBase);
-    const proto = u.protocol === "https:" ? "wss:" : "ws:";
-    return `${proto}//${u.host}`;
-  } catch {
-    // Fallback : même origine que la page
-    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    return `${proto}//${window.location.host}`;
+  // En prod HTTPS → same-origin (Traefik proxie /ws/... vers shieldws).
+  if (window.location.protocol === "https:") {
+    return `wss://${window.location.host}`;
   }
+  // En dev : VITE_API_URL si défini, sinon même origine.
+  const apiBase = (import.meta.env.VITE_API_URL as string) || "";
+  if (apiBase) {
+    try {
+      const u = new URL(apiBase);
+      const proto = u.protocol === "https:" ? "wss:" : "ws:";
+      return `${proto}//${u.host}`;
+    } catch { /* fallback ci-dessous */ }
+  }
+  const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${proto}//${window.location.host}`;
 }
 
 export function useEnrollmentSession({
