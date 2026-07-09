@@ -21,6 +21,10 @@ DEBUG = False
 SECRET_KEY = config("SECRET_KEY")  # explose si manquant
 ALLOWED_HOSTS = config("ALLOWED_HOSTS", cast=Csv())
 
+# Le front React remplace intégralement les templates administration en prod.
+# Le domaine racine est routé par Traefik vers le service shieldfront.
+ADMIN_TEMPLATES_ENABLED = config("ADMIN_TEMPLATES_ENABLED", default=False, cast=bool)
+
 # HTTPS / proxy
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 SECURE_SSL_REDIRECT = config("SECURE_SSL_REDIRECT", default=True, cast=bool)

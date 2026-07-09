@@ -555,6 +555,15 @@ KAYDAN_SHIELD = {
 # SSO Keycloak (OpenID Connect) — feature flag SSO_ENABLED
 # ---------------------------------------------------------------------------
 SSO_ENABLED = config("SSO_ENABLED", default=False, cast=bool)
+
+# ---------------------------------------------------------------------------
+# Back-office templates Django (legacy) — désactivable en prod
+# ---------------------------------------------------------------------------
+# En prod, le front React sert de back-office et ces vues templates sont
+# désactivées via ADMIN_TEMPLATES_ENABLED=False. Le domaine racine tombe alors
+# sur le service ``shieldfront`` derrière Traefik.
+# En dev, laissé à True pour maintenir la compatibilité descendante.
+ADMIN_TEMPLATES_ENABLED = config("ADMIN_TEMPLATES_ENABLED", default=True, cast=bool)
 SSO_AUTO_CREATE_USER = config("SSO_AUTO_CREATE_USER", default=True, cast=bool)
 SSO_SYNC_ROLES = config("SSO_SYNC_ROLES", default=True, cast=bool)
 SSO_DEFAULT_GROUP = config("SSO_DEFAULT_GROUP", default="kaydan-users")

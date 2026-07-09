@@ -2,6 +2,7 @@
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
+from django.http import HttpResponseRedirect
 from django.urls import include, path
 from drf_spectacular.views import (
     SpectacularAPIView,
@@ -75,8 +76,15 @@ urlpatterns = [
     # Endpoints directs badges (servis hors API)
     path("badges/<int:pk>/pdf/",       BadgePDFDownloadView.as_view(), name="badge-pdf"),
     path("badges/<int:pk>/thumbnail/", BadgeThumbnailView.as_view(),   name="badge-thumbnail"),
-    # Back-office KAYDAN (administration)
-    path("", include("administration.urls")),
+    # Back-office KAYDAN (administration) — activé uniquement si le flag
+    # ``ADMIN_TEMPLATES_ENABLED`` est True. En prod, le front React sert de
+    # back-office et ces vues sont désactivées (le domaine racine tombe sur
+    # le service ``shieldfront`` via Traefik).
+    *(
+        [path("", include("administration.urls"))]
+        if settings.ADMIN_TEMPLATES_ENABLED
+        else []
+    ),
     # ───── SSO Keycloak (OIDC) ─────
     path("sso/", include("sso.urls")),
     path("api/sso/", include("sso.api_urls")),
