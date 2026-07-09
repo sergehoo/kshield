@@ -167,7 +167,6 @@ services:
       # (Prometheus doit scraper l'endpoint, pas recevoir un push).
       EMQX_PROMETHEUS__ENABLE: "true"
       EMQX_PROMETHEUS__PUSH_GATEWAY_SERVER: ""
-      EMQX_PROMETHEUS__ENABLE_BASIC_AUTH: "false"
     volumes:
       - kshield_mqtt_data:/opt/emqx/data
       - kshield_mqtt_log:/opt/emqx/log
