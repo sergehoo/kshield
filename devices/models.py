@@ -740,8 +740,10 @@ class LocalAgent(UUIDModel, TimeStampedModel):
                               help_text="Nom donné à l'agent, ex. « Chantier Riviera-01 ».")
     api_token = models.CharField(max_length=64, unique=True, db_index=True,
                                   help_text="Secret partagé pour authentifier l'agent (HMAC).")
-    hmac_secret = EncryptedCharField(max_length=128, blank=True,
-                                      help_text="Secret HMAC pour signer les messages.")
+    # NB : Fernet encrypt un token de 43 chars → payload chiffré ~130-180 chars.
+    # On garde une marge très large (512) pour éviter tout StringDataRightTruncation.
+    hmac_secret = EncryptedCharField(max_length=512, blank=True,
+                                      help_text="Secret HMAC pour signer les messages (stocké chiffré).")
 
     site = models.ForeignKey("sites.Site", null=True, blank=True,
                               on_delete=models.SET_NULL, related_name="local_agents")
