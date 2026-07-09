@@ -15,6 +15,10 @@ from .serializers import (
 
 
 class LoginView(APIView):
+    # authentication_classes vide : on désactive SessionAuthentication qui
+    # exigerait un CSRF token sur POST (endpoint public accessible sans session).
+    # Le token JWT est délivré par cette vue, pas requis en entrée.
+    authentication_classes = []
     permission_classes = [permissions.AllowAny]
 
     def post(self, request):
