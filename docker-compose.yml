@@ -176,9 +176,12 @@ services:
       - "18083:18083"   # Dashboard EMQX
     networks: [kshield_network]
     healthcheck:
-      test: ["CMD", "/opt/emqx/bin/emqx_ctl", "status"]
+      # emqx_ctl status peut mettre >5s sous charge → unhealthy à tort.
+      # On teste plutôt le dashboard HTTP qui répond en <100ms.
+      test: ["CMD-SHELL", "curl -f -s http://localhost:18083/status || exit 1"]
       interval: 30s
-      timeout: 5s
+      timeout: 10s
+      start_period: 30s
       retries: 5
     logging: *logging_rotated
 
@@ -432,6 +435,15 @@ services:
         condition: service_healthy
       shieldredis:
         condition: service_healthy
+    # Override du HEALTHCHECK Dockerfile (qui teste HTTP :8000) — beat ne
+    # sert pas HTTP. On vérifie juste que le processus Celery beat tourne
+    # via son PID file.
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/celerybeat.pid && kill -0 $(cat /tmp/celerybeat.pid)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     networks: [kshield_network]
 
   # ===========================================================================
