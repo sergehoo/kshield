@@ -1,13 +1,14 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { PageHeader } from "@/components/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { DataTable, Column } from "@/components/ui/DataTable";
 import { Badge } from "@/components/ui/Badge";
 import { Input } from "@/components/ui/Input";
+import { StatsRow } from "@/components/StatsRow";
 import { firmwaresService } from "@/services";
 import { fmtDateTime, fmtNumber } from "@/lib/format";
-import { Search, Package, Cpu, Clock, CheckCircle2 } from "lucide-react";
+import { Search, Package, Cpu, Clock, CheckCircle2, XCircle, Loader2 } from "lucide-react";
 import { cn } from "@/lib/cn";
 
 /**
@@ -122,6 +123,17 @@ function OtaList() {
       (await firmwaresService.otaList({ page_size: 200, ordering: "-created_at" })).data,
   });
 
+  const stats = useMemo(() => {
+    const list = data?.results || [];
+    return {
+      total:      data?.count || 0,
+      inProgress: list.filter((o: any) => o.status === "in_progress").length,
+      completed:  list.filter((o: any) => o.status === "completed").length,
+      failed:     list.filter((o: any) => o.status === "failed").length,
+      scheduled:  list.filter((o: any) => o.status === "scheduled" || o.status === "pending").length,
+    };
+  }, [data]);
+
   const columns: Column<any>[] = [
     {
       key: "device",
@@ -187,14 +199,23 @@ function OtaList() {
   ];
 
   return (
-    <Card padded={false}>
-      <DataTable
-        columns={columns}
-        rows={data?.results || []}
-        loading={isLoading}
-        rowKey={(o) => o.id}
-        emptyLabel="Aucune mise à jour OTA planifiée"
-      />
-    </Card>
+    <>
+      <StatsRow stats={[
+        { label: "Total OTA",   value: stats.total,      icon: <Package className="w-4 h-4" />,     tone: "brand" },
+        { label: "En cours",    value: stats.inProgress, icon: <Loader2 className="w-4 h-4" />,     tone: "warn" },
+        { label: "Terminées",   value: stats.completed,  icon: <CheckCircle2 className="w-4 h-4" />, tone: "ok" },
+        { label: "Échouées",    value: stats.failed,     icon: <XCircle className="w-4 h-4" />,     tone: "danger" },
+        { label: "Planifiées",  value: stats.scheduled,  icon: <Clock className="w-4 h-4" />,       tone: "info" },
+      ]} />
+      <Card padded={false}>
+        <DataTable
+          columns={columns}
+          rows={data?.results || []}
+          loading={isLoading}
+          rowKey={(o) => o.id}
+          emptyLabel="Aucune mise à jour OTA planifiée"
+        />
+      </Card>
+    </>
   );
 }

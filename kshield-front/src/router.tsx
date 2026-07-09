@@ -45,6 +45,14 @@ import { ReportsPage } from "@/pages/Reports";
 import { UsersPage } from "@/pages/Users";
 import { RolesPage } from "@/pages/Roles";
 import { ApiKeysPage } from "@/pages/ApiKeys";
+import { LocalAgentsPage } from "@/pages/LocalAgents";
+import { AlertsPage } from "@/pages/Alerts";
+import { DriversPage } from "@/pages/Drivers";
+import { DiscoveryPage } from "@/pages/Discovery";
+import { MaintenancePage } from "@/pages/Maintenance";
+import { TopologyPage } from "@/pages/Topology";
+import { MarketplacePage } from "@/pages/Marketplace";
+import { EdgeGatewayPage } from "@/pages/EdgeGateway";
 import { AuditLogPage } from "@/pages/AuditLog";
 
 // Compte
@@ -55,6 +63,25 @@ import { SettingsPage } from "@/pages/Settings";
 // Import + kiosk
 import { BulkImportPage } from "@/pages/BulkImport";
 import { KioskPage } from "@/pages/Kiosk";
+import { ConfigHubPage } from "@/pages/ConfigHub";
+
+// Workflows spécifiques
+import { VisitRequestsPage } from "@/pages/VisitRequests";
+import { FraudInvestigationsPage } from "@/pages/FraudInvestigations";
+import { CamerasLivePage } from "@/pages/CamerasLive";
+
+// CRUD pages (25 pages générées via <CrudPage />)
+import {
+  ZonesPage, SubcontractorsPage, TradesPage, CrewsPage,
+  WorkerAssignmentsPage, WorkerCertsPage, DeviceModelsPage,
+  DeviceMaintenancePage, GatewaysPage, VisitPurposesPage,
+  VisitorPassesPage, VisitorInvitationsPage, WatchlistsPage,
+  FraudRulesPage, AccessRulesPage, OvertimeRulesPage, OvertimeCalcsPage,
+  AttendanceCorrectionsPage, LeavesPage, NotificationTemplatesPage,
+  FeatureFlagsPage, ReportSchedulesPage, DashboardsPage,
+  RetentionPoliciesPage, ConformityRegistersPage, MobileDevicesPage,
+  AITemplatesPage,
+} from "@/pages/crud";
 
 // ─────────────────────────────────────────────────────────────
 // Fallback erreur route (loaders, actions, render errors du router)
@@ -150,11 +177,64 @@ export const router = createBrowserRouter([
       // Administration
       { path: "users", element: <UsersPage /> },
       { path: "roles", element: <RolesPage /> },
+      { path: "local-agents", element: <LocalAgentsPage /> },
+      { path: "alerts", element: <AlertsPage /> },
+      { path: "drivers", element: <DriversPage /> },
+      { path: "discovery", element: <DiscoveryPage /> },
+      { path: "maintenance", element: <MaintenancePage /> },
+      { path: "topology", element: <TopologyPage /> },
+      { path: "marketplace", element: <MarketplacePage /> },
+      { path: "edge-gateway", element: <EdgeGatewayPage /> },
       { path: "api-keys", element: <ApiKeysPage /> },
       { path: "audit", element: <AuditLogPage /> },
 
-      // Import + kiosk (accessibles depuis les autres pages)
+      // Import + kiosk + hub configuration
       { path: "bulk-import", element: <BulkImportPage /> },
+      { path: "config", element: <ConfigHubPage /> },
+
+      // ─── CRUD génériques : terrain ─────────────
+      { path: "zones", element: <ZonesPage /> },
+      { path: "subcontractors", element: <SubcontractorsPage /> },
+      { path: "trades", element: <TradesPage /> },
+      { path: "crews", element: <CrewsPage /> },
+      { path: "worker-assignments", element: <WorkerAssignmentsPage /> },
+      { path: "worker-certs", element: <WorkerCertsPage /> },
+
+      // ─── CRUD : équipements ─────────────
+      { path: "device-models", element: <DeviceModelsPage /> },
+      { path: "device-maintenance", element: <DeviceMaintenancePage /> },
+      { path: "gateways", element: <GatewaysPage /> },
+      { path: "cameras/live", element: <CamerasLivePage /> },
+
+      // ─── CRUD : visiteurs workflow ─────────────
+      { path: "visit-requests", element: <VisitRequestsPage /> },
+      { path: "visit-purposes", element: <VisitPurposesPage /> },
+      { path: "visitor-passes", element: <VisitorPassesPage /> },
+      { path: "visitor-invitations", element: <VisitorInvitationsPage /> },
+      { path: "watchlists", element: <WatchlistsPage /> },
+
+      // ─── CRUD : sécurité ─────────────
+      { path: "fraud-rules", element: <FraudRulesPage /> },
+      { path: "fraud-investigations", element: <FraudInvestigationsPage /> },
+      { path: "access-rules", element: <AccessRulesPage /> },
+
+      // ─── CRUD : RH avancé ─────────────
+      { path: "leaves", element: <LeavesPage /> },
+      { path: "overtime-rules", element: <OvertimeRulesPage /> },
+      { path: "overtime-calcs", element: <OvertimeCalcsPage /> },
+      { path: "attendance-corrections", element: <AttendanceCorrectionsPage /> },
+
+      // ─── CRUD : config & reporting ─────────────
+      { path: "notification-templates", element: <NotificationTemplatesPage /> },
+      { path: "feature-flags", element: <FeatureFlagsPage /> },
+      { path: "report-schedules", element: <ReportSchedulesPage /> },
+      { path: "dashboards", element: <DashboardsPage /> },
+      { path: "mobile-devices", element: <MobileDevicesPage /> },
+      { path: "ai-templates", element: <AITemplatesPage /> },
+
+      // ─── CRUD : RGPD ─────────────
+      { path: "retention-policies", element: <RetentionPoliciesPage /> },
+      { path: "conformity", element: <ConformityRegistersPage /> },
 
       // Compte
       { path: "notifications", element: <NotificationsPage /> },

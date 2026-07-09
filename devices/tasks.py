@@ -595,3 +595,13 @@ def push_zkteco_users(device_id: Optional[int] = None) -> dict:
             )
 
     return {"pushed_users": pushed_total, "errors": errors}
+
+
+# ─── Vague 3 : tasks temps réel ────────────────────────────────────
+# Import à la fin pour que Celery autodiscover les enregistre.
+from .tasks_realtime import (  # noqa: E402,F401
+    sweep_command_timeouts, reconcile_status, sweep_stale_agents,
+    sweep_system_alerts, refresh_device_twins,
+    run_predictive_maintenance,
+    process_pending_ota_updates,
+)

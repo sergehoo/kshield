@@ -27,6 +27,7 @@ api_v1 = [
     path("reports/", include("reports.urls")),
     path("mobile/", include("mobile_sync.urls")),
     path("ai/", include("ai_assistant.urls")),
+    path("rfid/", include("devices.urls_rfid")),
 ]
 
 from devices.views import BadgePDFDownloadView, BadgeThumbnailView

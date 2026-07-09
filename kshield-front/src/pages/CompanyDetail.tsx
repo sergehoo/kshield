@@ -40,7 +40,7 @@ export function CompanyDetailPage() {
   if (!c)
     return (
       <div className="text-center py-16">
-        <p className="text-ink-muted mb-3">Société introuvable</p>
+        <p className="text-ink-muted mb-3">Filiale introuvable</p>
         <Link to="/companies" className="btn-ghost inline-flex">
           <ArrowLeft className="w-4 h-4" /> Retour
         </Link>
@@ -86,12 +86,6 @@ export function CompanyDetailPage() {
           }
           icon={<Building2 className="w-5 h-5" />}
           accent={c.is_active !== false ? "ok" : "danger"}
-        />
-        <KpiCard
-          label="N° Contribuable"
-          value={c.ncc || "—"}
-          icon={<FileText className="w-5 h-5" />}
-          accent="warn"
         />
       </div>
 

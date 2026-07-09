@@ -63,7 +63,37 @@ class Employee(UUIDModel, TimeStampedModel):
     email = models.EmailField(blank=True)
     phone = models.CharField(max_length=32, blank=True)
     photo = models.ImageField(upload_to="employees/photos/", null=True, blank=True)
+
+    # KYC — infos personnelles
+    date_of_birth = models.DateField(null=True, blank=True)
+    GENDER_CHOICES = [
+        ("male", "Homme"),
+        ("female", "Femme"),
+        ("other", "Autre"),
+    ]
+    gender = models.CharField(max_length=8, choices=GENDER_CHOICES, blank=True)
+    marital_status = models.CharField(max_length=12, blank=True,
+        choices=[("single", "Célibataire"), ("married", "Marié(e)"),
+                 ("divorced", "Divorcé(e)"), ("widowed", "Veuf/veuve")])
+    nationality = models.CharField(max_length=64, blank=True)
+    country_of_residence = models.CharField(max_length=64, blank=True, default="Côte d'Ivoire")
+    city = models.CharField(max_length=120, blank=True)
+    neighborhood = models.CharField(max_length=120, blank=True)
+    address = models.CharField(max_length=240, blank=True)
+
+    # KYC — pièce d'identité
+    id_type = models.CharField(max_length=12, blank=True,
+        choices=[("cni","CNI"), ("passport","Passeport"), ("driver","Permis"),
+                 ("cedeao","CEDEAO"), ("other","Autre")])
+    id_number = models.CharField(max_length=64, blank=True)
     id_document = models.FileField(upload_to="employees/id/", null=True, blank=True)
+    id_issue_date = models.DateField(null=True, blank=True)
+    id_expiry_date = models.DateField(null=True, blank=True)
+
+    # Contact urgence
+    emergency_contact_name = models.CharField(max_length=180, blank=True)
+    emergency_contact_phone = models.CharField(max_length=32, blank=True)
+    emergency_contact_relation = models.CharField(max_length=80, blank=True)
 
     department = models.ForeignKey(
         Department, null=True, blank=True, on_delete=models.SET_NULL, related_name="employees",
@@ -112,6 +142,24 @@ class Employee(UUIDModel, TimeStampedModel):
             category="employee_rfid", holder_kind="employee",
             holder_object_id=self.id, status="active",
         ).first()
+
+    @property
+    def age(self):
+        if not self.date_of_birth:
+            return None
+        from datetime import date
+        today = date.today()
+        return today.year - self.date_of_birth.year - (
+            (today.month, today.day) < (self.date_of_birth.month, self.date_of_birth.day)
+        )
+
+    @property
+    def seniority_days(self):
+        from datetime import date
+        start = self.hired_at
+        if not start:
+            return 0
+        return (date.today() - start).days
 
 
 class EmployeeContract(TimeStampedModel):

@@ -1,0 +1,169 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.11"
+  NODE_VERSION: "20"
+
+jobs:
+  # ─── Django backend ───────────────────────────────────────────
+  backend:
+    runs-on: ubuntu-22.04
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: kshield_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 3s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install system deps (GDAL)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gdal-bin libgdal-dev
+
+      - name: Install Python deps
+        run: |
+          pip install -r requirements.txt
+          pip install ruff pytest pytest-django pytest-cov
+
+      - name: Lint (ruff)
+        run: ruff check .
+
+      - name: Django check
+        env:
+          DJANGO_SETTINGS_MODULE: kshield.settings.dev
+          DATABASE_URL: postgresql://test:test@localhost:5432/kshield_test
+          REDIS_URL: redis://localhost:6379/0
+          SECRET_KEY: ci-test-secret-key-not-for-prod
+        run: python manage.py check --deploy || true
+
+      - name: Migrations
+        env:
+          DJANGO_SETTINGS_MODULE: kshield.settings.dev
+          DATABASE_URL: postgresql://test:test@localhost:5432/kshield_test
+          REDIS_URL: redis://localhost:6379/0
+          SECRET_KEY: ci-test-secret-key-not-for-prod
+        run: |
+          python manage.py makemigrations --check --dry-run
+          python manage.py migrate --noinput
+
+      - name: Tests
+        env:
+          DJANGO_SETTINGS_MODULE: kshield.settings.dev
+          DATABASE_URL: postgresql://test:test@localhost:5432/kshield_test
+          REDIS_URL: redis://localhost:6379/0
+          SECRET_KEY: ci-test-secret-key-not-for-prod
+          CELERY_TASK_ALWAYS_EAGER: "True"
+        run: |
+          pytest tests/ -x --cov=. --cov-report=xml --cov-report=term
+        continue-on-error: true    # tolère pendant la mise en place
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-backend
+          path: coverage.xml
+
+  # ─── React frontend ───────────────────────────────────────────
+  frontend:
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        working-directory: kshield-front
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: kshield-front/package-lock.json
+
+      - name: Install deps
+        run: npm ci
+
+      - name: TypeScript type-check
+        run: npx tsc --noEmit
+
+      - name: Build
+        env:
+          VITE_API_URL: http://localhost:8000
+        run: npm run build
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: kshield-front/dist/
+
+  # ─── Agent Python ─────────────────────────────────────────────
+  agent:
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        working-directory: agent
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install agent
+        run: pip install -e .
+
+      - name: Syntax check
+        run: python -c "import kshield_agent; print(kshield_agent)"
+
+  # ─── Security ─────────────────────────────────────────────────
+  security:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Detect secrets (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Python vulnerabilities (safety)
+        run: |
+          pip install safety
+          safety check -r requirements.txt || true

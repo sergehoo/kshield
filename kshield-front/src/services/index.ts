@@ -37,20 +37,54 @@ export const authService = {
 // ─────────────────────────────────────────────────────────────
 export const devicesService = {
   list: (params?: Record<string, any>) =>
-    api.get<Paginated<Device>>("/api/v1/devices/devices/", { params }),
-  get: (id: number) => api.get<Device>(`/api/v1/devices/devices/${id}/`),
-  create: (body: Partial<Device>) => api.post<Device>("/api/v1/devices/devices/", body),
-  update: (id: number, body: Partial<Device>) =>
-    api.patch<Device>(`/api/v1/devices/devices/${id}/`, body),
+    api.get<Paginated<any>>("/api/v1/devices/devices/", { params }),
+  get: (id: number) => api.get<any>(`/api/v1/devices/devices/${id}/`),
+  create: (body: any) => api.post<any>("/api/v1/devices/devices/", body),
+  update: (id: number, body: any) =>
+    api.patch<any>(`/api/v1/devices/devices/${id}/`, body),
   remove: (id: number) => api.delete(`/api/v1/devices/devices/${id}/`),
   testConnection: (id: number) =>
     api.post<any>(`/api/v1/devices/${id}/test-connection/`),
+  ping: (id: number) => api.post<any>(`/api/v1/devices/${id}/ping/`),
+  restart: (id: number) => api.post<any>(`/api/v1/devices/${id}/restart/`),
+  syncNow: (id: number) => api.post<any>(`/api/v1/devices/${id}/sync/`),
+  resetConfig: (id: number) => api.post<any>(`/api/v1/devices/${id}/reset-config/`),
+  updateFirmware: (id: number, firmware_id?: number) =>
+    api.post<any>(`/api/v1/devices/${id}/update-firmware/`, { firmware_id }),
+  setMaintenance: (id: number, enabled: boolean) =>
+    api.patch<any>(`/api/v1/devices/devices/${id}/`, {
+      status: enabled ? "maintenance" : "active",
+    }),
+  logs: (id: number, params?: any) =>
+    api.get<any>(`/api/v1/devices/${id}/logs/`, { params }),
+  exportSpec: (id: number) =>
+    api.get(`/api/v1/devices/${id}/export/`, { responseType: "blob" }),
+
+  // ZKTeco spécifique
   zkSyncNow: (id: number) => api.post<any>(`/api/v1/devices/${id}/zk-sync/`),
   zkPushUsers: (id: number) => api.post<any>(`/api/v1/devices/${id}/zk-push-users/`),
+
+  // Debug ADMS / firmwares whitebox
   iclockDebug: (id: number) => api.get<any>(`/api/v1/devices/${id}/iclock-debug/`),
   pubApiDebug: () => api.get<any>("/api/v1/devices/pubapi-debug/"),
+
+  // Découverte
   identifyByIp: (ip: string) =>
     api.post<any>("/api/v1/devices/identify-by-ip/", { ip }),
+
+  // ─── Scan réseau ─────────────────────────
+  scanStart: (params: {
+    ip_range: string;               // "192.168.1.1-254" ou "192.168.1.0/24"
+    ports?: number[];               // [80, 443, 4370, 5084, 554, 8000]
+    protocols?: string[];           // ["onvif", "zkteco", "wiegand", "osdp"]
+    timeout_ms?: number;
+  }) => api.post<{ scan_id: string }>("/api/v1/devices/scan/start/", params),
+  scanStatus: (scanId: string) =>
+    api.get<any>(`/api/v1/devices/scan/${scanId}/`),
+  scanCancel: (scanId: string) =>
+    api.post<any>(`/api/v1/devices/scan/${scanId}/cancel/`),
+  scanAdopt: (scanId: string, ip: string, defaults?: any) =>
+    api.post<any>(`/api/v1/devices/scan/${scanId}/adopt/`, { ip, ...defaults }),
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -76,12 +110,12 @@ export const sitesService = {
 
 export const companiesService = {
   list: (params?: Record<string, any>) =>
-    api.get<Paginated<Company>>("/api/v1/sites/companies/", { params }),
+    api.get<Paginated<Company>>("/api/v1/core/companies/", { params }),
   create: (body: Partial<Company>) =>
-    api.post<Company>("/api/v1/sites/companies/", body),
+    api.post<Company>("/api/v1/core/companies/", body),
   update: (id: number, body: Partial<Company>) =>
-    api.patch<Company>(`/api/v1/sites/companies/${id}/`, body),
-  remove: (id: number) => api.delete(`/api/v1/sites/companies/${id}/`),
+    api.patch<Company>(`/api/v1/core/companies/${id}/`, body),
+  remove: (id: number) => api.delete(`/api/v1/core/companies/${id}/`),
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -89,23 +123,21 @@ export const companiesService = {
 // ─────────────────────────────────────────────────────────────
 export const employeesService = {
   list: (params?: Record<string, any>) =>
-    api.get<Paginated<Employee>>("/api/v1/employees/employees/", { params }),
-  create: (body: Partial<Employee>) =>
-    api.post<Employee>("/api/v1/employees/employees/", body),
-  update: (id: number, body: Partial<Employee>) =>
-    api.patch<Employee>(`/api/v1/employees/employees/${id}/`, body),
+    api.get<Paginated<any>>("/api/v1/employees/employees/", { params }),
+  create: (body: any) => api.post<any>("/api/v1/employees/employees/", body),
+  update: (id: number, body: any) =>
+    api.patch<any>(`/api/v1/employees/employees/${id}/`, body),
   remove: (id: number) => api.delete(`/api/v1/employees/employees/${id}/`),
   faceStatus: () => api.get<any>("/api/v1/employees/face/status/"),
 };
 
 export const workersService = {
   list: (params?: Record<string, any>) =>
-    api.get<Paginated<Worker>>("/api/v1/ouvriers/workers/", { params }),
-  get: (id: number) => api.get<Worker>(`/api/v1/ouvriers/workers/${id}/`),
-  create: (body: Partial<Worker>) =>
-    api.post<Worker>("/api/v1/ouvriers/workers/", body),
-  update: (id: number, body: Partial<Worker>) =>
-    api.patch<Worker>(`/api/v1/ouvriers/workers/${id}/`, body),
+    api.get<Paginated<any>>("/api/v1/ouvriers/workers/", { params }),
+  get: (id: number) => api.get<any>(`/api/v1/ouvriers/workers/${id}/`),
+  create: (body: any) => api.post<any>("/api/v1/ouvriers/workers/", body),
+  update: (id: number, body: any) =>
+    api.patch<any>(`/api/v1/ouvriers/workers/${id}/`, body),
   remove: (id: number) => api.delete(`/api/v1/ouvriers/workers/${id}/`),
   pairBadge: (id: number, badge_id: number) =>
     api.post(`/api/v1/ouvriers/workers/${id}/pair-badge/`, { badge_id }),
@@ -125,12 +157,49 @@ export const badgesService = {
   revoke: (id: number) => api.post(`/api/v1/devices/badges/${id}/revoke/`),
   reactivate: (id: number) => api.post(`/api/v1/devices/badges/${id}/reactivate/`),
   bulkEnroll: (body: any) => api.post("/api/v1/devices/badges/bulk-enroll/", body),
+  get: (id: number) => api.get<any>(`/api/v1/devices/badges/${id}/`),
+  create: (body: any) => api.post<any>("/api/v1/devices/badges/", body),
+  update: (id: number, body: any) => api.patch<any>(`/api/v1/devices/badges/${id}/`, body),
+  remove: (id: number) => api.delete(`/api/v1/devices/badges/${id}/`),
+  // Enrôlement live via lecteur RFID connecté (inbox Redis)
+  // Sans reader_id → agrège tous les lecteurs RFID actifs du tenant.
+  scanInbox: (params?: { reader_id?: number | string; since?: string }) =>
+    api.get<any>("/api/v1/devices/scan/inbox/", {
+      params: { kind: "rfid", ...params },
+    }),
+  clearScanInbox: (params?: { reader_id?: number | string }) =>
+    api.delete<any>("/api/v1/devices/scan/inbox/", {
+      params: { kind: "rfid", ...params },
+    }),
+  // Associer/dissocier à un ouvrier/employé
+  associate: (id: number, params: { holder_kind: "worker" | "employee"; holder_id: number }) =>
+    api.post(`/api/v1/devices/badges/${id}/associate/`, params),
+  dissociate: (id: number) => api.post(`/api/v1/devices/badges/${id}/dissociate/`),
+  history: (id: number) => api.get<any>(`/api/v1/devices/badges/${id}/history/`),
 };
 
 export const helmetsService = {
   list: (params?: Record<string, any>) =>
     api.get<Paginated<any>>("/api/v1/devices/helmets/", { params }),
+  get: (id: number) => api.get<any>(`/api/v1/devices/helmets/${id}/`),
+  create: (body: any) => api.post<any>("/api/v1/devices/helmets/", body),
+  update: (id: number, body: any) => api.patch<any>(`/api/v1/devices/helmets/${id}/`, body),
+  remove: (id: number) => api.delete(`/api/v1/devices/helmets/${id}/`),
   bulkEnroll: (body: any) => api.post("/api/v1/devices/helmets/bulk-enroll/", body),
+  // Enrôlement live : le lecteur/gateway BLE scanne les tags à proximité et
+  // dépose les codes dans un inbox Redis TTL 10 min.
+  scanInbox: (params?: { reader_id?: number | string; since?: string }) =>
+    api.get<any>("/api/v1/devices/scan/inbox/", {
+      params: { kind: "ble", ...params },
+    }),
+  clearScanInbox: (params?: { reader_id?: number | string }) =>
+    api.delete<any>("/api/v1/devices/scan/inbox/", {
+      params: { kind: "ble", ...params },
+    }),
+  associate: (id: number, worker_id: number) =>
+    api.post(`/api/v1/devices/helmets/${id}/pair/`, { worker_id }),
+  dissociate: (id: number) =>
+    api.post(`/api/v1/devices/helmets/${id}/unpair/`),
 };
 
 export const scanInboxService = {
@@ -366,5 +435,131 @@ Object.assign(sitesService, {
   get: (id: number) => api.get<any>(`/api/v1/sites/sites/${id}/`),
 });
 Object.assign(companiesService, {
-  get: (id: number) => api.get<any>(`/api/v1/sites/companies/${id}/`),
+  get: (id: number) => api.get<any>(`/api/v1/core/companies/${id}/`),
 });
+
+// ─────────────────────────────────────────────────────────────
+// Factory : CRUD service générique pour éviter la duplication.
+// ─────────────────────────────────────────────────────────────
+export function makeCrudService(basePath: string) {
+  const p = basePath.replace(/\/$/, "");
+  return {
+    list: (params?: Record<string, any>) =>
+      api.get<Paginated<any>>(`${p}/`, { params }),
+    get: (id: number | string) => api.get<any>(`${p}/${id}/`),
+    create: (body: any) => api.post<any>(`${p}/`, body),
+    update: (id: number | string, body: any) =>
+      api.patch<any>(`${p}/${id}/`, body),
+    remove: (id: number | string) => api.delete(`${p}/${id}/`),
+  };
+}
+
+// ─────────────────────────────────────────────────────────────
+// Terrain — sous-structures
+// ─────────────────────────────────────────────────────────────
+export const zonesService              = makeCrudService("/api/v1/sites/zones");
+export const checkpointsService        = makeCrudService("/api/v1/sites/checkpoints");
+export const openingHoursService       = makeCrudService("/api/v1/sites/opening-hours");
+export const sitePoliciesService       = makeCrudService("/api/v1/sites/policies");
+export const subcontractorsService     = makeCrudService("/api/v1/ouvriers/subcontractors");
+export const tradesService             = makeCrudService("/api/v1/ouvriers/trades");
+export const crewsService              = makeCrudService("/api/v1/ouvriers/crews");
+export const workerAssignmentsService  = makeCrudService("/api/v1/ouvriers/assignments");
+export const workerCertsService        = makeCrudService("/api/v1/ouvriers/certifications");
+
+// ─────────────────────────────────────────────────────────────
+// Équipements — étendus
+// ─────────────────────────────────────────────────────────────
+export const deviceModelsService       = makeCrudService("/api/v1/devices/models");
+export const deviceMaintenanceService  = makeCrudService("/api/v1/devices/maintenances");
+export const deviceHeartbeatsService   = makeCrudService("/api/v1/devices/heartbeats");
+export const helmetPairingsService     = makeCrudService("/api/v1/devices/pairings");
+export const otaUpdatesService         = makeCrudService("/api/v1/devices/ota");
+export const gatewaysService           = makeCrudService("/api/v1/devices/gateways");
+
+// ─────────────────────────────────────────────────────────────
+// Visiteurs — workflow complet
+// ─────────────────────────────────────────────────────────────
+export const visitRequestsService = {
+  ...makeCrudService("/api/v1/visitors/requests"),
+  approve: (id: number) => api.post(`/api/v1/visitors/requests/${id}/approve/`),
+  reject: (id: number, note?: string) =>
+    api.post(`/api/v1/visitors/requests/${id}/reject/`, { note }),
+  cancel: (id: number) => api.post(`/api/v1/visitors/requests/${id}/cancel/`),
+};
+export const visitPurposesService      = makeCrudService("/api/v1/visitors/purposes");
+export const visitorPassesService      = makeCrudService("/api/v1/visitors/passes");
+export const visitorInvitationsService = makeCrudService("/api/v1/visitors/invitations");
+export const watchlistsService         = makeCrudService("/api/v1/visitors/watchlists");
+
+// ─────────────────────────────────────────────────────────────
+// Anti-fraude — règles & investigations
+// ─────────────────────────────────────────────────────────────
+export const fraudRulesService = makeCrudService("/api/v1/antifraud/rules");
+export const fraudInvestigationsService = {
+  ...makeCrudService("/api/v1/antifraud/investigations"),
+  close: (id: number, verdict: "confirmed" | "false_positive", note?: string) =>
+    api.post(`/api/v1/antifraud/investigations/${id}/close/`, { verdict, note }),
+};
+
+// ─────────────────────────────────────────────────────────────
+// Access control — règles d'accès
+// ─────────────────────────────────────────────────────────────
+export const accessRulesService = makeCrudService("/api/v1/access/rules");
+
+// ─────────────────────────────────────────────────────────────
+// Pointage RH
+// ─────────────────────────────────────────────────────────────
+export const overtimeRulesGenService    = makeCrudService("/api/v1/attendance/overtime-rules");
+export const overtimeCalcsService       = makeCrudService("/api/v1/attendance/overtime");
+export const attendanceCorrectionsService = makeCrudService("/api/v1/attendance/corrections");
+export const rostersService             = makeCrudService("/api/v1/attendance/rosters");
+export const leavesGenService           = makeCrudService("/api/v1/attendance/leaves");
+export const punchesService             = makeCrudService("/api/v1/attendance/punches");
+
+// ─────────────────────────────────────────────────────────────
+// Notifications config
+// ─────────────────────────────────────────────────────────────
+export const notificationTemplatesService = makeCrudService("/api/v1/notifications/templates");
+
+// ─────────────────────────────────────────────────────────────
+// Reporting
+// ─────────────────────────────────────────────────────────────
+export const reportSchedulesService = makeCrudService("/api/v1/reports/schedules");
+export const dashboardsService      = makeCrudService("/api/v1/reports/dashboards");
+export const dashboardWidgetsService = makeCrudService("/api/v1/reports/widgets");
+export const executiveDigestsService = {
+  ...makeCrudService("/api/v1/reports/digests"),
+  action: (id: number, verb: string) =>
+    api.post(`/api/v1/reports/digests/${id}/action/${verb}/`),
+};
+
+// ─────────────────────────────────────────────────────────────
+// RGPD / conformité
+// ─────────────────────────────────────────────────────────────
+export const retentionPoliciesService  = makeCrudService("/api/v1/audit/retention-policies");
+export const dataExportsService = {
+  ...makeCrudService("/api/v1/audit/data-exports"),
+  generate: (id: number) => api.post(`/api/v1/audit/data-exports/${id}/generate/`),
+};
+export const conformityRegistersService = makeCrudService("/api/v1/audit/conformity");
+
+// ─────────────────────────────────────────────────────────────
+// Mobile & AI templates & feature flags
+// ─────────────────────────────────────────────────────────────
+export const mobileDevicesService = makeCrudService("/api/v1/mobile/devices");
+export const aiTemplatesService   = makeCrudService("/api/v1/ai/templates");
+export const featureFlagsService  = makeCrudService("/api/v1/core/feature-flags");
+
+// ─────────────────────────────────────────────────────────────
+// Face reco test
+// ─────────────────────────────────────────────────────────────
+export const faceTestService = {
+  identify: (photo: File) => {
+    const fd = new FormData();
+    fd.append("photo", photo);
+    return api.post<any>("/api/v1/employees/face/identify/", fd, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+  },
+};

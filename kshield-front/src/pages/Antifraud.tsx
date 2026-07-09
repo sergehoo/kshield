@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useLive } from "@/hooks/useLive";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { StatsRow } from "@/components/StatsRow";
 import { PageHeader } from "@/components/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
@@ -33,6 +34,17 @@ export function AntifraudPage() {
       ).data,
     { intervalMs: 15_000 },
   );
+
+  const stats = useMemo(() => {
+    const list = data?.results || [];
+    return {
+      total:    data?.count || 0,
+      critical: list.filter((a: any) => a.severity === "critical").length,
+      high:     list.filter((a: any) => a.severity === "high").length,
+      medium:   list.filter((a: any) => a.severity === "medium").length,
+      low:      list.filter((a: any) => a.severity === "low" || !a.severity).length,
+    };
+  }, [data]);
 
   const resolveMut = useMutation({
     mutationFn: (id: number) => antifraudService.alertResolve(id),
@@ -77,6 +89,14 @@ export function AntifraudPage() {
           </div>
         }
       />
+
+      <StatsRow stats={[
+        { label: "Total alertes", value: stats.total,    icon: <ShieldAlert className="w-4 h-4" />, tone: "brand" },
+        { label: "Critiques",     value: stats.critical, icon: <ShieldAlert className="w-4 h-4" />, tone: "danger" },
+        { label: "Élevées",       value: stats.high,     icon: <ShieldAlert className="w-4 h-4" />, tone: "warn" },
+        { label: "Moyennes",      value: stats.medium,   icon: <ShieldAlert className="w-4 h-4" />, tone: "info" },
+        { label: "Basses",        value: stats.low,      icon: <ShieldAlert className="w-4 h-4" />, tone: "muted" },
+      ]} />
 
       <Card padded={false}>
         {isLoading && !data && (

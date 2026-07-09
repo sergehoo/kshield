@@ -520,3 +520,527 @@ class Camera(TimeStampedModel):
         from urllib.parse import quote
         creds = f"{quote(self.username, safe='')}:{quote(self.password, safe='')}"
         return f"{scheme}://{creds}@{rest}"
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Communication temps réel — commandes envoyées aux équipements
+# ═══════════════════════════════════════════════════════════════════
+class DeviceCommand(UUIDModel, TimeStampedModel):
+    """Commande unitaire envoyée à un équipement (lecteur RFID, terminal, gateway).
+
+    Cycle de vie :
+        pending  → sent → acknowledged → completed
+                                       ↘ failed
+                                       ↘ timeout
+
+    Persistée pour audit + rejouable ; la "vraie" queue temps réel est en Redis
+    (via ``devices.services.command_queue``) pour un pickup en <1s côté Agent.
+    """
+
+    KIND_CHOICES = [
+        ("PING_DEVICE",             "Ping"),
+        ("SYNC_DEVICE",             "Synchronisation"),
+        ("RESTART_DEVICE",          "Redémarrage"),
+        ("GET_DEVICE_INFO",         "Info équipement"),
+        ("GET_DEVICE_STATUS",       "Statut équipement"),
+        ("GET_DEVICE_LOGS",         "Logs équipement"),
+        ("START_RFID_ENROLLMENT",   "Démarrer écoute RFID"),
+        ("STOP_RFID_ENROLLMENT",    "Arrêter écoute RFID"),
+        ("READ_RFID_CARD",          "Lire carte RFID"),
+        ("PUSH_USER",               "Push utilisateur (biométrie)"),
+        ("CUSTOM",                  "Commande custom"),
+    ]
+
+    STATUS_CHOICES = [
+        ("pending",       "En attente"),
+        ("sent",          "Envoyée"),
+        ("acknowledged",  "Acquittée"),
+        ("completed",     "Terminée"),
+        ("failed",        "Échec"),
+        ("timeout",       "Timeout"),
+    ]
+
+    tenant = models.ForeignKey("core.Tenant", on_delete=models.CASCADE,
+                                related_name="device_commands")
+    device = models.ForeignKey("devices.Device", on_delete=models.CASCADE,
+                                related_name="commands")
+    session = models.ForeignKey("devices.RFIDEnrollmentSession", null=True, blank=True,
+                                 on_delete=models.SET_NULL, related_name="commands",
+                                 help_text="Session d'enrôlement qui a émis cette commande.")
+    kind = models.CharField(max_length=32, choices=KIND_CHOICES, db_index=True)
+    payload = models.JSONField(default=dict, blank=True,
+                                help_text="Paramètres additionnels (ex. timeout, session_id).")
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES,
+                               default="pending", db_index=True)
+    issued_by = models.ForeignKey("accounts.User", null=True, blank=True,
+                                   on_delete=models.SET_NULL,
+                                   related_name="issued_device_commands")
+    sent_at = models.DateTimeField(null=True, blank=True)
+    acked_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    timeout_at = models.DateTimeField(null=True, blank=True,
+                                       help_text="Deadline avant passage en statut timeout.")
+    response_raw = models.JSONField(default=dict, blank=True,
+                                     help_text="Réponse brute du device.")
+    response_normalized = models.JSONField(default=dict, blank=True,
+                                            help_text="Version normalisée pour le front.")
+    error_message = models.CharField(max_length=500, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["tenant", "device", "status"]),
+            models.Index(fields=["kind", "status"]),
+        ]
+
+    def __str__(self):
+        return f"{self.kind} → {self.device.serial_number} [{self.status}]"
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Session d'enrôlement RFID temps réel
+# ═══════════════════════════════════════════════════════════════════
+class RFIDEnrollmentSession(UUIDModel, TimeStampedModel):
+    """Session d'enrôlement RFID — un opérateur, un lecteur, plusieurs scans possibles.
+
+    Cycle de vie :
+        pending  → listening → completed | cancelled | timeout | error
+
+    Chaque scan reçu génère un ``RFIDEnrollmentEvent`` associé.
+    """
+
+    STATUS_CHOICES = [
+        ("pending",   "En préparation"),
+        ("listening", "En écoute"),
+        ("completed", "Terminée"),
+        ("cancelled", "Annulée"),
+        ("timeout",   "Timeout"),
+        ("error",     "Erreur"),
+    ]
+
+    MODE_CHOICES = [
+        ("single", "Unitaire"),
+        ("bulk",   "En masse"),
+    ]
+
+    HOLDER_KIND_CHOICES = [
+        ("worker",   "Ouvrier"),
+        ("employee", "Employé"),
+        ("visitor",  "Visiteur"),
+        ("",         "Aucun (pool)"),
+    ]
+
+    tenant = models.ForeignKey("core.Tenant", on_delete=models.CASCADE,
+                                related_name="rfid_enrollment_sessions")
+    initiated_by = models.ForeignKey("accounts.User", null=True, blank=True,
+                                      on_delete=models.SET_NULL,
+                                      related_name="rfid_enrollment_sessions")
+    site = models.ForeignKey("sites.Site", null=True, blank=True,
+                              on_delete=models.SET_NULL, related_name="+")
+    zone = models.ForeignKey("sites.Zone", null=True, blank=True,
+                              on_delete=models.SET_NULL, related_name="+")
+    reader = models.ForeignKey("devices.Device", null=True, blank=True,
+                                on_delete=models.SET_NULL, related_name="rfid_sessions",
+                                help_text="Lecteur cible ; null = tous lecteurs du tenant.")
+    mode = models.CharField(max_length=8, choices=MODE_CHOICES, default="single")
+    status = models.CharField(max_length=12, choices=STATUS_CHOICES,
+                               default="pending", db_index=True)
+
+    # Porteur préchoisi (unitaire) — si non défini, l'opérateur associera manuellement
+    holder_kind = models.CharField(max_length=12, choices=HOLDER_KIND_CHOICES, blank=True)
+    holder_content_type = models.ForeignKey(ContentType, null=True, blank=True,
+                                             on_delete=models.SET_NULL, related_name="+")
+    holder_object_id = models.PositiveBigIntegerField(null=True, blank=True)
+    holder = GenericForeignKey("holder_content_type", "holder_object_id")
+
+    # Paramètres de session
+    timeout_seconds = models.PositiveIntegerField(default=180,
+                                                    help_text="Auto-annulation si inactivité.")
+    started_at = models.DateTimeField(null=True, blank=True)
+    ended_at = models.DateTimeField(null=True, blank=True)
+
+    # Compteurs (dénormalisés pour le dashboard)
+    scans_count = models.PositiveIntegerField(default=0)
+    valid_count = models.PositiveIntegerField(default=0)
+    duplicate_count = models.PositiveIntegerField(default=0)
+    error_count = models.PositiveIntegerField(default=0)
+
+    error_message = models.CharField(max_length=500, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["tenant", "status"]),
+            models.Index(fields=["initiated_by", "status"]),
+        ]
+
+    def __str__(self):
+        return f"Session {self.pk} [{self.status}] × {self.scans_count} scans"
+
+    @property
+    def channel_group(self) -> str:
+        """Nom du groupe Channels pour broadcaster les events de cette session."""
+        return f"enrollment.{self.pk}"
+
+
+class RFIDEnrollmentEvent(TimeStampedModel):
+    """Événement émis pendant une session d'enrôlement.
+
+    Un event = un UID scanné, ou une transition d'état, ou une erreur.
+    """
+
+    EVENT_TYPE_CHOICES = [
+        ("card.detected",   "Carte détectée"),
+        ("card.duplicate",  "Carte déjà enrôlée"),
+        ("card.enrolled",   "Carte enrôlée"),
+        ("card.error",      "Erreur carte"),
+        ("session.start",   "Session démarrée"),
+        ("session.stop",    "Session arrêtée"),
+        ("session.timeout", "Session timeout"),
+        ("device.error",    "Erreur équipement"),
+    ]
+
+    session = models.ForeignKey(RFIDEnrollmentSession, on_delete=models.CASCADE,
+                                 related_name="events")
+    event_type = models.CharField(max_length=24, choices=EVENT_TYPE_CHOICES, db_index=True)
+    uid = models.CharField(max_length=64, blank=True, db_index=True)
+    device = models.ForeignKey("devices.Device", null=True, blank=True,
+                                on_delete=models.SET_NULL, related_name="+")
+    rssi = models.SmallIntegerField(null=True, blank=True)
+    payload = models.JSONField(default=dict, blank=True)
+    message = models.CharField(max_length=240, blank=True)
+    resulting_badge = models.ForeignKey("devices.Badge", null=True, blank=True,
+                                         on_delete=models.SET_NULL, related_name="+")
+
+    class Meta:
+        ordering = ["created_at"]
+        indexes = [
+            models.Index(fields=["session", "event_type"]),
+            models.Index(fields=["uid"]),
+        ]
+
+    def __str__(self):
+        return f"{self.event_type} · {self.uid or '—'}"
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Agent local — Kaydan Shield Local Agent
+# ═══════════════════════════════════════════════════════════════════
+class LocalAgent(UUIDModel, TimeStampedModel):
+    """Agent local installé sur le LAN client — relaye lectures & commandes.
+
+    Un LocalAgent maintient une WebSocket persistante vers ``/ws/agents/<id>/``.
+    Le serveur push les commandes via cette WS ; l'agent push les events RFID
+    via HTTP ``/api/v1/agent/events/`` (ou via la même WS quand messages entrants).
+    """
+
+    tenant = models.ForeignKey("core.Tenant", on_delete=models.CASCADE,
+                                related_name="local_agents")
+    label = models.CharField(max_length=120,
+                              help_text="Nom donné à l'agent, ex. « Chantier Riviera-01 ».")
+    api_token = models.CharField(max_length=64, unique=True, db_index=True,
+                                  help_text="Secret partagé pour authentifier l'agent (HMAC).")
+    hmac_secret = EncryptedCharField(max_length=128, blank=True,
+                                      help_text="Secret HMAC pour signer les messages.")
+
+    site = models.ForeignKey("sites.Site", null=True, blank=True,
+                              on_delete=models.SET_NULL, related_name="local_agents")
+    last_seen_at = models.DateTimeField(null=True, blank=True)
+    connected = models.BooleanField(default=False,
+                                     help_text="True si une WS est actuellement ouverte.")
+    channel_name = models.CharField(max_length=200, blank=True,
+                                     help_text="Nom Channels du canal WS actif.")
+
+    version = models.CharField(max_length=32, blank=True)
+    os_info = models.CharField(max_length=120, blank=True)
+    devices_discovered = models.JSONField(default=list, blank=True,
+                                           help_text="Snapshot des équipements vus par l'agent.")
+
+    # ── Vague 9 : provisioning & supervision Edge Gateway ────────
+    activation_token = models.CharField(max_length=64, unique=True, blank=True,
+                                          null=True, db_index=True,
+        help_text="Token à usage unique pour l'enrôlement initial du Gateway "
+                    "(échangé contre api_token permanent au premier boot).")
+    activation_expires_at = models.DateTimeField(null=True, blank=True,
+        help_text="Expiration du activation_token — après quoi il faut regénérer.")
+    activated_at = models.DateTimeField(null=True, blank=True,
+        help_text="Date du premier appairage réussi.")
+    revoked_at = models.DateTimeField(null=True, blank=True,
+        help_text="Date de révocation — l'agent ne peut plus se connecter.")
+
+    ip_local = models.GenericIPAddressField(null=True, blank=True,
+        help_text="IP locale de la machine hôte, poussée par l'agent au heartbeat.")
+    ip_public = models.GenericIPAddressField(null=True, blank=True,
+        help_text="IP publique vue par le serveur cloud.")
+    uptime_seconds = models.BigIntegerField(null=True, blank=True)
+    events_pending = models.PositiveIntegerField(default=0,
+        help_text="Nombre d'événements dans l'offline queue de l'agent.")
+
+    # Statuts détaillés (poussés par l'agent au heartbeat)
+    STATUS_CHOICES = [
+        ("unknown", "Inconnu"),
+        ("ok", "OK"),
+        ("degraded", "Dégradé"),
+        ("down", "Hors service"),
+    ]
+    mqtt_status = models.CharField(max_length=12, choices=STATUS_CHOICES,
+                                     default="unknown")
+    ws_status = models.CharField(max_length=12, choices=STATUS_CHOICES,
+                                   default="unknown")
+    cloud_status = models.CharField(max_length=12, choices=STATUS_CHOICES,
+                                      default="unknown")
+
+    class Meta:
+        ordering = ["-last_seen_at"]
+
+    def __str__(self):
+        return f"{self.label} ({'en ligne' if self.connected else 'hors ligne'})"
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Packages Kaydan Edge Gateway (Vague 9 — téléchargement multi-plateforme)
+# ═══════════════════════════════════════════════════════════════════
+class EdgeGatewayPackage(TimeStampedModel):
+    """Package installateur Kaydan Edge Gateway par plateforme.
+
+    L'administrateur upload les binaires officiels ici (via admin Django)
+    puis les utilisateurs les téléchargent depuis /admin/edge-gateway/.
+
+    Le fichier est stocké dans MEDIA_ROOT/gateway_packages/.
+    """
+    PLATFORM_CHOICES = [
+        ("windows",       "Windows"),
+        ("linux_deb",     "Linux (.deb)"),
+        ("linux_rpm",     "Linux (.rpm)"),
+        ("linux_sh",      "Linux (script)"),
+        ("docker",        "Docker"),
+        ("raspberry_pi",  "Raspberry Pi"),
+        ("mini_pc",       "Mini PC industriel"),
+    ]
+
+    name = models.CharField(max_length=120,
+        help_text='Nom convivial, ex. "kshield-edge-1.2.0-windows-x64".')
+    platform = models.CharField(max_length=24, choices=PLATFORM_CHOICES, db_index=True)
+    version = models.CharField(max_length=32,
+        help_text='Semver, ex. "1.2.0".')
+    file = models.FileField(upload_to="gateway_packages/", null=True, blank=True,
+        help_text="Binaire installateur ou tarball. Null pour Docker (image seule).")
+    docker_image = models.CharField(max_length=200, blank=True,
+        help_text='Ex. "kaydangroupe/kshield-edge:1.2.0" pour la plateforme "docker".')
+    docker_compose_snippet = models.TextField(blank=True,
+        help_text="Extrait docker-compose.yml prêt à coller.")
+    size_bytes = models.BigIntegerField(default=0)
+    checksum_sha256 = models.CharField(max_length=64, blank=True, db_index=True)
+    release_notes = models.TextField(blank=True)
+    published_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    is_latest = models.BooleanField(default=False, db_index=True,
+        help_text="Marque la version courante pour chaque plateforme.")
+    min_os_version = models.CharField(max_length=64, blank=True,
+        help_text='Ex. "Windows 10 20H2" ou "Ubuntu 20.04".')
+
+    class Meta:
+        ordering = ["-published_at", "platform"]
+        indexes = [models.Index(fields=["platform", "is_latest"])]
+
+    def __str__(self):
+        return f"{self.name} ({self.version})"
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Historique des alertes système (Vague 5)
+# ═══════════════════════════════════════════════════════════════════
+class SystemAlert(UUIDModel, TimeStampedModel):
+    """Alerte matérialisée en DB pour historique + routing notifications.
+
+    Auto-résolue quand la condition disparaît (le sweep Celery met ``resolved_at``).
+    """
+
+    TYPE_CHOICES = [
+        ("agent_offline",   "Agent hors ligne"),
+        ("agent_stale",     "Agent stale"),
+        ("device_offline",  "Équipement hors ligne"),
+        ("session_stalled", "Session bloquée"),
+        ("command_timeout", "Commande timeout"),
+    ]
+    SEVERITY_CHOICES = [
+        ("critical", "Critique"),
+        ("warning",  "Avertissement"),
+        ("info",     "Info"),
+    ]
+
+    tenant = models.ForeignKey("core.Tenant", on_delete=models.CASCADE,
+                                related_name="system_alerts")
+    kind = models.CharField(max_length=32, choices=TYPE_CHOICES, db_index=True)
+    severity = models.CharField(max_length=12, choices=SEVERITY_CHOICES,
+                                 default="warning", db_index=True)
+    title = models.CharField(max_length=240)
+    detail = models.CharField(max_length=500, blank=True)
+
+    # Cible : URL front + ID de l'objet concerné (device, agent, session…)
+    target_url = models.CharField(max_length=240, blank=True)
+    target_id = models.CharField(max_length=64, blank=True, db_index=True)
+
+    # Cycle de vie
+    resolved_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    acknowledged_at = models.DateTimeField(null=True, blank=True)
+    acknowledged_by = models.ForeignKey("accounts.User", null=True, blank=True,
+                                         on_delete=models.SET_NULL, related_name="+")
+
+    # Routing notifications (une seule fois par alerte)
+    routed_at = models.DateTimeField(null=True, blank=True)
+
+    payload = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["tenant", "kind", "resolved_at"]),
+            models.Index(fields=["severity", "resolved_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.severity}: {self.title}"
+
+    @property
+    def dedup_key(self) -> str:
+        """Clef d'idempotence pour éviter les doublons."""
+        return f"{self.kind}:{self.target_id}"
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Digital Twin — jumeau numérique de chaque Device (Vague 7)
+# ═══════════════════════════════════════════════════════════════════
+class DeviceTwin(TimeStampedModel):
+    """Jumeau numérique — cache runtime de l'état d'un équipement.
+
+    Le front ne dialogue JAMAIS directement avec l'équipement — il lit le twin,
+    qui est rafraîchi périodiquement par la tâche Celery ``refresh_device_twins``
+    ou immédiatement quand un driver retourne un ``DeviceStatus``.
+    """
+
+    device = models.OneToOneField(
+        "devices.Device", on_delete=models.CASCADE, related_name="twin",
+        primary_key=True,
+    )
+
+    # État global
+    reachable = models.BooleanField(default=False, db_index=True)
+    health_score = models.PositiveSmallIntegerField(
+        default=100, db_index=True,
+        help_text="Score 0-100 recalculé à chaque refresh (0=KO, 100=OK).",
+    )
+    health_reasons = models.JSONField(default=list, blank=True,
+        help_text="Liste des raisons ayant fait baisser le score.")
+
+    # Runtime metrics
+    latency_ms = models.PositiveIntegerField(null=True, blank=True)
+    uptime_seconds = models.BigIntegerField(null=True, blank=True)
+    cpu_percent = models.FloatField(null=True, blank=True)
+    ram_percent = models.FloatField(null=True, blank=True)
+    storage_percent = models.FloatField(null=True, blank=True)
+    temperature_c = models.FloatField(null=True, blank=True)
+    battery_percent = models.PositiveSmallIntegerField(null=True, blank=True)
+    network_quality = models.PositiveSmallIntegerField(null=True, blank=True,
+        help_text="0-100 (RSSI ou latence normalisée).")
+
+    # Identification (miroir des champs Device pour éviter les jointures fréquentes)
+    firmware = models.CharField(max_length=64, blank=True)
+    hardware = models.CharField(max_length=64, blank=True)
+
+    # Historique compact — dernières erreurs / événements notables
+    recent_errors = models.JSONField(default=list, blank=True,
+        help_text="Max 20 dernières erreurs (ring buffer).")
+    driver_class = models.CharField(max_length=120, blank=True,
+        help_text="Nom du driver qui alimente ce twin.")
+
+    # Snapshot complet dernière lecture
+    raw_status = models.JSONField(default=dict, blank=True)
+
+    last_probed_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    last_seen_at = models.DateTimeField(null=True, blank=True,
+        help_text="Dernier moment où l'équipement a répondu à un ping.")
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["reachable", "health_score"]),
+        ]
+
+    def __str__(self):
+        return f"Twin[{self.device_id}] score={self.health_score} reach={self.reachable}"
+
+    @property
+    def health_status(self) -> str:
+        """Bucket textuel du score."""
+        if self.health_score >= 90: return "excellent"
+        if self.health_score >= 70: return "good"
+        if self.health_score >= 40: return "degraded"
+        return "critical"
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Maintenance prédictive — tickets générés automatiquement (Vague 8)
+# ═══════════════════════════════════════════════════════════════════
+class MaintenanceTicket(UUIDModel, TimeStampedModel):
+    """Ticket de maintenance créé automatiquement par le moteur prédictif
+    ou manuellement par un opérateur.
+
+    Cycle : open → in_progress → resolved | cancelled
+    """
+    KIND_CHOICES = [
+        ("battery_low",         "Batterie faible"),
+        ("battery_critical",    "Batterie critique"),
+        ("storage_low",         "Stockage faible"),
+        ("storage_critical",    "Stockage critique"),
+        ("temperature_high",    "Température élevée"),
+        ("temperature_critical","Température critique"),
+        ("firmware_outdated",   "Firmware obsolète"),
+        ("connectivity_loss",   "Perte de connectivité"),
+        ("high_error_rate",     "Taux d'erreurs élevé"),
+        ("performance_drop",    "Baisse de performance"),
+        ("scheduled",           "Maintenance programmée"),
+        ("manual",              "Ticket manuel"),
+    ]
+    SEVERITY_CHOICES = [
+        ("info", "Info"), ("warning", "Avertissement"),
+        ("critical", "Critique"),
+    ]
+    STATUS_CHOICES = [
+        ("open",         "Ouvert"),
+        ("in_progress",  "En cours"),
+        ("resolved",     "Résolu"),
+        ("cancelled",    "Annulé"),
+    ]
+
+    tenant = models.ForeignKey("core.Tenant", on_delete=models.CASCADE,
+                                related_name="maintenance_tickets")
+    device = models.ForeignKey("devices.Device", on_delete=models.CASCADE,
+                                related_name="maintenance_tickets")
+    kind = models.CharField(max_length=32, choices=KIND_CHOICES, db_index=True)
+    severity = models.CharField(max_length=12, choices=SEVERITY_CHOICES,
+                                 default="warning", db_index=True)
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES,
+                               default="open", db_index=True)
+
+    title = models.CharField(max_length=240)
+    description = models.TextField(blank=True)
+    prediction = models.JSONField(default=dict, blank=True,
+        help_text="Données prédictives : trend, ETA, seuils.")
+    confidence = models.FloatField(default=1.0,
+        help_text="0.0-1.0 — confiance du moteur pour les tickets auto.")
+
+    created_by_engine = models.BooleanField(default=False, db_index=True)
+    assigned_to = models.ForeignKey("accounts.User", null=True, blank=True,
+                                     on_delete=models.SET_NULL, related_name="+")
+    scheduled_for = models.DateTimeField(null=True, blank=True)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    resolution_notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["tenant", "status", "severity"]),
+            models.Index(fields=["device", "status"]),
+        ]
+
+    def __str__(self):
+        return f"[{self.severity}] {self.title}"

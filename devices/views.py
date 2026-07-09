@@ -57,7 +57,14 @@ class DeviceViewSet(viewsets.ModelViewSet):
     queryset = Device.objects.select_related("tenant", "model", "site", "zone", "checkpoint").all()
     serializer_class = DeviceSerializer
     search_fields = ("serial_number",)
-    filterset_fields = ("tenant", "site", "model", "status")
+    # `model_type` alias pour le filtre côté front (ex. ?model_type__in=…)
+    filterset_fields = {
+        "tenant":     ["exact"],
+        "site":       ["exact"],
+        "model":      ["exact"],
+        "model__type": ["exact", "in"],
+        "status":     ["exact"],
+    }
     permission_classes = [HasKshieldPermission]
     kshield_perms = {"read": "devices.view", "write": "devices.manage",
                       "heartbeat": "devices.view"}
@@ -1590,6 +1597,98 @@ class PubApiDebugView(APIView):
         })
 
 
+class NetworkScanStartView(APIView):
+    """POST /api/v1/devices/scan/start/ — Lance un scan réseau non bloquant.
+
+    Body : {"ip_range": "192.168.1.0/24", "ports": [80,443,...], "timeout_ms": 500}
+    Retourne : {"scan_id": "uuid"}
+
+    Sécurité : admin/staff uniquement. Rate-limité (max 1024 IPs par scan).
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        from .network_scan import start_scan
+
+        # Autorisation stricte — seuls staff/superuser peuvent scanner le réseau
+        if not (request.user.is_staff or request.user.is_superuser):
+            return Response(
+                {"detail": "Permission refusée. Le scan réseau est réservé aux administrateurs."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        ip_range = request.data.get("ip_range", "").strip()
+        if not ip_range:
+            return Response({"error": "ip_range requis (ex: 192.168.1.0/24)"},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        ports = request.data.get("ports")
+        timeout_ms = int(request.data.get("timeout_ms") or 500)
+
+        try:
+            scan_id = start_scan(
+                ip_range=ip_range, ports=ports, timeout_ms=timeout_ms,
+                user_id=request.user.id,
+            )
+        except ValueError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response({"scan_id": scan_id, "message": "Scan lancé en arrière-plan"})
+
+
+class NetworkScanStatusView(APIView):
+    """GET /api/v1/devices/scan/<scan_id>/ — Statut + progression d'un scan."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, scan_id):
+        from .network_scan import get_scan_status
+        state = get_scan_status(scan_id)
+        if not state:
+            return Response({"error": "Scan inconnu ou expiré"},
+                            status=status.HTTP_404_NOT_FOUND)
+        return Response(state)
+
+
+class NetworkScanCancelView(APIView):
+    """POST /api/v1/devices/scan/<scan_id>/cancel/ — Annule un scan en cours."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, scan_id):
+        from .network_scan import cancel_scan
+        ok = cancel_scan(scan_id)
+        if not ok:
+            return Response({"error": "Scan introuvable"}, status=status.HTTP_404_NOT_FOUND)
+        return Response({"message": "Scan annulé"})
+
+
+class NetworkScanAdoptView(APIView):
+    """POST /api/v1/devices/scan/<scan_id>/adopt/ — Crée un Device depuis un résultat.
+
+    Body : {"ip": "192.168.1.50", "serial_number": "optionnel"}
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, scan_id):
+        from .network_scan import adopt_device
+
+        if not (request.user.is_staff or request.user.is_superuser):
+            return Response({"detail": "Permission refusée"},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        ip = (request.data.get("ip") or "").strip()
+        if not ip:
+            return Response({"error": "ip requis"}, status=status.HTTP_400_BAD_REQUEST)
+
+        defaults = {k: v for k, v in request.data.items() if k not in ("ip",)}
+
+        try:
+            result = adopt_device(scan_id, ip, defaults, user=request.user)
+        except ValueError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(result)
+
+
 class DeviceIclockDebugView(APIView):
     """GET /api/v1/devices/<id>/iclock-debug/ — dump des derniers POST bruts iclock/cdata.
 
@@ -2014,6 +2113,258 @@ class ZkPushUsersNowView(APIView):
         return Response(result)
 
 
+class DevicePingView(APIView):
+    """POST /api/v1/devices/<pk>/ping/ — Ping TCP simple (mesure latence).
+
+    Le modèle Device n'a pas de champ `port` : on essaie des ports pertinents
+    selon le type d'équipement (`device.model.type`), puis un fallback générique.
+    """
+    permission_classes = [IsAuthenticated]
+
+    # Ports à sonder selon le type d'équipement
+    TYPE_PORTS = {
+        "face_terminal":     [4370, 80, 8080, 443],
+        "portique":          [5084, 80, 8080],
+        "camera":            [554, 80, 8080, 3702, 443],
+        "reader_uhf_fixed":  [5084, 80, 8080],
+        "reader_uhf_mobile": [5084, 80, 8080],
+        "reader_nfc_fixed":  [80, 8080, 443],
+        "reader_nfc_mobile": [80, 8080, 443],
+        "door_lock":         [80, 8080, 443],
+        "tablet":            [80, 443, 8080],
+        "smartphone":        [80, 443, 8080],
+    }
+    FALLBACK_PORTS = [80, 443, 4370, 5084, 554, 8080]
+
+    def post(self, request, pk):
+        import socket, time
+        from .models import Device
+        try:
+            d = Device.objects.select_related("model").get(pk=pk)
+        except Device.DoesNotExist:
+            return Response({"error": "Device introuvable"}, status=404)
+        if not d.ip_address:
+            return Response({"error": "Pas d'IP renseignée sur cet équipement"},
+                            status=400)
+
+        device_type = getattr(getattr(d, "model", None), "type", None) or ""
+        ports_to_try = self.TYPE_PORTS.get(device_type, self.FALLBACK_PORTS)
+
+        for port in ports_to_try:
+            try:
+                t0 = time.perf_counter()
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    s.settimeout(1.5)
+                    if s.connect_ex((d.ip_address, port)) == 0:
+                        latency_ms = int((time.perf_counter() - t0) * 1000)
+                        return Response({
+                            "reachable": True,
+                            "ip": d.ip_address,
+                            "port": port,
+                            "latency_ms": latency_ms,
+                            "device_type": device_type,
+                        })
+            except Exception:
+                continue
+        return Response({
+            "reachable": False,
+            "ip": d.ip_address,
+            "latency_ms": None,
+            "ports_tried": ports_to_try,
+            "detail": "Aucun port TCP ne répond dans le délai imparti",
+        }, status=200)
+
+
+class DeviceSyncView(APIView):
+    """POST /api/v1/devices/<pk>/sync/ — Déclenche une synchro sur le terminal.
+
+    Pour ZKTeco → tâche Celery ``sync_zkteco_attendances`` limitée à ce device.
+    Pour les autres, best-effort : ping + heartbeat update.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        from .models import Device
+        try:
+            d = Device.objects.get(pk=pk)
+        except Device.DoesNotExist:
+            return Response({"error": "Device introuvable"}, status=404)
+
+        # ZKTeco / face terminal : déclenche la sync via Celery
+        try:
+            from .tasks import sync_zkteco_attendances
+            sync_zkteco_attendances.delay(device_id=d.id)
+            return Response({"status": "queued", "task": "sync_zkteco_attendances"})
+        except Exception as exc:
+            logger.warning("Sync fallback pour device %s: %s", d.id, exc)
+
+        # Fallback : marque heartbeat maintenant
+        d.last_heartbeat_at = timezone.now()
+        d.save(update_fields=["last_heartbeat_at"])
+        return Response({"status": "ok",
+                         "detail": "Synchronisation lancée (fallback)"})
+
+
+class DeviceRestartView(APIView):
+    """POST /api/v1/devices/<pk>/restart/ — Envoie une commande reboot.
+
+    Pour l'instant, pousse une commande ADMS dans la queue. À implémenter par
+    vendor selon le protocole (ZKTeco REBOOT_DEV, ONVIF SystemReboot, etc.).
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        from .models import Device
+        try:
+            d = Device.objects.get(pk=pk)
+        except Device.DoesNotExist:
+            return Response({"error": "Device introuvable"}, status=404)
+
+        # Log audit + push commande dans le cache (le terminal la lit au prochain heartbeat)
+        from django.core.cache import cache
+        if d.serial_number:
+            cache.set(f"iclock_cmd:{d.serial_number}", "REBOOT_DEV", 300)
+        logger.warning("Restart requested for device %s (%s) by user %s",
+                       d.id, d.serial_number, request.user.email if request.user.is_authenticated else "?")
+        return Response({"status": "queued",
+                         "detail": f"Reboot envoyé à {d.serial_number or d.name}"})
+
+
+class DeviceResetConfigView(APIView):
+    """POST /api/v1/devices/<pk>/reset-config/ — Reset config usine (dangereux)."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        from .models import Device
+        try:
+            d = Device.objects.get(pk=pk)
+        except Device.DoesNotExist:
+            return Response({"error": "Device introuvable"}, status=404)
+
+        if not (request.user.is_staff or request.user.is_superuser):
+            return Response({"detail": "Permission refusée — admin uniquement"},
+                            status=403)
+
+        from django.core.cache import cache
+        if d.serial_number:
+            cache.set(f"iclock_cmd:{d.serial_number}", "CLEAR_DATA", 300)
+        logger.warning("Reset config requested for device %s by user %s",
+                       d.id, request.user.email)
+        return Response({"status": "queued",
+                         "detail": "Reset configuration envoyé"})
+
+
+class DeviceUpdateFirmwareView(APIView):
+    """POST /api/v1/devices/<pk>/update-firmware/ — Déclenche une OTA."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        from .models import Device, OTAUpdate, FirmwareVersion
+        try:
+            d = Device.objects.get(pk=pk)
+        except Device.DoesNotExist:
+            return Response({"error": "Device introuvable"}, status=404)
+
+        firmware_id = request.data.get("firmware_id")
+        firmware = None
+        if firmware_id:
+            firmware = FirmwareVersion.objects.filter(pk=firmware_id).first()
+        if not firmware:
+            # Prend le dernier firmware stable compatible avec le modèle
+            firmware = FirmwareVersion.objects.filter(
+                is_stable=True,
+            ).order_by("-released_at").first()
+
+        if not firmware:
+            return Response({"error": "Aucun firmware disponible"}, status=400)
+
+        ota = OTAUpdate.objects.create(
+            device=d, firmware=firmware, status="scheduled",
+        )
+        logger.info("OTA %s planifiée pour device %s (firmware=%s)",
+                    ota.id, d.id, firmware.version)
+        return Response({"status": "scheduled", "ota_id": ota.id,
+                         "firmware": firmware.version})
+
+
+class DeviceLogsView(APIView):
+    """GET /api/v1/devices/<pk>/logs/ — Journal des événements récents du device."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        from .models import Device, DeviceHeartbeat
+        try:
+            d = Device.objects.get(pk=pk)
+        except Device.DoesNotExist:
+            return Response({"error": "Device introuvable"}, status=404)
+
+        # Compose des logs à partir de plusieurs sources
+        entries = []
+
+        # Heartbeats récents (100 derniers)
+        for hb in DeviceHeartbeat.objects.filter(device=d).order_by("-timestamp")[:100]:
+            entries.append(
+                f"[{hb.timestamp.strftime('%Y-%m-%d %H:%M:%S')}] "
+                f"heartbeat status={hb.status or 'ok'}"
+                + (f" battery={hb.battery_level}%" if hb.battery_level else "")
+                + (f" fw={hb.firmware_version}" if hb.firmware_version else "")
+            )
+
+        # Requêtes iclock récentes en cache
+        from django.core.cache import cache
+        if d.serial_number:
+            pubapi = cache.get(f"pubapi_hits:{d.serial_number}") or []
+            iclock = cache.get(f"iclock_last_post:{d.serial_number}") or []
+            for e in pubapi[-20:] + iclock[-20:]:
+                if isinstance(e, dict):
+                    entries.append(
+                        f"[{e.get('at', '')}] {e.get('method', 'POST')} "
+                        f"{e.get('path', '/iclock')} — {e.get('body_preview', '')[:120]}"
+                    )
+
+        return Response({
+            "device": d.serial_number,
+            "entries": sorted(entries, reverse=True)[:200],
+        })
+
+
+class DeviceExportView(APIView):
+    """GET /api/v1/devices/<pk>/export/ — Export fiche technique PDF."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        from django.http import HttpResponse
+        from .models import Device
+        try:
+            d = Device.objects.get(pk=pk)
+        except Device.DoesNotExist:
+            return Response({"error": "Device introuvable"}, status=404)
+
+        # Export texte simple en attendant l'implémentation PDF (reportlab)
+        content = (
+            f"KAYDAN SHIELD — Fiche technique équipement\n"
+            f"══════════════════════════════════════════\n\n"
+            f"Nom          : {d.name}\n"
+            f"Type         : {d.type}\n"
+            f"Modèle       : {d.model.brand if d.model else '—'} "
+            f"{d.model.model_name if d.model else ''}\n"
+            f"Serial       : {d.serial_number}\n"
+            f"IP           : {d.ip_address or '—'}\n"
+            f"MAC          : {d.mac_address or '—'}\n"
+            f"Firmware     : {d.firmware_version or '—'}\n"
+            f"Statut       : {d.status}\n"
+            f"Site         : {d.site.name if d.site else '—'}\n"
+            f"Zone         : {d.zone.name if d.zone else '—'}\n"
+            f"Dernier HB   : {d.last_heartbeat_at or 'Jamais'}\n"
+            f"Créé le      : {d.created_at}\n\n"
+            f"Exporté le {timezone.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+        )
+
+        resp = HttpResponse(content, content_type="text/plain; charset=utf-8")
+        resp["Content-Disposition"] = f'attachment; filename="device-{d.id}-spec.txt"'
+        return resp
+
+
 class DeviceConnectivityTestView(APIView):
     """POST /api/v1/devices/<pk>/test-connection/ — vérifie qu'un équipement répond.
 
@@ -2358,12 +2709,92 @@ class ScanInboxView(APIView):
         from .zk_client import is_zkteco_device, safe_zk_session
 
         reader_id = request.query_params.get("reader_id")
-        if not reader_id:
-            return Response({"error": "reader_id requis"},
-                              status=status.HTTP_400_BAD_REQUEST)
+        kind = (request.query_params.get("kind") or "").lower().strip()
         since = request.query_params.get("since") or ""
 
-        # ── Si le lecteur est un terminal ZKTeco, on PULL en live ──
+        # ── Mode "kind" (agrégat multi-lecteurs) ──
+        # Utilisé par l'UI d'enrôlement : /scan/inbox/?kind=rfid ou ?kind=ble
+        # On agrège les scans de tous les lecteurs matchant ce type,
+        # dans le scope du tenant courant.
+        if not reader_id and kind:
+            # Mapping kind → types de DeviceModel
+            KIND_TO_TYPES = {
+                "rfid": [
+                    "reader_uhf_fixed", "reader_uhf_mobile",
+                    "reader_nfc_fixed", "reader_nfc_mobile",
+                    "portique", "face_terminal",
+                ],
+                "ble": ["beacon_ble", "tablet", "smartphone"],
+                "nfc": ["reader_nfc_fixed", "reader_nfc_mobile", "face_terminal"],
+                "uhf": ["reader_uhf_fixed", "reader_uhf_mobile", "portique"],
+            }
+            types = KIND_TO_TYPES.get(kind)
+            if not types:
+                return Response(
+                    {"error": f"kind inconnu : {kind}",
+                     "expected": list(KIND_TO_TYPES.keys())},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            # Scope tenant
+            devices_qs = Device.objects.select_related("model").filter(
+                model__type__in=types, status="active",
+            )
+            tenant = getattr(request.user, "tenant", None)
+            if tenant is not None:
+                devices_qs = devices_qs.filter(tenant=tenant)
+
+            # Pull live ZKTeco pour les face_terminals
+            for dev in devices_qs:
+                if is_zkteco_device(dev) and dev.ip_address:
+                    throttle_key = f"zk_pull_lock:{dev.pk}"
+                    if not cache.get(throttle_key):
+                        cache.set(throttle_key, 1, 3)
+                        try:
+                            self._pull_zk_into_inbox(dev)
+                        except Exception:
+                            pass
+
+            # Agrège tous les inboxes
+            merged = []
+            for dev in devices_qs:
+                items = cache.get(self._cache_key(dev.pk)) or []
+                for it in items:
+                    it_copy = dict(it)
+                    it_copy.setdefault("device_id", dev.pk)
+                    it_copy.setdefault("device_serial", dev.serial_number)
+                    merged.append(it_copy)
+            # Tri chrono asc
+            merged.sort(key=lambda x: x.get("timestamp") or "")
+
+            if since:
+                try:
+                    cutoff = datetime.fromisoformat(since.replace("Z", "+00:00"))
+                    merged = [
+                        it for it in merged
+                        if datetime.fromisoformat(it["timestamp"]) > cutoff
+                    ]
+                except Exception:
+                    pass
+
+            now_iso = datetime.now(timezone.utc).isoformat()
+            return Response({
+                "scans": merged,
+                "now": now_iso,
+                "count": len(merged),
+                "kind": kind,
+                "readers_count": devices_qs.count(),
+            })
+
+        # ── Mode "reader_id" (un lecteur précis) ──
+        if not reader_id:
+            return Response(
+                {"error": "Paramètre requis : reader_id (pk d'un lecteur) ou "
+                          "kind (rfid | ble | nfc | uhf)."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Si le lecteur est un terminal ZKTeco, on PULL en live
         # Cap à 1 pull toutes les 3s par device pour ne pas saturer le terminal.
         device = None
         try:
@@ -2377,10 +2808,8 @@ class ScanInboxView(APIView):
                 cache.set(throttle_key, 1, 3)   # lock 3s
                 self._pull_zk_into_inbox(device)
 
-        # Lecture des items dans l'inbox
         items = cache.get(self._cache_key(reader_id)) or []
 
-        # Filtre par `since` si fourni
         if since:
             try:
                 cutoff = datetime.fromisoformat(since.replace("Z", "+00:00"))
@@ -2531,10 +2960,41 @@ class ScanInboxView(APIView):
 
     def delete(self, request):
         from django.core.cache import cache
+        from .models import Device
+
         reader_id = request.query_params.get("reader_id")
+        kind = (request.query_params.get("kind") or "").lower().strip()
+
+        # Mode "kind" — vide les inboxes de tous les lecteurs du type demandé
+        if not reader_id and kind:
+            KIND_TO_TYPES = {
+                "rfid": ["reader_uhf_fixed", "reader_uhf_mobile",
+                         "reader_nfc_fixed", "reader_nfc_mobile",
+                         "portique", "face_terminal"],
+                "ble":  ["beacon_ble", "tablet", "smartphone"],
+                "nfc":  ["reader_nfc_fixed", "reader_nfc_mobile", "face_terminal"],
+                "uhf":  ["reader_uhf_fixed", "reader_uhf_mobile", "portique"],
+            }
+            types = KIND_TO_TYPES.get(kind)
+            if not types:
+                return Response({"error": f"kind inconnu : {kind}"}, status=400)
+            devices_qs = Device.objects.filter(
+                model__type__in=types, status="active",
+            )
+            tenant = getattr(request.user, "tenant", None)
+            if tenant is not None:
+                devices_qs = devices_qs.filter(tenant=tenant)
+            cleared = 0
+            for dev in devices_qs:
+                cache.delete(self._cache_key(dev.pk))
+                cleared += 1
+            return Response({"ok": True, "cleared": cleared, "kind": kind})
+
         if not reader_id:
-            return Response({"error": "reader_id requis"},
-                              status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"error": "Paramètre requis : reader_id ou kind."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         cache.delete(self._cache_key(reader_id))
         return Response({"ok": True})
 

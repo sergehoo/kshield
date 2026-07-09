@@ -1,0 +1,173 @@
+# Kaydan Shield — Overlay Docker Compose pour PostgreSQL HA.
+#
+# À composer avec le docker-compose.yml principal :
+#   docker compose -f docker-compose.yml -f docker-compose.ha.yml up -d
+#
+# Architecture :
+#   ┌────────────────┐
+#   │   PgBouncer    │  ← Django parle ici, port 6432
+#   └───────┬────────┘
+#           │
+#     ┌─────┴──────┐
+#     │  Patroni   │  ← 3 nœuds Postgres, leader/replicas
+#     │  cluster   │
+#     └─────┬──────┘
+#           │
+#     ┌─────┴──────┐
+#     │    etcd    │  ← consensus, election du leader
+#     └────────────┘
+#
+# Reprise auto : si le leader tombe, Patroni promote un replica en <10s.
+# PgBouncer masque la transition côté clients (connexions poolées).
+
+version: "3.9"
+
+x-logging-rotated: &logging_rotated
+  driver: json-file
+  options: {max-size: "10m", max-file: "3"}
+
+services:
+  # ═══ etcd — cluster de consensus (leader election) ═══
+  etcd:
+    image: bitnami/etcd:3.5
+    container_name: kshield_etcd
+    hostname: etcd
+    restart: unless-stopped
+    environment:
+      ALLOW_NONE_AUTHENTICATION: "yes"
+      ETCD_ADVERTISE_CLIENT_URLS: http://etcd:2379
+      ETCD_LISTEN_CLIENT_URLS: http://0.0.0.0:2379
+      ETCD_INITIAL_ADVERTISE_PEER_URLS: http://etcd:2380
+      ETCD_LISTEN_PEER_URLS: http://0.0.0.0:2380
+      ETCD_INITIAL_CLUSTER: default=http://etcd:2380
+    volumes:
+      - kshield_etcd_data:/bitnami/etcd
+    networks: [kshield_network]
+    logging: *logging_rotated
+
+  # ═══ Patroni node 1 — bootstrap leader ═══
+  pg-node1:
+    image: patroni/patroni:3.2.2
+    container_name: kshield_pg_node1
+    hostname: pg-node1
+    restart: unless-stopped
+    depends_on: [etcd]
+    environment:
+      PATRONI_NAME: pg-node1
+      PATRONI_SCOPE: kshield-pg
+      PATRONI_NAMESPACE: /kshield/
+      PATRONI_ETCD3_HOSTS: etcd:2379
+      PATRONI_RESTAPI_LISTEN: 0.0.0.0:8008
+      PATRONI_RESTAPI_CONNECT_ADDRESS: pg-node1:8008
+      PATRONI_POSTGRESQL_LISTEN: 0.0.0.0:5432
+      PATRONI_POSTGRESQL_CONNECT_ADDRESS: pg-node1:5432
+      PATRONI_POSTGRESQL_DATA_DIR: /var/lib/postgresql/data
+      PATRONI_SUPERUSER_USERNAME: postgres
+      PATRONI_SUPERUSER_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      PATRONI_REPLICATION_USERNAME: replicator
+      PATRONI_REPLICATION_PASSWORD: ${POSTGRES_REPL_PASSWORD:-repl_changeme}
+    volumes:
+      - kshield_pg_node1_data:/var/lib/postgresql/data
+    networks: [kshield_network]
+    logging: *logging_rotated
+
+  # ═══ Patroni node 2 — replica ═══
+  pg-node2:
+    image: patroni/patroni:3.2.2
+    container_name: kshield_pg_node2
+    hostname: pg-node2
+    restart: unless-stopped
+    depends_on: [etcd, pg-node1]
+    environment:
+      PATRONI_NAME: pg-node2
+      PATRONI_SCOPE: kshield-pg
+      PATRONI_NAMESPACE: /kshield/
+      PATRONI_ETCD3_HOSTS: etcd:2379
+      PATRONI_RESTAPI_LISTEN: 0.0.0.0:8008
+      PATRONI_RESTAPI_CONNECT_ADDRESS: pg-node2:8008
+      PATRONI_POSTGRESQL_LISTEN: 0.0.0.0:5432
+      PATRONI_POSTGRESQL_CONNECT_ADDRESS: pg-node2:5432
+      PATRONI_POSTGRESQL_DATA_DIR: /var/lib/postgresql/data
+      PATRONI_SUPERUSER_USERNAME: postgres
+      PATRONI_SUPERUSER_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      PATRONI_REPLICATION_USERNAME: replicator
+      PATRONI_REPLICATION_PASSWORD: ${POSTGRES_REPL_PASSWORD:-repl_changeme}
+    volumes:
+      - kshield_pg_node2_data:/var/lib/postgresql/data
+    networks: [kshield_network]
+    logging: *logging_rotated
+
+  # ═══ Patroni node 3 — replica ═══
+  pg-node3:
+    image: patroni/patroni:3.2.2
+    container_name: kshield_pg_node3
+    hostname: pg-node3
+    restart: unless-stopped
+    depends_on: [etcd, pg-node1]
+    environment:
+      PATRONI_NAME: pg-node3
+      PATRONI_SCOPE: kshield-pg
+      PATRONI_NAMESPACE: /kshield/
+      PATRONI_ETCD3_HOSTS: etcd:2379
+      PATRONI_RESTAPI_LISTEN: 0.0.0.0:8008
+      PATRONI_RESTAPI_CONNECT_ADDRESS: pg-node3:8008
+      PATRONI_POSTGRESQL_LISTEN: 0.0.0.0:5432
+      PATRONI_POSTGRESQL_CONNECT_ADDRESS: pg-node3:5432
+      PATRONI_POSTGRESQL_DATA_DIR: /var/lib/postgresql/data
+      PATRONI_SUPERUSER_USERNAME: postgres
+      PATRONI_SUPERUSER_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      PATRONI_REPLICATION_USERNAME: replicator
+      PATRONI_REPLICATION_PASSWORD: ${POSTGRES_REPL_PASSWORD:-repl_changeme}
+    volumes:
+      - kshield_pg_node3_data:/var/lib/postgresql/data
+    networks: [kshield_network]
+    logging: *logging_rotated
+
+  # ═══ PgBouncer — pooling + routage vers le leader courant ═══
+  pgbouncer:
+    image: edoburu/pgbouncer:1.20.1
+    container_name: kshield_pgbouncer
+    hostname: pgbouncer
+    restart: unless-stopped
+    depends_on: [pg-node1]
+    environment:
+      # PgBouncer route vers Patroni via l'endpoint HTTP REST
+      # En prod : utiliser HAProxy devant pour probe /master
+      DATABASES_HOST: pg-node1
+      DATABASES_PORT: 5432
+      DATABASES_USER: postgres
+      DATABASES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      DATABASES_DBNAME: ${POSTGRES_DB:-kshield}
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: 500
+      DEFAULT_POOL_SIZE: 20
+    ports:
+      - "6432:5432"
+    networks: [kshield_network]
+    logging: *logging_rotated
+
+  # ═══ HAProxy — probe Patroni /master pour router vers le leader ═══
+  # (Optionnel — nécessaire pour un vrai failover transparent)
+  haproxy:
+    image: haproxy:2.9
+    container_name: kshield_haproxy
+    hostname: haproxy
+    restart: unless-stopped
+    depends_on: [pg-node1, pg-node2, pg-node3]
+    volumes:
+      - ./ha/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    ports:
+      - "5000:5000"   # port du leader Postgres via probe HTTP
+      - "5001:5001"   # port des replicas
+      - "8404:8404"   # HAProxy stats
+    networks: [kshield_network]
+    logging: *logging_rotated
+
+volumes:
+  kshield_etcd_data:    {name: kshield_etcd_data}
+  kshield_pg_node1_data:{name: kshield_pg_node1_data}
+  kshield_pg_node2_data:{name: kshield_pg_node2_data}
+  kshield_pg_node3_data:{name: kshield_pg_node3_data}
+
+networks:
+  kshield_network: {external: true}

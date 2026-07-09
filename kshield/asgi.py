@@ -17,10 +17,16 @@ try:
     from notifications.routing import websocket_urlpatterns as notif_ws
 except Exception:  # pragma: no cover
     notif_ws = []
+try:
+    from devices.routing import websocket_urlpatterns as devices_ws
+except Exception:  # pragma: no cover
+    devices_ws = []
 
 application = ProtocolTypeRouter(
     {
         "http": django_asgi_app,
-        "websocket": AuthMiddlewareStack(URLRouter(access_ws + notif_ws)),
+        "websocket": AuthMiddlewareStack(
+            URLRouter(access_ws + notif_ws + devices_ws)
+        ),
     }
 )

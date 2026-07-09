@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { DataTable, Column } from "@/components/ui/DataTable";
@@ -7,9 +7,10 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
+import { StatsRow } from "@/components/StatsRow";
 import { rolesService } from "@/services";
 import { toApiError } from "@/lib/api";
-import { Plus, Shield, Lock } from "lucide-react";
+import { Plus, Shield, Lock, Users as UsersIcon } from "lucide-react";
 import toast from "react-hot-toast";
 
 export function RolesPage() {
@@ -21,6 +22,17 @@ export function RolesPage() {
     queryKey: ["roles"],
     queryFn: async () => (await rolesService.list()).data,
   });
+
+  const stats = useMemo(() => {
+    const list = data?.results || [];
+    return {
+      total:  data?.count || list.length || 0,
+      system: list.filter((r: any) => r.is_system).length,
+      custom: list.filter((r: any) => !r.is_system).length,
+      tenant: list.filter((r: any) => r.scope === "tenant").length,
+      site:   list.filter((r: any) => r.scope === "site").length,
+    };
+  }, [data]);
 
   const createMut = useMutation({
     mutationFn: () => rolesService.create(form),
@@ -79,6 +91,14 @@ export function RolesPage() {
           </Button>
         }
       />
+      <StatsRow stats={[
+        { label: "Total rôles", value: stats.total,  icon: <Shield className="w-4 h-4" />,      tone: "brand" },
+        { label: "Système",     value: stats.system, icon: <Lock className="w-4 h-4" />,        tone: "warn" },
+        { label: "Custom",      value: stats.custom, icon: <Shield className="w-4 h-4" />,      tone: "ok" },
+        { label: "Portée tenant", value: stats.tenant, icon: <UsersIcon className="w-4 h-4" />, tone: "info" },
+        { label: "Portée site",   value: stats.site,   icon: <UsersIcon className="w-4 h-4" />, tone: "muted" },
+      ]} />
+
       <Card padded={false}>
         <DataTable
           columns={columns}
@@ -122,7 +142,7 @@ export function RolesPage() {
               >
                 <option value="tenant">Tenant</option>
                 <option value="site">Site</option>
-                <option value="company">Société</option>
+                <option value="company">Filiale</option>
                 <option value="global">Global</option>
               </select>
             </label>

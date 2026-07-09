@@ -188,10 +188,13 @@ class AttendanceSummaryView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        import logging
         from datetime import date, timedelta
         from django.core.cache import cache
         from django.db.models import Count, Sum, Q
         from django.utils import timezone
+
+        logger = logging.getLogger(__name__)
 
         today = date.today()
         yesterday_dt = timezone.now() - timedelta(hours=24)
@@ -203,22 +206,30 @@ class AttendanceSummaryView(APIView):
         if cached:
             return Response(cached)
 
+        # Réponse minimale par défaut — remplie best-effort ci-dessous.
+        agg = {"total": 0, "present": 0, "late": 0, "absent": 0, "total_overtime": 0}
+        events_24h = 0
+        total_workers = 0
+
         # Scope tenant : on filtre par site__company__tenant si dispo
-        from accounts.scoping import scope_queryset_by_company
+        try:
+            from accounts.scoping import scope_queryset_by_company
 
-        days_qs = scope_queryset_by_company(
-            AttendanceDay.objects.filter(date=today),
-            request.user,
-            "site__company",
-        )
+            days_qs = scope_queryset_by_company(
+                AttendanceDay.objects.filter(date=today),
+                request.user,
+                "site__company",
+            )
 
-        agg = days_qs.aggregate(
-            total=Count("id"),
-            present=Count("id", filter=Q(status__in=["present", "partial"])),
-            late=Count("id", filter=Q(status="late")),
-            absent=Count("id", filter=Q(status="absent")),
-            total_overtime=Sum("overtime_minutes"),
-        )
+            agg = days_qs.aggregate(
+                total=Count("id"),
+                present=Count("id", filter=Q(status__in=["present", "partial"])),
+                late=Count("id", filter=Q(status="late")),
+                absent=Count("id", filter=Q(status="absent")),
+                total_overtime=Sum("overtime_minutes"),
+            )
+        except Exception as exc:
+            logger.exception("AttendanceSummary — agrégation KO : %s", exc)
 
         # Événements 24h — via AccessEvent (import late pour éviter cycle)
         try:

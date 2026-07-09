@@ -1,0 +1,27 @@
+[project]
+name = "kshield-agent"
+version = "0.1.0"
+description = "Kaydan Shield Local Agent — relays RFID/BLE events from LAN readers to the cloud"
+authors = [{name = "Kaydan Groupe"}]
+requires-python = ">=3.10"
+dependencies = [
+    "websockets>=12.0",
+    "httpx>=0.27",
+    "aiohttp>=3.9",         # webhook HTTP local (kind=http_webhook)
+    "tomli>=2.0; python_version < '3.11'",
+    "pyzk>=0.9",            # ZKTeco/AiFace SDK
+    "paho-mqtt>=1.6",       # MQTT client (Vague 2)
+    "structlog>=24.1",
+    "click>=8.1",
+]
+
+[project.optional-dependencies]
+llrp = ["sllurp>=1.2"]      # Impinj/Zebra RFID UHF
+nfc  = ["pyscard>=2.0"]     # NFC USB PC/SC (ACR122U, HID Omnikey…)
+
+[project.scripts]
+kshield-agent = "kshield_agent.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"

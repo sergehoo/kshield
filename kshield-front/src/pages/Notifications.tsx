@@ -1,7 +1,9 @@
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
+import { StatsRow } from "@/components/StatsRow";
 import { notificationsService } from "@/services";
 import { toApiError } from "@/lib/api";
 import { fmtRelative } from "@/lib/format";
@@ -19,13 +21,28 @@ function iconFor(level: string) {
 
 export function NotificationsPage() {
   const qc = useQueryClient();
+  const [levelFilter, setLevelFilter] = useState<string>("");
 
   const { data, isLoading } = useQuery({
-    queryKey: ["notifications", "all"],
+    queryKey: ["notifications", "all", levelFilter],
     queryFn: async () =>
-      (await notificationsService.list({ page_size: 100, ordering: "-created_at" })).data,
+      (await notificationsService.list({
+        page_size: 100, ordering: "-created_at",
+        level: levelFilter || undefined,
+      })).data,
     refetchInterval: 30_000,
   });
+
+  const stats = useMemo(() => {
+    const list = data?.results || [];
+    return {
+      total: data?.count || 0,
+      unread: list.filter((n: any) => !n.read_at).length,
+      danger: list.filter((n: any) => n.level === "danger").length,
+      warn: list.filter((n: any) => n.level === "warn").length,
+      info: list.filter((n: any) => n.level === "info" || n.level === "success").length,
+    };
+  }, [data]);
 
   const markAll = useMutation({
     mutationFn: () => notificationsService.markAllRead(),
@@ -63,7 +80,27 @@ export function NotificationsPage() {
         }
       />
 
+      <StatsRow stats={[
+        { label: "Total",     value: stats.total,  icon: <Bell className="w-4 h-4" />,        tone: "brand" },
+        { label: "Non lues",  value: stats.unread, icon: <Bell className="w-4 h-4" />,        tone: "warn" },
+        { label: "Critiques", value: stats.danger, icon: <ShieldAlert className="w-4 h-4" />, tone: "danger",
+          onClick: () => setLevelFilter("danger") },
+        { label: "Alertes",   value: stats.warn,   icon: <AlertTriangle className="w-4 h-4" />, tone: "warn",
+          onClick: () => setLevelFilter("warn") },
+        { label: "Infos",     value: stats.info,   icon: <Info className="w-4 h-4" />,        tone: "info",
+          onClick: () => setLevelFilter("info") },
+      ]} />
+
       <Card padded={false}>
+        <div className="p-3 border-b border-surface-border flex gap-2 items-center">
+          <select value={levelFilter} onChange={(e) => setLevelFilter(e.target.value)} className="field w-48">
+            <option value="">Tous niveaux</option>
+            <option value="danger">Critiques</option>
+            <option value="warn">Alertes</option>
+            <option value="info">Infos</option>
+            <option value="success">Succès</option>
+          </select>
+        </div>
         {isLoading && <div className="p-8 text-center text-ink-muted">Chargement…</div>}
         {!isLoading && data?.results?.length === 0 && (
           <div className="p-10 text-center">

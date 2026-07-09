@@ -45,6 +45,10 @@ volumes:
     name: kshield_redis_data
   kshield_minio_data:
     name: kshield_minio_data
+  kshield_mqtt_data:
+    name: kshield_mqtt_data
+  kshield_mqtt_log:
+    name: kshield_mqtt_log
   kshield_static:
     name: kshield_static
   kshield_media:
@@ -127,6 +131,53 @@ services:
       interval: 30s
       timeout: 5s
       retries: 10
+    logging: *logging_rotated
+
+  # ===========================================================================
+  # EMQX — broker MQTT enterprise (Vague 7)
+  #   - MQTT 3.1.1 + 5.0 + WebSocket + QUIC
+  #   - Cluster natif (autodécouverte via emqx@dns)
+  #   - Dashboard UI :18083
+  #   - Bridge Prometheus intégré
+  #
+  # Pour un cluster 3 nœuds en prod : décommenter emqx-node2 / emqx-node3
+  # et définir EMQX_CLUSTER__DISCOVERY_STRATEGY=static.
+  # ===========================================================================
+  shieldmqtt:
+    image: emqx/emqx:5.4
+    container_name: kshield_mqtt
+    hostname: shieldmqtt
+    restart: unless-stopped
+    environment:
+      TZ: Africa/Abidjan
+      # Nom de nœud EMQX (unique dans le cluster)
+      EMQX_NODE__NAME: emqx@shieldmqtt
+      EMQX_NODE__COOKIE: ${EMQX_NODE_COOKIE:-kshield_emqx_cookie_change_me}
+      # Auth API dashboard
+      EMQX_DASHBOARD__DEFAULT_USERNAME: ${EMQX_DASHBOARD_USER:-admin}
+      EMQX_DASHBOARD__DEFAULT_PASSWORD: ${EMQX_DASHBOARD_PASSWORD:-public}
+      # Autorisation par défaut (dev) — en prod passer par le fichier ACL
+      EMQX_ALLOW_ANONYMOUS: "true"
+      # Discovery statique — passer à "dns" pour un vrai cluster K8s/DNS
+      EMQX_CLUSTER__DISCOVERY_STRATEGY: "static"
+      EMQX_CLUSTER__STATIC__SEEDS: '["emqx@shieldmqtt"]'
+      # Prometheus scrape endpoint
+      EMQX_PROMETHEUS__ENABLE: "true"
+    volumes:
+      - kshield_mqtt_data:/opt/emqx/data
+      - kshield_mqtt_log:/opt/emqx/log
+    ports:
+      - "1883:1883"     # MQTT clair (dev only)
+      - "8883:8883"     # MQTT TLS
+      - "8083:8083"     # MQTT/WebSocket
+      - "8084:8084"     # MQTT/WebSocket TLS
+      - "18083:18083"   # Dashboard EMQX
+    networks: [kshield_network]
+    healthcheck:
+      test: ["CMD", "/opt/emqx/bin/emqx_ctl", "status"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
     logging: *logging_rotated
 
   # ===========================================================================

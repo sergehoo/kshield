@@ -29,7 +29,12 @@ FIELD_ENCRYPTION_KEY = config("FIELD_ENCRYPTION_KEY", default="")
 # ---------------------------------------------------------------------------
 # Applications
 # ---------------------------------------------------------------------------
+# IMPORTANT : depuis Channels 4.0, ``runserver`` doit être fourni par daphne.
+# On place donc ``daphne`` en tête absolue d'INSTALLED_APPS pour que sa version
+# de la commande remplace celle de Django et supporte le upgrade WebSocket.
+# Sans ça, le WSGI runserver rejette les requêtes /ws/… (websocket closed).
 DJANGO_APPS = [
+    "daphne",                       # ← doit être 1er (Channels 4.x)
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -98,6 +103,7 @@ MIDDLEWARE = [
     "core.middleware.SlowRequestLoggerMiddleware",  # logue les requêtes > 1s
     "core.middleware.TenantContextMiddleware",
     "audit.middleware.AuditContextMiddleware",
+    "audit.middleware.ApiAuditMiddleware",
     # django-axes : enregistre IP + UA + email de chaque tentative ; lockout
     # automatique au-delà du seuil. DOIT être tout en bas (après auth).
     "axes.middleware.AxesMiddleware",
@@ -315,6 +321,42 @@ CELERY_BEAT_SCHEDULE = {
     "devices_pull_face_terminals": {
         "task": "devices.pull_face_terminals",
         "schedule": 600.0,
+    },
+    # ─── Temps réel / Vague 3 : réconciliation devices + agents ────────
+    # Balaie les DeviceCommand expirées → statut timeout (30s)
+    "devices_sweep_command_timeouts": {
+        "task": "devices.sweep_command_timeouts",
+        "schedule": 30.0,
+    },
+    # Reconcilie les statuts device via probe TCP (online/offline) — 60s
+    "devices_reconcile_status": {
+        "task": "devices.reconcile_status",
+        "schedule": 60.0,
+    },
+    # Détecte les LocalAgent inactifs depuis > 7j — 1h
+    "devices_sweep_stale_agents": {
+        "task": "devices.sweep_stale_agents",
+        "schedule": 3600.0,
+    },
+    # Persiste + résout automatiquement les alertes système — 60s
+    "devices_sweep_system_alerts": {
+        "task": "devices.sweep_system_alerts",
+        "schedule": 60.0,
+    },
+    # Rafraîchit les Digital Twins via drivers vendor — 120s
+    "devices_refresh_twins": {
+        "task": "devices.refresh_device_twins",
+        "schedule": 120.0,
+    },
+    # Moteur de maintenance prédictive — 5 min
+    "devices_predictive_maintenance": {
+        "task": "devices.run_predictive_maintenance",
+        "schedule": 300.0,
+    },
+    # OTA firmware push — 60s (traite les OTAUpdate scheduled via drivers)
+    "devices_process_ota_updates": {
+        "task": "devices.process_pending_ota_updates",
+        "schedule": 60.0,
     },
 }
 

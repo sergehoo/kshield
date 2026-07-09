@@ -112,7 +112,7 @@ export function SiteDetailPage() {
           accent="info"
         />
         <KpiCard
-          label="Société"
+          label="Filiale"
           value={typeof s.company === "object" ? s.company?.name?.slice(0, 20) : "—"}
           icon={<MapPin className="w-5 h-5" />}
           accent="brand"

@@ -1,0 +1,44 @@
+# Kaydan Shield Local Agent — configuration.
+# Copier ce fichier vers ~/.kshield-agent.toml puis remplir les valeurs.
+
+server_url    = "https://api.kaydanshield.com"
+agent_id      = "REMPLACER_PAR_UUID_LOCALAGENT"
+api_token     = "REMPLACER_PAR_TOKEN"
+hmac_secret   = "OPTIONNEL_POUR_ANTIREJEU"
+log_level     = "INFO"
+heartbeat_seconds     = 30
+reconnect_max_seconds = 30
+
+# ─── Lecteurs RFID/BLE présents sur le LAN ───
+[[readers]]
+kind      = "zkteco"
+ip        = "192.168.1.201"
+port      = 4370
+device_id = 6                # ID du Device côté Kaydan Shield
+serial    = "AYUC09021227"
+poll_seconds = 3
+
+# Exemple : lecteur IP qui push chaque tag en HTTP
+# [[readers]]
+# kind      = "http_webhook"
+# ip        = "127.0.0.1"
+# device_id = 12
+# extra = { listen_port = 8765 }
+
+# Exemple : lecteur LLRP (Impinj Speedway, Zebra FX-9600)
+# Nécessite : pip install kshield-agent[llrp]
+# [[readers]]
+# kind      = "llrp"
+# ip        = "192.168.1.42"
+# port      = 5084
+# device_id = 14
+# extra = { antennas = [1, 2], tx_power = 30 }
+
+# Exemple : lecteur NFC USB (ACR122U, HID Omnikey, uTrust)
+# Nécessite : pip install kshield-agent[nfc] + pilote PC/SC (Windows: WinSCard, Linux: pcscd)
+# [[readers]]
+# kind      = "nfc_pcsc"
+# ip        = "127.0.0.1"          # ignoré pour PC/SC
+# device_id = 18
+# poll_seconds = 1
+# extra = { reader_name = "ACR122" }

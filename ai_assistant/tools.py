@@ -1045,3 +1045,10 @@ def run_device_connectivity_test(device_id):
         "reachable": bool(open_ports),
         "open_ports": open_ports,
     }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Import des tools d'analyse avancée (détection fraudes, doublons, absences)
+# Le simple import déclenche les @register_tool.
+# ─────────────────────────────────────────────────────────────────────────────
+from . import analysis_tools  # noqa: E402, F401

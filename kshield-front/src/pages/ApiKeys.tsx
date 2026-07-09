@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -7,10 +7,11 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
+import { StatsRow } from "@/components/StatsRow";
 import { apiKeysService } from "@/services";
 import { toApiError } from "@/lib/api";
 import { fmtDateTime } from "@/lib/format";
-import { Plus, Key, Trash2, Copy, AlertTriangle } from "lucide-react";
+import { Plus, Key, Trash2, Copy, AlertTriangle, KeyRound } from "lucide-react";
 import toast from "react-hot-toast";
 
 export function ApiKeysPage() {
@@ -23,6 +24,17 @@ export function ApiKeysPage() {
     queryKey: ["api-keys"],
     queryFn: async () => (await apiKeysService.list({ page_size: 100 })).data,
   });
+
+  const stats = useMemo(() => {
+    const list = data?.results || [];
+    return {
+      total: data?.count || 0,
+      active: list.filter((k: any) => k.is_active && !k.revoked_at).length,
+      revoked: list.filter((k: any) => k.revoked_at).length,
+      admin: list.filter((k: any) => k.scope === "admin").length,
+      ingest: list.filter((k: any) => k.scope === "ingest").length,
+    };
+  }, [data]);
 
   const createMut = useMutation({
     mutationFn: () => apiKeysService.create(form),
@@ -102,6 +114,14 @@ export function ApiKeysPage() {
           </Button>
         }
       />
+
+      <StatsRow stats={[
+        { label: "Total clés",  value: stats.total,   icon: <KeyRound className="w-4 h-4" />, tone: "brand" },
+        { label: "Actives",     value: stats.active,  icon: <Key className="w-4 h-4" />,      tone: "ok" },
+        { label: "Révoquées",   value: stats.revoked, icon: <Trash2 className="w-4 h-4" />,   tone: "danger" },
+        { label: "Admin scope", value: stats.admin,   icon: <Key className="w-4 h-4" />,      tone: "warn" },
+        { label: "Ingest",      value: stats.ingest,  icon: <Key className="w-4 h-4" />,      tone: "info" },
+      ]} />
 
       <Card padded={false}>
         <DataTable

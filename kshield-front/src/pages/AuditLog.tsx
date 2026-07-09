@@ -1,13 +1,14 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { PageHeader } from "@/components/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Input } from "@/components/ui/Input";
 import { DataTable, Column } from "@/components/ui/DataTable";
+import { StatsRow } from "@/components/StatsRow";
 import { auditService } from "@/services";
 import { fmtDateTime, fmtRelative } from "@/lib/format";
-import { Search, ScrollText } from "lucide-react";
+import { Search, ScrollText, LogIn, LogOut, Trash, Edit, Plus } from "lucide-react";
 
 export function AuditLogPage() {
   const [q, setQ] = useState("");
@@ -25,6 +26,19 @@ export function AuditLogPage() {
         })
       ).data,
   });
+
+  const stats = useMemo(() => {
+    const list = data?.results || [];
+    const oneHourAgo = Date.now() - 3600_000;
+    return {
+      total: data?.count || 0,
+      lastHour: list.filter((e: any) => new Date(e.created_at).getTime() > oneHourAgo).length,
+      creates: list.filter((e: any) => (e.action || "").includes("create")).length,
+      updates: list.filter((e: any) => (e.action || "").includes("update")).length,
+      deletes: list.filter((e: any) => (e.action || "").includes("delete")).length,
+      logins: list.filter((e: any) => (e.action || "").includes("login")).length,
+    };
+  }, [data]);
 
   const columns: Column<any>[] = [
     {
@@ -91,6 +105,19 @@ export function AuditLogPage() {
         title="Journal d'audit"
         subtitle={`${data?.count ?? 0} entrées — toutes les actions sensibles`}
       />
+
+      <StatsRow stats={[
+        { label: "Total entrées",  value: stats.total,    icon: <ScrollText className="w-4 h-4" />, tone: "brand" },
+        { label: "Dernière heure", value: stats.lastHour, icon: <ScrollText className="w-4 h-4" />, tone: "info" },
+        { label: "Créations",      value: stats.creates,  icon: <Plus className="w-4 h-4" />,       tone: "ok",
+          onClick: () => setAction("create") },
+        { label: "Modifications",  value: stats.updates,  icon: <Edit className="w-4 h-4" />,       tone: "warn",
+          onClick: () => setAction("update") },
+        { label: "Suppressions",   value: stats.deletes,  icon: <Trash className="w-4 h-4" />,      tone: "danger",
+          onClick: () => setAction("delete") },
+        { label: "Logins",         value: stats.logins,   icon: <LogIn className="w-4 h-4" />,      tone: "muted",
+          onClick: () => setAction("login") },
+      ]} />
 
       <Card padded={false}>
         <div className="p-4 border-b border-surface-border flex gap-2">

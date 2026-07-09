@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/PageHeader";
@@ -8,32 +8,57 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
+import { StatsRow } from "@/components/StatsRow";
 import { companiesService } from "@/services";
 import { toApiError } from "@/lib/api";
 import { fmtDate } from "@/lib/format";
 import type { Company } from "@/types/api";
-import { Plus, Building2, Search, Trash2 } from "lucide-react";
+import { Plus, Building2, Search, Trash2, Truck, Factory, Store, Package } from "lucide-react";
 import toast from "react-hot-toast";
 
 export function CompaniesPage() {
   const [q, setQ] = useState("");
+  const [sectorFilter, setSectorFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
   const [openNew, setOpenNew] = useState(false);
-  const [form, setForm] = useState({ name: "", code: "", legal_form: "", ncc: "" });
+  const [form, setForm] = useState({ name: "", code: "", legal_form: "", sector: "services" });
   const qc = useQueryClient();
   const navigate = useNavigate();
 
   const { data, isLoading } = useQuery({
-    queryKey: ["companies", q],
+    queryKey: ["companies", q, sectorFilter, statusFilter],
     queryFn: async () =>
-      (await companiesService.list({ page_size: 200, search: q || undefined })).data,
+      (await companiesService.list({
+        page_size: 200,
+        search: q || undefined,
+        sector: sectorFilter || undefined,
+        is_active: statusFilter === "active" ? true : statusFilter === "inactive" ? false : undefined,
+      })).data,
   });
+
+  const { data: allCompanies } = useQuery({
+    queryKey: ["companies", "all-stats"],
+    queryFn: async () => (await companiesService.list({ page_size: 500 })).data,
+    staleTime: 30_000,
+  });
+
+  const stats = useMemo(() => {
+    const list = allCompanies?.results || [];
+    return {
+      total: allCompanies?.count || 0,
+      active: list.filter((c: any) => c.is_active !== false).length,
+      btp: list.filter((c: any) => c.sector === "btp").length,
+      logistics: list.filter((c: any) => c.sector === "logistics").length,
+      industry: list.filter((c: any) => c.sector === "industry").length,
+    };
+  }, [allCompanies]);
 
   const createMut = useMutation({
     mutationFn: () => companiesService.create(form),
     onSuccess: () => {
-      toast.success("Société créée");
+      toast.success("Filiale créée");
       setOpenNew(false);
-      setForm({ name: "", code: "", legal_form: "", ncc: "" });
+      setForm({ name: "", code: "", legal_form: "", sector: "services" });
       qc.invalidateQueries({ queryKey: ["companies"] });
     },
     onError: (e) => toast.error(toApiError(e).message),
@@ -42,7 +67,7 @@ export function CompaniesPage() {
   const removeMut = useMutation({
     mutationFn: (id: number) => companiesService.remove(id),
     onSuccess: () => {
-      toast.success("Supprimée");
+      toast.success("Filiale supprimée");
       qc.invalidateQueries({ queryKey: ["companies"] });
     },
     onError: (e) => toast.error(toApiError(e).message),
@@ -51,7 +76,7 @@ export function CompaniesPage() {
   const columns: Column<Company>[] = [
     {
       key: "name",
-      header: "Société",
+      header: "Filiale",
       render: (c) => (
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-lg bg-info/10 text-info grid place-items-center">
@@ -65,7 +90,6 @@ export function CompaniesPage() {
       ),
     },
     { key: "legal", header: "Forme juridique", render: (c) => c.legal_form || "—" },
-    { key: "ncc", header: "N° CC", render: (c) => <span className="font-mono text-xs">{c.ncc || "—"}</span> },
     {
       key: "active",
       header: "Statut",
@@ -96,23 +120,51 @@ export function CompaniesPage() {
   return (
     <div>
       <PageHeader
-        title="Sociétés"
-        subtitle={`${data?.count ?? 0} sociétés enregistrées`}
+        title="Filiales"
+        subtitle={`${data?.count ?? 0} filiale${(data?.count ?? 0) > 1 ? "s" : ""} enregistrée${(data?.count ?? 0) > 1 ? "s" : ""}`}
         actions={
           <Button leftIcon={<Plus className="w-4 h-4" />} onClick={() => setOpenNew(true)}>
-            Nouvelle société
+            Nouvelle filiale
           </Button>
         }
       />
 
+      <StatsRow stats={[
+        { label: "Total filiales", value: stats.total,    icon: <Building2 className="w-4 h-4" />, tone: "brand" },
+        { label: "Actives",        value: stats.active,   icon: <Building2 className="w-4 h-4" />, tone: "ok",
+          onClick: () => setStatusFilter("active") },
+        { label: "BTP",            value: stats.btp,      icon: <Package className="w-4 h-4" />,   tone: "warn",
+          onClick: () => setSectorFilter("btp") },
+        { label: "Logistique",     value: stats.logistics,icon: <Truck className="w-4 h-4" />,     tone: "info",
+          onClick: () => setSectorFilter("logistics") },
+        { label: "Industrie",      value: stats.industry, icon: <Factory className="w-4 h-4" />,   tone: "muted",
+          onClick: () => setSectorFilter("industry") },
+      ]} />
+
       <Card padded={false}>
-        <div className="p-4 border-b border-surface-border">
-          <Input
-            placeholder="Rechercher…"
-            leftIcon={<Search className="w-4 h-4" />}
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-          />
+        <div className="p-4 border-b border-surface-border flex flex-col sm:flex-row gap-2">
+          <div className="flex-1">
+            <Input
+              placeholder="Rechercher…"
+              leftIcon={<Search className="w-4 h-4" />}
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+            />
+          </div>
+          <select value={sectorFilter} onChange={(e) => setSectorFilter(e.target.value)} className="field sm:w-40">
+            <option value="">Tous secteurs</option>
+            <option value="btp">BTP</option>
+            <option value="logistics">Logistique</option>
+            <option value="industry">Industrie</option>
+            <option value="services">Services</option>
+            <option value="trading">Commerce</option>
+            <option value="other">Autre</option>
+          </select>
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="field sm:w-40">
+            <option value="">Tous statuts</option>
+            <option value="active">Actives</option>
+            <option value="inactive">Inactives</option>
+          </select>
         </div>
         <DataTable
           columns={columns}
@@ -126,7 +178,7 @@ export function CompaniesPage() {
       <Modal
         open={openNew}
         onClose={() => setOpenNew(false)}
-        title="Nouvelle société"
+        title="Nouvelle filiale"
         footer={
           <>
             <Button variant="ghost" onClick={() => setOpenNew(false)}>
@@ -161,11 +213,6 @@ export function CompaniesPage() {
               onChange={(e) => setForm({ ...form, legal_form: e.target.value })}
             />
           </div>
-          <Input
-            label="Numéro de compte contribuable"
-            value={form.ncc}
-            onChange={(e) => setForm({ ...form, ncc: e.target.value })}
-          />
         </div>
       </Modal>
     </div>

@@ -46,6 +46,30 @@ sync_offline_push = Counter(
     ["device_id", "result"],  # result = synced | duplicate | rejected
 )
 
+# ─── Enrôlement RFID temps réel ────────────────────────────────────────
+rfid_scans_total = Counter(
+    "kshield_rfid_scans_total",
+    "Scans RFID captés pendant les sessions d'enrôlement.",
+    ["result"],   # detected | duplicate | enrolled | error
+)
+
+enrollment_sessions_total = Counter(
+    "kshield_enrollment_sessions_total",
+    "Sessions d'enrôlement RFID démarrées / clôturées.",
+    ["outcome"],   # started | completed | cancelled | timeout
+)
+
+device_commands_total = Counter(
+    "kshield_device_commands_total",
+    "Commandes envoyées aux équipements.",
+    ["kind", "status"],  # PING_DEVICE, SYNC_DEVICE, ... × sent/completed/failed/timeout
+)
+
+local_agents_connected = Gauge(
+    "kshield_local_agents_connected",
+    "Nombre d'agents locaux actuellement connectés en WebSocket.",
+)
+
 # ─── Gauges (valeurs instantanées, snapshot temps réel) ───────────────
 fraud_alerts_open = Gauge(
     "kshield_fraud_alerts_open",

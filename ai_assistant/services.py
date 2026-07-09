@@ -31,6 +31,9 @@ import logging
 from django.conf import settings
 
 from .tools import execute_tool, get_tool_schemas_for_llm
+# Autoload : les décorateurs @register_tool s'exécutent à l'import
+from . import analysis_tools  # noqa: F401
+from . import tools_v2        # noqa: F401  (Vague 8 — drivers/twin/discovery)
 
 logger = logging.getLogger(__name__)
 

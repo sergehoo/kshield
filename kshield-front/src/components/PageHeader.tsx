@@ -20,7 +20,10 @@ export function PageHeader({
           {live && <LivePulse />}
         </div>
         {subtitle && (
-          <p className="mt-1 text-sm text-ink-muted">{subtitle}</p>
+          // <div> plutôt que <p> car certaines pages passent du JSX riche
+          // (icônes, badges, flex containers) dans le subtitle, ce qui viole
+          // les règles HTML si on utilise <p>.
+          <div className="mt-1 text-sm text-ink-muted">{subtitle}</div>
         )}
       </div>
       {actions && <div className="flex items-center gap-2">{actions}</div>}

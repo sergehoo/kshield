@@ -4,6 +4,8 @@ import { KpiCard } from "@/components/KpiCard";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { LivePulse } from "@/components/LivePulse";
+import { SystemAlertsBanner } from "@/components/SystemAlertsBanner";
+import { RealtimeStatsWidget } from "@/components/RealtimeStatsWidget";
 import { accessEventsService, devicesService, attendanceService, notificationsService } from "@/services";
 import { fmtRelative, fmtNumber, fmtTime } from "@/lib/format";
 import { Users, Cpu, ShieldAlert, Activity, Radar, HardHat } from "lucide-react";
@@ -87,6 +89,12 @@ export function DashboardPage() {
         subtitle="État en temps réel de tous vos chantiers et équipements"
         live
       />
+
+      {/* Bannière alertes système (temps réel + poll 30s) */}
+      <SystemAlertsBanner />
+
+      {/* Widget métriques temps réel (devices/agents/sessions/commandes/alertes) */}
+      <RealtimeStatsWidget />
 
       {/* KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

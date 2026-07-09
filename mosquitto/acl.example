@@ -1,0 +1,25 @@
+# Kaydan Shield — ACL Mosquitto par pattern.
+#
+# Le serveur Kaydan a besoin de subscribe à tous les topics.
+# Les Agents locaux ne publient QUE sur leur propre tenant.
+#
+# Copier vers /mosquitto/config/acl puis référencer dans mosquitto.prod.conf :
+#     acl_file /mosquitto/config/acl
+
+# ═══ Serveur Kaydan Shield (subscribe #) ═══
+user kshield_server
+topic read kshield/#
+topic read $SYS/#
+
+# ═══ Agents locaux — un user par agent, scoped par tenant ═══
+# Le tenant_slug est encodé dans le login lui-même
+# Le %u pattern est remplacé au runtime par le username courant
+
+# Pattern : agent write access to kshield/<tenant>/#
+pattern write kshield/%u/#
+pattern read  kshield/%u/#
+
+# Exemple explicite :
+# user kshield_agent_kaydan
+# topic write kshield/kaydan/#
+# topic read  kshield/kaydan/#

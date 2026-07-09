@@ -227,6 +227,20 @@ def make_crud(
 
         def get_form_class(self): return _form_cls
 
+        def get(self, request, *args, **kwargs):
+            import time
+            import logging
+            log = logging.getLogger("admin.crud")
+            t0 = time.perf_counter()
+            resp = super().get(request, *args, **kwargs)
+            elapsed = int((time.perf_counter() - t0) * 1000)
+            if elapsed > 500:
+                log.warning(
+                    "SLOW admin CRUD Create GET %s: %dms (path=%s)",
+                    _url_key, elapsed, request.path,
+                )
+            return resp
+
         def get_context_data(self, **kwargs):
             ctx = super().get_context_data(**kwargs)
             ctx["url_key"] = _url_key

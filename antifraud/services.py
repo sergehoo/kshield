@@ -185,3 +185,239 @@ def evaluate(event) -> list:
         logger.info("FraudAlert #%s déclenchée — règle %s sur event=%s",
                     alert.id, rule.code, event.id)
     return created
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Vague 10 — Nouvelles règles anti-fraude
+# ═══════════════════════════════════════════════════════════════════
+def _handler_badge_expired(event, rule) -> dict | None:
+    """BADGE_EXPIRED — le badge scanné est expiré (valid_until dépassé)."""
+    if not event.badge_id:
+        return None
+    from devices.models import Badge
+    try:
+        badge = Badge.objects.get(pk=event.badge_id)
+    except Badge.DoesNotExist:
+        return None
+    from datetime import date
+    today = date.today()
+    if badge.valid_until and badge.valid_until < today:
+        return {
+            "badge_id": badge.pk, "uid": badge.uid,
+            "valid_until": badge.valid_until.isoformat(),
+            "days_expired": (today - badge.valid_until).days,
+        }
+    if badge.status in ("expired", "revoked", "lost", "disabled"):
+        return {"badge_id": badge.pk, "uid": badge.uid, "status": badge.status}
+    return None
+
+
+def _handler_multi_site_conflict(event, rule) -> dict | None:
+    """MULTI_SITE_CONFLICT — un même holder scanné sur 2 sites incompatibles
+    dans une fenêtre de temps où le déplacement est physiquement impossible.
+
+    Paramètre rule.parameters = {"min_travel_minutes": 30}
+    """
+    if not event.holder_object_id or not event.site_id:
+        return None
+    from access_control.models import AccessEvent
+    min_travel = (rule.parameters or {}).get("min_travel_minutes", 30)
+    since = event.timestamp - timedelta(minutes=min_travel)
+    conflict = AccessEvent.objects.filter(
+        holder_kind=event.holder_kind,
+        holder_object_id=event.holder_object_id,
+        timestamp__gte=since,
+        timestamp__lt=event.timestamp,
+        decision="granted",
+    ).exclude(site_id=event.site_id).first()
+    if conflict:
+        return {
+            "current_site_id": event.site_id,
+            "conflict_site_id": conflict.site_id,
+            "conflict_event_id": conflict.id,
+            "gap_seconds": int(
+                (event.timestamp - conflict.timestamp).total_seconds()
+            ),
+        }
+    return None
+
+
+def _handler_repeated_absence(event, rule) -> dict | None:
+    """REPEATED_ABSENCE — plus de N absences sur les X derniers jours ouvrés.
+
+    Paramètres : {"days": 30, "threshold": 5}
+    Se déclenche lorsqu'un holder scanne après une période d'absences.
+    """
+    if not event.holder_object_id:
+        return None
+    params = rule.parameters or {}
+    days = int(params.get("days", 30))
+    threshold = int(params.get("threshold", 5))
+    try:
+        from attendance.models import AttendanceDay
+    except ImportError:
+        return None
+    since = event.timestamp.date() - timedelta(days=days)
+    absences = AttendanceDay.objects.filter(
+        date__gte=since, date__lt=event.timestamp.date(),
+        status="absent",
+    )
+    if event.holder_kind == "worker":
+        absences = absences.filter(worker_id=event.holder_object_id)
+    elif event.holder_kind == "employee":
+        absences = absences.filter(employee_id=event.holder_object_id)
+    else:
+        return None
+    count = absences.count()
+    if count >= threshold:
+        return {"absences_last_days": count, "days_window": days,
+                 "threshold": threshold}
+    return None
+
+
+def _handler_frequent_late(event, rule) -> dict | None:
+    """FREQUENT_LATE — plus de N retards sur les X derniers jours ouvrés."""
+    if not event.holder_object_id:
+        return None
+    params = rule.parameters or {}
+    days = int(params.get("days", 30))
+    threshold = int(params.get("threshold", 5))
+    try:
+        from attendance.models import AttendanceDay
+    except ImportError:
+        return None
+    since = event.timestamp.date() - timedelta(days=days)
+    lates = AttendanceDay.objects.filter(
+        date__gte=since, date__lt=event.timestamp.date(),
+        status="late",
+    )
+    if event.holder_kind == "worker":
+        lates = lates.filter(worker_id=event.holder_object_id)
+    elif event.holder_kind == "employee":
+        lates = lates.filter(employee_id=event.holder_object_id)
+    else:
+        return None
+    count = lates.count()
+    if count >= threshold:
+        return {"lates_last_days": count, "days_window": days,
+                 "threshold": threshold}
+    return None
+
+
+def _handler_suspicious_terminal(event, rule) -> dict | None:
+    """SUSPICIOUS_TERMINAL — terminal avec un taux d'erreurs anormalement
+    élevé (health score < seuil OU >N erreurs récentes).
+
+    Paramètres : {"health_score_below": 40, "errors_last_hour": 10}
+    """
+    if not event.device_id:
+        return None
+    from devices.models import DeviceTwin
+    params = rule.parameters or {}
+    score_threshold = int(params.get("health_score_below", 40))
+    errors_threshold = int(params.get("errors_last_hour", 10))
+    try:
+        twin = DeviceTwin.objects.get(device_id=event.device_id)
+    except DeviceTwin.DoesNotExist:
+        return None
+    if twin.health_score < score_threshold:
+        return {
+            "device_id": event.device_id, "health_score": twin.health_score,
+            "reason": "health_score_below_threshold",
+            "threshold": score_threshold,
+        }
+    now = timezone.now()
+    recent_errors = [
+        e for e in (twin.recent_errors or [])
+        if e.get("at", "") > (now - timedelta(hours=1)).isoformat()
+    ]
+    if len(recent_errors) >= errors_threshold:
+        return {
+            "device_id": event.device_id,
+            "errors_last_hour": len(recent_errors),
+            "threshold": errors_threshold,
+        }
+    return None
+
+
+def _handler_abnormal_access(event, rule) -> dict | None:
+    """ABNORMAL_ACCESS — accès qui dévie fortement du pattern habituel du
+    holder (horaire inhabituel, jour de la semaine inhabituel, site jamais visité).
+
+    Paramètres : {"lookback_days": 90, "min_history": 20}
+    """
+    if not event.holder_object_id:
+        return None
+    from access_control.models import AccessEvent
+    params = rule.parameters or {}
+    lookback = int(params.get("lookback_days", 90))
+    min_history = int(params.get("min_history", 20))
+    since = event.timestamp - timedelta(days=lookback)
+    history = AccessEvent.objects.filter(
+        holder_kind=event.holder_kind,
+        holder_object_id=event.holder_object_id,
+        timestamp__gte=since, timestamp__lt=event.timestamp,
+        decision="granted",
+    )
+    hist_count = history.count()
+    if hist_count < min_history:
+        return None  # pas assez d'historique pour juger
+    # Site jamais visité ?
+    visited_sites = set(history.values_list("site_id", flat=True))
+    if event.site_id and event.site_id not in visited_sites:
+        return {"reason": "unseen_site", "site_id": event.site_id,
+                 "visited_sites": list(visited_sites)}
+    # Heure inhabituelle : hors du min-max habituel ± 2h
+    from django.db.models import Max, Min
+    hours = list(history.values_list("timestamp", flat=True))
+    hour_now = event.timestamp.hour
+    hours_of_day = sorted({h.hour for h in hours})
+    if hours_of_day:
+        min_h, max_h = hours_of_day[0], hours_of_day[-1]
+        if hour_now < max(0, min_h - 2) or hour_now > min(23, max_h + 2):
+            return {"reason": "unusual_hour", "hour": hour_now,
+                     "usual_range": [min_h, max_h]}
+    # Jour de semaine inhabituel (uniquement si historique riche)
+    weekday_now = event.timestamp.weekday()
+    weekdays = {h.weekday() for h in hours}
+    if hist_count >= 40 and weekday_now not in weekdays:
+        return {"reason": "unusual_weekday", "weekday": weekday_now,
+                 "usual_weekdays": sorted(weekdays)}
+    return None
+
+
+def _handler_device_tampered(event, rule) -> dict | None:
+    """DEVICE_TAMPERED — équipement dont l'IP a changé, ou marqué en maintenance,
+    ou hors de son site attendu.
+    """
+    if not event.device_id:
+        return None
+    from devices.models import Device
+    try:
+        device = Device.objects.get(pk=event.device_id)
+    except Device.DoesNotExist:
+        return None
+    reasons = []
+    if device.status in ("maintenance", "lost"):
+        reasons.append(f"device_status={device.status}")
+    # Event émis alors que device.site_id != event.site_id → suspect
+    if device.site_id and event.site_id and device.site_id != event.site_id:
+        reasons.append(f"site_mismatch device={device.site_id} event={event.site_id}")
+    if reasons:
+        return {"device_id": device.pk, "serial": device.serial_number,
+                 "reasons": reasons}
+    return None
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Enregistrement des nouveaux handlers
+# ═══════════════════════════════════════════════════════════════════
+HANDLERS.update({
+    "BADGE_EXPIRED":       _handler_badge_expired,
+    "MULTI_SITE_CONFLICT": _handler_multi_site_conflict,
+    "REPEATED_ABSENCE":    _handler_repeated_absence,
+    "FREQUENT_LATE":       _handler_frequent_late,
+    "SUSPICIOUS_TERMINAL": _handler_suspicious_terminal,
+    "ABNORMAL_ACCESS":     _handler_abnormal_access,
+    "DEVICE_TAMPERED":     _handler_device_tampered,
+})

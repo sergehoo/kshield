@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -7,10 +7,11 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
+import { StatsRow } from "@/components/StatsRow";
 import { usersService } from "@/services";
 import { toApiError } from "@/lib/api";
 import { fmtDateTime, initials } from "@/lib/format";
-import { Plus, Search, User, Trash2, ShieldCheck } from "lucide-react";
+import { Plus, Search, User, Trash2, ShieldCheck, UserX, Users as UsersIcon } from "lucide-react";
 import toast from "react-hot-toast";
 
 export function UsersPage() {
@@ -21,11 +22,33 @@ export function UsersPage() {
   });
   const qc = useQueryClient();
 
+  const [statusFilter, setStatusFilter] = useState("");
+
   const { data, isLoading } = useQuery({
-    queryKey: ["users", q],
+    queryKey: ["users", q, statusFilter],
     queryFn: async () =>
-      (await usersService.list({ page_size: 200, search: q || undefined })).data,
+      (await usersService.list({
+        page_size: 200, search: q || undefined,
+        is_active: statusFilter === "active" ? true : statusFilter === "inactive" ? false : undefined,
+      })).data,
   });
+
+  const { data: allUsers } = useQuery({
+    queryKey: ["users", "all-stats"],
+    queryFn: async () => (await usersService.list({ page_size: 500 })).data,
+    staleTime: 30_000,
+  });
+
+  const stats = useMemo(() => {
+    const list = allUsers?.results || [];
+    return {
+      total: allUsers?.count || 0,
+      active: list.filter((u: any) => u.is_active).length,
+      superuser: list.filter((u: any) => u.is_superuser).length,
+      staff: list.filter((u: any) => u.is_staff && !u.is_superuser).length,
+      mfa: list.filter((u: any) => u.mfa_enabled).length,
+    };
+  }, [allUsers]);
 
   const createMut = useMutation({
     mutationFn: () => usersService.create(form),
@@ -122,14 +145,30 @@ export function UsersPage() {
         }
       />
 
+      <StatsRow stats={[
+        { label: "Total users",  value: stats.total,     icon: <UsersIcon className="w-4 h-4" />,   tone: "brand" },
+        { label: "Actifs",       value: stats.active,    icon: <User className="w-4 h-4" />,       tone: "ok",
+          onClick: () => setStatusFilter("active") },
+        { label: "Super admins", value: stats.superuser, icon: <ShieldCheck className="w-4 h-4" />, tone: "danger" },
+        { label: "Staff",        value: stats.staff,     icon: <ShieldCheck className="w-4 h-4" />, tone: "warn" },
+        { label: "MFA activé",   value: stats.mfa,       icon: <ShieldCheck className="w-4 h-4" />, tone: "info" },
+      ]} />
+
       <Card padded={false}>
-        <div className="p-4 border-b border-surface-border">
-          <Input
-            placeholder="Rechercher…"
-            leftIcon={<Search className="w-4 h-4" />}
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-          />
+        <div className="p-4 border-b border-surface-border flex flex-col sm:flex-row gap-2">
+          <div className="flex-1">
+            <Input
+              placeholder="Rechercher…"
+              leftIcon={<Search className="w-4 h-4" />}
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+            />
+          </div>
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="field sm:w-40">
+            <option value="">Tous</option>
+            <option value="active">Actifs</option>
+            <option value="inactive">Désactivés</option>
+          </select>
         </div>
         <DataTable
           columns={columns}
