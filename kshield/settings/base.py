@@ -221,6 +221,18 @@ CORS_ALLOWED_ORIGINS = config(
 )
 CORS_ALLOW_CREDENTIALS = True
 
+# ---------------------------------------------------------------------------
+# CSRF — trusted origins pour les mutations cross-origin (Django 4+)
+# ---------------------------------------------------------------------------
+# Depuis Django 4.0, toute mutation POST/PUT/PATCH/DELETE depuis un domaine
+# différent doit avoir son origine listée ici — sinon 403 "CSRF verification
+# failed". Par défaut, on hérite de CORS_ALLOWED_ORIGINS (auto-cohérence).
+CSRF_TRUSTED_ORIGINS = config(
+    "CSRF_TRUSTED_ORIGINS",
+    default=",".join(CORS_ALLOWED_ORIGINS),
+    cast=Csv(),
+)
+
 # Regex : autorise tout sous-domaine du domaine principal (ex. app.kaydanshield.com)
 # Utile pour le front React (app.*) et les sous-tenants (kaydan.*, riviera.*, ...).
 CORS_ALLOWED_ORIGIN_REGEXES = config(
