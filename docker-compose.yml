@@ -204,7 +204,7 @@ services:
       retries: 10
     labels:
       - traefik.enable=true
-      - traefik.docker.network=proxy
+      - traefik.docker.network=${PROXY_NETWORK:-dokploy-network}
 
       # API S3 (port 9000)
       - traefik.http.routers.kshield-minio.rule=Host(`minio.${BASE_DOMAIN:-kaydanshield.com}`)
@@ -270,7 +270,7 @@ services:
       start_period: 60s
     labels:
       - traefik.enable=true
-      - traefik.docker.network=proxy
+      - traefik.docker.network=${PROXY_NETWORK:-dokploy-network}
 
       # Routing par path : Django reçoit uniquement l'API + WS + admin + assets
       # techniques ; tout le reste (SPA React) tombe sur shieldfront (règle
@@ -318,14 +318,13 @@ services:
     hostname: shieldfront
     restart: unless-stopped
     networks: [kshield_network, proxy]
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost/ >/dev/null || exit 1"]
-      interval: 30s
-      timeout: 5s
-      retries: 5
+    # NB : le healthcheck vient du Dockerfile (netstat sur port 80).
+    # Pas d'override ici — sinon on écraserait le fix ultra-robuste.
     labels:
       - traefik.enable=true
-      - traefik.docker.network=proxy
+      # IMPORTANT : nom RÉEL du network, pas l'alias local du compose.
+      # Sur Dokploy c'est ``dokploy-network`` par défaut ; override via PROXY_NETWORK.
+      - traefik.docker.network=${PROXY_NETWORK:-dokploy-network}
       # Catch-all du domaine : tout ce que shieldweb ne prend pas atterrit ici
       - traefik.http.routers.kshield-front.rule=Host(`${BASE_DOMAIN:-kaydanshield.com}`)
       - traefik.http.routers.kshield-front.entrypoints=websecure
@@ -367,7 +366,7 @@ services:
       start_period: 60s
     labels:
       - traefik.enable=true
-      - traefik.docker.network=proxy
+      - traefik.docker.network=${PROXY_NETWORK:-dokploy-network}
 
       - traefik.http.routers.kshield-ws.rule=Host(`ws.${BASE_DOMAIN:-kaydanshield.com}`)
       - traefik.http.routers.kshield-ws.entrypoints=websecure
@@ -451,7 +450,7 @@ services:
     networks: [kshield_network, proxy]
     labels:
       - traefik.enable=true
-      - traefik.docker.network=proxy
+      - traefik.docker.network=${PROXY_NETWORK:-dokploy-network}
 
       - traefik.http.routers.kshield-adminer.rule=Host(`adminer.${BASE_DOMAIN:-kaydanshield.com}`)
       - traefik.http.routers.kshield-adminer.entrypoints=websecure
