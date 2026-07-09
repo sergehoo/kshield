@@ -27,7 +27,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Badge } from "@/components/ui/Badge";
 import { StatsRow } from "@/components/StatsRow";
 import {
-  edgeGatewayService, sitesService, Gateway, GatewayPackage,
+  edgeGatewayService, Gateway, GatewayPackage,
 } from "@/services/enrollment";
 import { sitesService as sitesApi } from "@/services";
 import { useDeviceStatusChannel } from "@/hooks/useDeviceStatusChannel";

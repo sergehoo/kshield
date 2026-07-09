@@ -89,8 +89,11 @@ export function MarketplacePage() {
                 <div className="text-sm font-semibold text-ink truncate">{p.name}</div>
                 <code className="text-xs text-ink-soft font-mono">{p.vendor}</code>
               </div>
-              {p.verified && <ShieldCheck className="w-4 h-4 text-brand-500"
-                                            title="Plugin vérifié Kaydan" />}
+              {p.verified && (
+                <span title="Plugin vérifié Kaydan">
+                  <ShieldCheck className="w-4 h-4 text-brand-500" />
+                </span>
+              )}
             </div>
 
             <div className="text-xs text-ink-muted mb-2 flex-1">

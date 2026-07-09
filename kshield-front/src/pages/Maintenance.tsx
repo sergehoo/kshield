@@ -79,8 +79,9 @@ export function MaintenancePage() {
   }, [data]);
 
   const updateStatusMut = useMutation({
-    mutationFn: ({ id, status }: { id: string; status: string }) =>
-      maintenanceService.update(id, { status }),
+    mutationFn: ({ id, status }: {
+      id: string; status: "open" | "in_progress" | "resolved" | "cancelled";
+    }) => maintenanceService.update(id, { status }),
     onSuccess: () => {
       toast.success("Ticket mis à jour");
       qc.invalidateQueries({ queryKey: ["maintenance-tickets"] });

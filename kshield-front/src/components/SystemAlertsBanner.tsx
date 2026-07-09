@@ -24,6 +24,7 @@ import { fmtRelative } from "@/lib/format";
 
 const TYPE_ICONS: Record<SystemAlert["type"], any> = {
   agent_offline:   <Server className="w-3.5 h-3.5" />,
+  agent_stale:     <Server className="w-3.5 h-3.5" />,
   device_offline:  <Cpu className="w-3.5 h-3.5" />,
   session_stalled: <Radar className="w-3.5 h-3.5" />,
   command_timeout: <Terminal className="w-3.5 h-3.5" />,

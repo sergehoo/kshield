@@ -403,7 +403,7 @@ export const edgeGatewayService = {
     api.post(`/api/v1/devices/edge-gateway/${id}/force-sync/`),
   scanNetwork: (id: string, protocols?: string[]) =>
     api.post(`/api/v1/devices/edge-gateway/${id}/scan-network/`, { protocols }),
-  update: (id: string, packageId: number) =>
+  triggerUpdate: (id: string, packageId: number) =>
     api.post(`/api/v1/devices/edge-gateway/${id}/update/`, { package_id: packageId }),
 
   // Supervision
