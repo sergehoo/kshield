@@ -161,12 +161,10 @@ services:
       # Discovery statique — passer à "dns" pour un vrai cluster K8s/DNS
       EMQX_CLUSTER__DISCOVERY_STRATEGY: "static"
       EMQX_CLUSTER__STATIC__SEEDS: '["emqx@shieldmqtt"]'
-      # Prometheus scrape endpoint (accessible sur :18083/api/v5/prometheus/stats).
-      # NB : EMQX 5 tente aussi un push vers un Pushgateway par défaut sur
-      # 127.0.0.1:9091 — on désactive explicitement pour ne pas polluer les logs
-      # (Prometheus doit scraper l'endpoint, pas recevoir un push).
-      EMQX_PROMETHEUS__ENABLE: "true"
-      EMQX_PROMETHEUS__PUSH_GATEWAY_SERVER: ""
+      # Prometheus DÉSACTIVÉ — l'endpoint sera activable plus tard via le
+      # Dashboard EMQX (:18083 → Monitoring → Integration) sans variable env.
+      # NB : `EMQX_PROMETHEUS__ENABLE: false` évite tout le legacy schema.
+      EMQX_PROMETHEUS__ENABLE: "false"
     volumes:
       - kshield_mqtt_data:/opt/emqx/data
       - kshield_mqtt_log:/opt/emqx/log
