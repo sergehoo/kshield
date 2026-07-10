@@ -217,13 +217,12 @@ services:
       # - traefik.http.routers.kshield-emqx.middlewares=kshield-emqx-ipwl,kshield-emqx-rl
       - traefik.http.routers.kshield-emqx.middlewares=kshield-emqx-rl
     healthcheck:
-      # EMQX 5.x : /status n'existe plus (404). L'endpoint officiel est
-      # `emqx ctl status` — inclus dans l'image, réponse ~1-2s.
-      # Filet TCP en fallback : si le port MQTT 1883 accepte une connexion,
-      # le broker est up même si `ctl` est lent.
-      test:
-        - "CMD-SHELL"
-        - "emqx ctl status 2>/dev/null | grep -q 'is started' || (exec 3<>/dev/tcp/127.0.0.1/1883 && exit 0) || exit 1"
+      # EMQX 5.x : /status HTTP n'existe plus (404).
+      # L'image EMQX utilise dash (/bin/sh) — /dev/tcp est une extension bash
+      # non dispo → on ne peut pas faire de test TCP en shell portable.
+      # La commande officielle recommandée par la doc EMQX est `emqx ctl status`
+      # qui retourne exit 0 quand le node est up, != 0 sinon.
+      test: ["CMD", "emqx", "ctl", "status"]
       interval: 30s
       timeout: 15s
       start_period: 60s
