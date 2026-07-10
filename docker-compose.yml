@@ -165,6 +165,15 @@ services:
       # Dashboard EMQX (:18083 → Monitoring → Integration) sans variable env.
       # NB : `EMQX_PROMETHEUS__ENABLE: false` évite tout le legacy schema.
       EMQX_PROMETHEUS__ENABLE: "false"
+      # ─── SysMon : relève les seuils par défaut (70% → 90%) ────────────
+      # Sur VPS multi-containers, la RAM système dépasse fréquemment 70%
+      # → spam de warnings "high_system_memory_usage" toutes les minutes.
+      # On monte à 90% (RAM system) et 25% (mem d'un process EMQX unique).
+      EMQX_SYSMON__OS__SYSMEM_HIGH_WATERMARK: "90%"
+      EMQX_SYSMON__OS__PROCMEM_HIGH_WATERMARK: "25%"
+      EMQX_SYSMON__OS__MEM_CHECK_INTERVAL: "60s"
+      # Désactive les warnings top-N process (bruit inutile en mono-node).
+      EMQX_SYSMON__TOP__NUM_ITEMS: "0"
     volumes:
       - kshield_mqtt_data:/opt/emqx/data
       - kshield_mqtt_log:/opt/emqx/log
@@ -176,12 +185,16 @@ services:
       - "18083:18083"   # Dashboard EMQX
     networks: [kshield_network]
     healthcheck:
-      # emqx_ctl status peut mettre >5s sous charge → unhealthy à tort.
-      # On teste plutôt le dashboard HTTP qui répond en <100ms.
-      test: ["CMD-SHELL", "curl -f -s http://localhost:18083/status || exit 1"]
+      # EMQX 5.x : /status n'existe plus (404). L'endpoint officiel est
+      # `emqx ctl status` — inclus dans l'image, réponse ~1-2s.
+      # Filet TCP en fallback : si le port MQTT 1883 accepte une connexion,
+      # le broker est up même si `ctl` est lent.
+      test:
+        - "CMD-SHELL"
+        - "emqx ctl status 2>/dev/null | grep -q 'is started' || (exec 3<>/dev/tcp/127.0.0.1/1883 && exit 0) || exit 1"
       interval: 30s
-      timeout: 10s
-      start_period: 30s
+      timeout: 15s
+      start_period: 60s
       retries: 5
     logging: *logging_rotated
 
