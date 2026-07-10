@@ -13,6 +13,7 @@
 package tray
 
 import (
+	_ "embed"
 	"fmt"
 	"os"
 	"os/exec"
@@ -241,34 +242,19 @@ func restartService() {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// Icons embarqués — PNG 32x32 avec couleur selon état
+// Icons embarqués — PNG 32x32 avec cercle plein coloré par état
 // ═══════════════════════════════════════════════════════════════════
-// Ces bytes sont des PNGs minimaux — 32x32 circle avec la couleur.
-// En Phase 3.2 on remplacera par les vrais logos Kaydan Shield.
-//
-// Génération temporaire via https://png-pixel.com ou ImageMagick :
-//   convert -size 32x32 xc:'#22c55e' green.png     (connected)
-//   convert -size 32x32 xc:'#f59e0b' orange.png    (degraded)
-//   convert -size 32x32 xc:'#ef4444' red.png       (disconnected)
-//   convert -size 32x32 xc:'#9ca3af' gray.png      (unknown)
-//
-// Placeholder : PNG 1x1 gris. À remplacer par vrais assets avant Phase 3 final.
-var (
-	// PNG 1x1 gris pour éviter que le tray ne montre rien.
-	// Un vrai package doit embed des icônes 16x16 + 32x32 par couleur.
-	pngPlaceholder = []byte{
-		0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
-		0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
-		0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
-		0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53,
-		0xde, 0x00, 0x00, 0x00, 0x0c, 0x49, 0x44, 0x41,
-		0x54, 0x08, 0xd7, 0x63, 0x60, 0x00, 0x00, 0x00,
-		0x02, 0x00, 0x01, 0xe5, 0x27, 0xde, 0xfc, 0x00,
-		0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae,
-		0x42, 0x60, 0x82,
-	}
-	iconConnected    = pngPlaceholder // TODO Phase 3.2 : vraie icône verte
-	iconDegraded     = pngPlaceholder // TODO Phase 3.2 : vraie icône orange
-	iconDisconnected = pngPlaceholder // TODO Phase 3.2 : vraie icône rouge
-	iconUnknown      = pngPlaceholder // TODO Phase 3.2 : vraie icône grise
-)
+// Assets générés dans internal/tray/icons/ (~220 bytes chacun).
+// Compilés dans le binaire final via go:embed → 0 fichier externe.
+
+//go:embed icons/connected.png
+var iconConnected []byte
+
+//go:embed icons/degraded.png
+var iconDegraded []byte
+
+//go:embed icons/disconnected.png
+var iconDisconnected []byte
+
+//go:embed icons/unknown.png
+var iconUnknown []byte
