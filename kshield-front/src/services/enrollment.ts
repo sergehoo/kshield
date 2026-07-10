@@ -411,6 +411,19 @@ export const edgeGatewayService = {
     api.get<{ count: number; logs: any[] }>(`/api/v1/devices/edge-gateway/${id}/logs/`),
   devices: (id: string) =>
     api.get<{ count: number; devices: any[] }>(`/api/v1/devices/edge-gateway/${id}/devices/`),
+
+  // Download personnalisé — Phase 1 : génère un ZIP avec config injectée.
+  // Utilisation : ouvre un nouvel onglet ou déclenche le browser pour DL.
+  //   window.open(edgeGatewayService.downloadPackageUrl(id, "windows_exe"));
+  // ou fetch + blob si on veut afficher un spinner :
+  //   const r = await api.get(edgeGatewayService.downloadPackageUrl(...), { responseType: "blob" });
+  downloadPackageUrl: (id: string, platform: string) =>
+    `/api/v1/devices/edge-gateway/${id}/download/?platform=${encodeURIComponent(platform)}`,
+  downloadPackageBlob: (id: string, platform: string) =>
+    api.get(`/api/v1/devices/edge-gateway/${id}/download/`, {
+      params: { platform },
+      responseType: "blob",
+    }),
 };
 
 export const marketplaceService = {

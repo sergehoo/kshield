@@ -26,6 +26,7 @@ import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { Badge } from "@/components/ui/Badge";
 import { StatsRow } from "@/components/StatsRow";
+import { DownloadPackageModal } from "@/components/DownloadPackageModal";
 import {
   edgeGatewayService, Gateway, GatewayPackage,
 } from "@/services/enrollment";
@@ -453,6 +454,7 @@ function GatewayDetailModal({ gateway, onClose }: {
   gateway: Gateway; onClose: () => void;
 }) {
   const qc = useQueryClient();
+  const [downloadModalOpen, setDownloadModalOpen] = useState(false);
 
   const { data: full } = useQuery({
     queryKey: ["edge-gateway", gateway.id],
@@ -499,6 +501,12 @@ function GatewayDetailModal({ gateway, onClose }: {
 
         {/* Actions */}
         <div className="flex flex-wrap gap-2">
+          {/* Bouton principal : télécharger le package personnalisé */}
+          <Button size="sm"
+                  leftIcon={<Download className="w-3.5 h-3.5" />}
+                  onClick={() => setDownloadModalOpen(true)}>
+            Télécharger installateur
+          </Button>
           <Button size="sm" variant="secondary"
                   leftIcon={<RefreshCw className="w-3.5 h-3.5" />}
                   onClick={() => call(() => edgeGatewayService.forceSync(g.id),
@@ -587,6 +595,14 @@ function GatewayDetailModal({ gateway, onClose }: {
           </div>
         )}
       </div>
+
+      {/* Modale de téléchargement du package personnalisé */}
+      <DownloadPackageModal
+        open={downloadModalOpen}
+        onClose={() => setDownloadModalOpen(false)}
+        gatewayId={g.id}
+        gatewayLabel={g.label}
+      />
     </Modal>
   );
 }

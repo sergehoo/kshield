@@ -611,6 +611,92 @@ class GatewayDevicesView(APIView):
 
 
 # ═══════════════════════════════════════════════════════════════════
+# Download dynamique — package personnalisé par gateway (Phase 1)
+# ═══════════════════════════════════════════════════════════════════
+class GatewayDownloadPackageView(APIView):
+    """GET /api/v1/devices/edge-gateway/<gid>/download/?platform=<xxx>
+
+    Génère à la volée un ZIP d'installation contenant :
+      - config/kshield-agent.toml    : gateway_id + activation_token injectés
+      - install-edge.sh / .ps1        : script installation OS-spécifique
+      - docker-compose.yml            : uniquement pour platform=docker
+      - README.txt                    : instructions plateforme
+      - VERSION.json                  : manifest pour auto-update
+
+    Chaque download regénère l'activation_token (sauf gateway déjà activée)
+    afin d'éviter la réutilisation d'un token téléchargé par un tiers.
+
+    Auth : IsAuthenticated + doit appartenir au tenant de la gateway.
+    """
+    permission_classes = [IsAuthenticated]
+
+    # Plateformes supportées côté endpoint (whitelist stricte)
+    ALLOWED_PLATFORMS = {
+        "linux_deb", "linux_rpm", "linux_sh", "macos_pkg",
+        "windows_exe", "windows_portable", "docker",
+        "raspberry_pi", "mini_pc",
+    }
+
+    def get(self, request, gid):
+        # 1. Validation platform
+        platform = request.query_params.get("platform", "").strip()
+        if platform not in self.ALLOWED_PLATFORMS:
+            return Response(
+                {"error": "Platform invalide",
+                 "allowed": sorted(self.ALLOWED_PLATFORMS)},
+                status=400,
+            )
+
+        # 2. Récupère la gateway (scope tenant strict)
+        tenant = _resolve_tenant(request.user)
+        if tenant is None:
+            return Response({"error": "Aucun tenant disponible"}, status=403)
+
+        try:
+            agent = LocalAgent.objects.get(pk=gid, tenant=tenant)
+        except LocalAgent.DoesNotExist:
+            return Response({"error": "Gateway introuvable"}, status=404)
+
+        # 3. Refuse le download si gateway révoquée
+        if agent.revoked_at is not None:
+            return Response(
+                {"error": "Gateway révoquée — réactivez-la avant téléchargement"},
+                status=403,
+            )
+
+        # 4. Génération du package
+        try:
+            from .services.package_generator import PackageGenerator
+            gen = PackageGenerator(agent, platform)
+            pkg = gen.generate()
+        except Exception as exc:
+            logger.exception("PackageGenerator failed for gateway %s", gid)
+            return Response(
+                {"error": "Erreur génération package", "detail": str(exc)},
+                status=500,
+            )
+
+        # 5. Log l'accès
+        logger.info(
+            "Gateway package downloaded: gateway=%s platform=%s user=%s size=%d",
+            gid, platform, request.user.pk, pkg.size_bytes,
+        )
+
+        # 6. Streaming HTTP response
+        response = HttpResponse(pkg.content, content_type="application/zip")
+        response["Content-Disposition"] = (
+            f'attachment; filename="{pkg.filename}"'
+        )
+        response["Content-Length"] = pkg.size_bytes
+        response["X-Kshield-Checksum-Sha256"] = pkg.checksum_sha256
+        response["X-Kshield-Gateway-Id"] = str(agent.id)
+        response["X-Kshield-Platform"] = platform
+        # Cache-Control : pas de cache car token change à chaque call
+        response["Cache-Control"] = "no-store, no-cache, must-revalidate"
+        return response
+
+
+# ═══════════════════════════════════════════════════════════════════
 # Registration au premier boot (l'agent contacte le serveur)
 # ═══════════════════════════════════════════════════════════════════
 class GatewayActivateView(APIView):

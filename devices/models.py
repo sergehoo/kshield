@@ -811,13 +811,22 @@ class EdgeGatewayPackage(TimeStampedModel):
     Le fichier est stocké dans MEDIA_ROOT/gateway_packages/.
     """
     PLATFORM_CHOICES = [
-        ("windows",       "Windows"),
-        ("linux_deb",     "Linux (.deb)"),
-        ("linux_rpm",     "Linux (.rpm)"),
-        ("linux_sh",      "Linux (script)"),
-        ("docker",        "Docker"),
-        ("raspberry_pi",  "Raspberry Pi"),
-        ("mini_pc",       "Mini PC industriel"),
+        # Windows
+        ("windows_exe",       "Windows (Installateur .exe)"),
+        ("windows_portable",  "Windows (Portable ZIP)"),
+        # Linux
+        ("linux_deb",         "Linux (.deb)"),
+        ("linux_rpm",         "Linux (.rpm)"),
+        ("linux_sh",          "Linux (script universel)"),
+        # macOS
+        ("macos_pkg",         "macOS (.pkg)"),
+        # Container
+        ("docker",            "Docker Compose"),
+        # Embedded / IoT
+        ("raspberry_pi",      "Raspberry Pi"),
+        ("mini_pc",           "Mini PC industriel"),
+        # Legacy fallback (rétrocompat : ancien "windows" tout court)
+        ("windows",           "Windows (legacy)"),
     ]
 
     name = models.CharField(max_length=120,

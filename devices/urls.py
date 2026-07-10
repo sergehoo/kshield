@@ -8,6 +8,7 @@ from .views_edge_gateway import (
     GatewayRestartView, GatewayForceSyncView, GatewayScanNetworkView,
     GatewayUpdateView, GatewayLogsView, GatewayDevicesView,
     GatewayActivateView, GatewayHeartbeatView, GatewayPairingQrView,
+    GatewayDownloadPackageView,
 )
 from .views_enrollment import (
     EnrollmentStartView, EnrollmentStopView, EnrollmentConfirmView,
@@ -172,6 +173,8 @@ urlpatterns = [
     path("edge-gateway/<uuid:gid>/update/",                     GatewayUpdateView.as_view(),         name="edge-gateway-update"),
     path("edge-gateway/<uuid:gid>/logs/",                       GatewayLogsView.as_view(),           name="edge-gateway-logs"),
     path("edge-gateway/<uuid:gid>/devices/",                    GatewayDevicesView.as_view(),        name="edge-gateway-devices"),
+    # Download dynamique — génère un ZIP personnalisé par gateway/plateforme
+    path("edge-gateway/<uuid:gid>/download/",                   GatewayDownloadPackageView.as_view(), name="edge-gateway-download"),
 
     # ═══ Agent local — Admin (provisioning + gestion) ═══
     path("local-agents/",                            LocalAgentListView.as_view(),        name="local-agent-list"),
