@@ -144,6 +144,73 @@ services:
   # et définir EMQX_CLUSTER__DISCOVERY_STRATEGY=static.
   # ===========================================================================
   shieldmqtt:
+  image: emqx/emqx:5.4
+  container_name: kshield_mqtt
+  hostname: shieldmqtt
+  restart: unless-stopped
+
+  environment:
+    TZ: Africa/Abidjan
+
+    EMQX_NODE__NAME: emqx@shieldmqtt
+    EMQX_NODE__COOKIE: ${EMQX_NODE_COOKIE:-kshield_emqx_cookie_change_me}
+
+    EMQX_DASHBOARD__DEFAULT_USERNAME: ${EMQX_DASHBOARD_USER:-admin}
+    EMQX_DASHBOARD__DEFAULT_PASSWORD: ${EMQX_DASHBOARD_PASSWORD:-public}
+
+    EMQX_ALLOW_ANONYMOUS: "true"
+
+    EMQX_CLUSTER__DISCOVERY_STRATEGY: "static"
+    EMQX_CLUSTER__STATIC__SEEDS: '["emqx@shieldmqtt"]'
+
+    EMQX_PROMETHEUS__ENABLE: "false"
+
+    EMQX_SYSMON__OS__SYSMEM_HIGH_WATERMARK: "90%"
+    EMQX_SYSMON__OS__PROCMEM_HIGH_WATERMARK: "25%"
+    EMQX_SYSMON__OS__MEM_CHECK_INTERVAL: "60s"
+    EMQX_SYSMON__TOP__NUM_ITEMS: "0"
+
+  volumes:
+    - kshield_mqtt_data:/opt/emqx/data
+    - kshield_mqtt_log:/opt/emqx/log
+
+  ports:
+    - "1883:1883"
+    - "8883:8883"
+    - "8083:8083"
+    - "8084:8084"
+
+  networks:
+    - kshield_network
+    - dokploy-network
+
+  labels:
+    - traefik.enable=true
+    - traefik.docker.network=${PROXY_NETWORK:-dokploy-network}
+
+    - traefik.http.routers.kshield-emqx.rule=Host(`mqtt.${BASE_DOMAIN:-kaydanshield.com}`)
+    - traefik.http.routers.kshield-emqx.entrypoints=websecure
+    - traefik.http.routers.kshield-emqx.tls=true
+    - traefik.http.routers.kshield-emqx.tls.certresolver=${CERT_RESOLVER:-letsencrypt}
+    - traefik.http.routers.kshield-emqx.service=kshield-emqx-svc
+
+    - traefik.http.services.kshield-emqx-svc.loadbalancer.server.port=18083
+    - traefik.http.services.kshield-emqx-svc.loadbalancer.server.scheme=http
+    - traefik.http.services.kshield-emqx-svc.loadbalancer.passhostheader=true
+    - traefik.http.services.kshield-emqx-svc.loadbalancer.responseforwarding.flushinterval=100ms
+
+    - traefik.http.middlewares.kshield-emqx-rl.ratelimit.average=30
+    - traefik.http.middlewares.kshield-emqx-rl.ratelimit.burst=60
+    - traefik.http.routers.kshield-emqx.middlewares=kshield-emqx-rl
+
+  healthcheck:
+    test: ["CMD", "/opt/emqx/bin/emqx_ctl", "status"]
+    interval: 30s
+    timeout: 15s
+    start_period: 60s
+    retries: 5
+
+  logging: *logging_rotated
     image: emqx/emqx:5.4
     container_name: kshield_mqtt
     hostname: shieldmqtt
@@ -302,7 +369,6 @@ services:
       retries: 5
     logging: *logging_rotated
 
-  
 
   # ===========================================================================
   # MinIO (S3 compatible) — exposé via Traefik (API + console)
