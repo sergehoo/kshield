@@ -1,0 +1,25 @@
+#!/bin/sh
+# ═══════════════════════════════════════════════════════════════════
+# Kaydan Edge Gateway — Pre-remove script (Debian/Ubuntu .deb)
+# ═══════════════════════════════════════════════════════════════════
+
+set -e
+
+case "$1" in
+    remove|deconfigure)
+        if [ -x "/bin/systemctl" ] || [ -x "/usr/bin/systemctl" ]; then
+            systemctl stop kshield-edge.service    >/dev/null 2>&1 || true
+            systemctl disable kshield-edge.service >/dev/null 2>&1 || true
+        fi
+        ;;
+    upgrade|failed-upgrade)
+        # Ne pas stopper le service sur un simple upgrade — systemd
+        # relancera automatiquement le binaire remplacé.
+        ;;
+    *)
+        echo "prerm called with unknown argument: $1" >&2
+        exit 1
+        ;;
+esac
+
+exit 0

@@ -1,0 +1,75 @@
+#!/bin/sh
+# ═══════════════════════════════════════════════════════════════════
+# Kaydan Edge Gateway — Post-install script (Debian/Ubuntu .deb)
+# ═══════════════════════════════════════════════════════════════════
+#
+# Actions :
+#   1. Crée l'utilisateur système kshield-edge (uid dédié)
+#   2. Crée les dossiers /etc/kshield-edge/, /var/lib/kshield-edge/, /var/log/kshield-edge/
+#   3. Fixe les permissions
+#   4. Enable + start le service systemd
+# ═══════════════════════════════════════════════════════════════════
+
+set -e
+
+USER="kshield-edge"
+GROUP="kshield-edge"
+CONFIG_DIR="/etc/kshield-edge"
+DATA_DIR="/var/lib/kshield-edge"
+LOG_DIR="/var/log/kshield-edge"
+
+case "$1" in
+    configure)
+        # ─── 1. Créer user système si absent ─────────────────────
+        if ! getent passwd "$USER" >/dev/null; then
+            adduser --system --group --no-create-home \
+                --home /nonexistent \
+                --shell /usr/sbin/nologin \
+                --gecos "Kaydan Edge Gateway service user" \
+                "$USER"
+            echo "  ✓ User $USER créé"
+        fi
+
+        # ─── 2. Créer les dossiers ───────────────────────────────
+        install -d -m 0755 -o "$USER" -g "$GROUP" "$CONFIG_DIR"
+        install -d -m 0750 -o "$USER" -g "$GROUP" "$DATA_DIR"
+        install -d -m 0755 -o "$USER" -g "$GROUP" "$LOG_DIR"
+
+        # ─── 3. Fixe permissions config si existe déjà ───────────
+        if [ -f "$CONFIG_DIR/kshield-agent.toml" ]; then
+            chown "$USER:$GROUP" "$CONFIG_DIR/kshield-agent.toml"
+            chmod 0640 "$CONFIG_DIR/kshield-agent.toml"
+        fi
+
+        # ─── 4. Systemd : reload + enable + start ────────────────
+        if [ -x "/bin/systemctl" ] || [ -x "/usr/bin/systemctl" ]; then
+            systemctl daemon-reload || true
+            systemctl enable kshield-edge.service >/dev/null 2>&1 || true
+
+            # Ne pas démarrer si la config n'est pas là (l'admin doit
+            # d'abord copier la config générée depuis Kaydan Shield).
+            if [ -f "$CONFIG_DIR/kshield-agent.toml" ]; then
+                systemctl start kshield-edge.service || true
+                echo "  ✓ Service kshield-edge démarré"
+            else
+                echo ""
+                echo "  ⚠ Config manquante : $CONFIG_DIR/kshield-agent.toml"
+                echo ""
+                echo "  Prochaine étape :"
+                echo "    1. Télécharger le ZIP depuis Kaydan Shield → Edge Gateway"
+                echo "    2. Copier config/kshield-agent.toml vers $CONFIG_DIR/"
+                echo "    3. Activer : sudo kshield-agent activate"
+                echo "    4. Démarrer : sudo systemctl start kshield-edge"
+                echo ""
+            fi
+        fi
+        ;;
+    abort-upgrade|abort-remove|abort-deconfigure)
+        ;;
+    *)
+        echo "postinst called with unknown argument: $1" >&2
+        exit 1
+        ;;
+esac
+
+exit 0

@@ -90,12 +90,23 @@ package-deb: build
 	@echo "→ Building .deb package..."
 	@mkdir -p dist/deb/DEBIAN
 	@mkdir -p dist/deb/usr/bin
-	@mkdir -p dist/deb/etc/systemd/system
+	@mkdir -p dist/deb/lib/systemd/system
+
+	# Binaire
 	@cp dist/$(BINARY) dist/deb/usr/bin/
-	@cp build/linux/kshield-edge.service dist/deb/etc/systemd/system/
+
+	# Systemd unit
+	@cp build/linux/kshield-edge.service dist/deb/lib/systemd/system/
+
+	# DEBIAN control + scripts hooks
 	@cp build/linux/DEBIAN-control dist/deb/DEBIAN/control
 	@sed -i "s/__VERSION__/$(VERSION)/" dist/deb/DEBIAN/control 2>/dev/null || \
 	 sed -i "" "s/__VERSION__/$(VERSION)/" dist/deb/DEBIAN/control
+	@cp build/linux/postinst dist/deb/DEBIAN/postinst
+	@cp build/linux/prerm    dist/deb/DEBIAN/prerm
+	@cp build/linux/postrm   dist/deb/DEBIAN/postrm
+	@chmod 0755 dist/deb/DEBIAN/postinst dist/deb/DEBIAN/prerm dist/deb/DEBIAN/postrm
+
 	@dpkg-deb --build dist/deb dist/kshield-edge_$(VERSION)_amd64.deb
 	@rm -rf dist/deb
 	@echo "✓ dist/kshield-edge_$(VERSION)_amd64.deb"

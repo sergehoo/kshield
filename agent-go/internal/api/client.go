@@ -241,6 +241,45 @@ func (c *Client) PushEvents(ctx context.Context, batch EventBatch) error {
 }
 
 // ─────────────────────────────────────────────────────────────────
+// Action result push (fire-and-forget)
+// ─────────────────────────────────────────────────────────────────
+type ActionResultPayload struct {
+	ActionID   string                 `json:"action_id"`
+	Success    bool                   `json:"success"`
+	Error      string                 `json:"error,omitempty"`
+	Output     map[string]interface{} `json:"output,omitempty"`
+	FinishedAt string                 `json:"finished_at"`
+}
+
+// PushActionResult envoie le résultat d'une action exécutée au cloud.
+// Utilisé par le dispatcher via callback OnResult.
+func (c *Client) PushActionResult(ctx context.Context, res ActionResultPayload) error {
+	url := c.baseURL + "/api/v1/devices/edge-gateway/action-result/"
+	body, _ := json.Marshal(res)
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	c.setAuthHeaders(httpReq, body)
+
+	resp, err := c.http.Do(httpReq)
+	if err != nil {
+		return fmt.Errorf("HTTP action-result: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusUnauthorized {
+		return ErrRevoked
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("action-result failed (HTTP %d): %s",
+			resp.StatusCode, string(respBody))
+	}
+	return nil
+}
+
+// ─────────────────────────────────────────────────────────────────
 // Auto-update check
 // ─────────────────────────────────────────────────────────────────
 

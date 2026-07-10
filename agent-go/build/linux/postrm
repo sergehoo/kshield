@@ -1,0 +1,27 @@
+#!/bin/sh
+# ═══════════════════════════════════════════════════════════════════
+# Kaydan Edge Gateway — Post-remove script (Debian/Ubuntu .deb)
+# ═══════════════════════════════════════════════════════════════════
+
+set -e
+
+case "$1" in
+    purge)
+        # Purge complète : suppression user + dossiers config + data
+        if getent passwd kshield-edge >/dev/null; then
+            deluser --system kshield-edge >/dev/null 2>&1 || true
+        fi
+        rm -rf /etc/kshield-edge /var/lib/kshield-edge /var/log/kshield-edge
+        echo "  ✓ Kaydan Edge Gateway purgé complètement"
+        ;;
+    remove|upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)
+        # remove garde la config pour permettre une réinstall + retrouver
+        # les credentials. Utiliser `apt purge` pour tout supprimer.
+        ;;
+    *)
+        echo "postrm called with unknown argument: $1" >&2
+        exit 1
+        ;;
+esac
+
+exit 0
