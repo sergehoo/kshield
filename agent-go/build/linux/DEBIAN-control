@@ -1,0 +1,18 @@
+Package: kshield-edge
+Version: __VERSION__
+Section: net
+Priority: optional
+Architecture: amd64
+Maintainer: Kaydan Groupe <support@kaydangroupe.com>
+Homepage: https://kaydanshield.com
+Depends: systemd
+Description: Kaydan Edge Gateway - Passerelle temps réel Kaydan Shield
+ Passerelle enterprise pour connecter automatiquement un site client
+ à la plateforme Kaydan Shield.
+ .
+ Fonctionnalités :
+  * Découverte automatique des équipements RFID, biométrie, caméras
+  * Communication MQTT + WebSocket + HTTPS avec le Cloud
+  * File d'attente offline avec retransmission automatique
+  * Auto-update avec signature vérifiée
+  * Service systemd autonome

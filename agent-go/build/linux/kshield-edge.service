@@ -1,0 +1,48 @@
+[Unit]
+Description=Kaydan Edge Gateway — Passerelle Kaydan Shield
+Documentation=https://kaydanshield.com/docs/edge-gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=kshield-edge
+Group=kshield-edge
+
+# Config par défaut — surchargeable via /etc/default/kshield-edge
+EnvironmentFile=-/etc/default/kshield-edge
+Environment=KSHIELD_CONFIG_FILE=/etc/kshield-edge/kshield-agent.toml
+
+ExecStart=/usr/bin/kshield-agent run
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+
+# Hardening — restreint ce que le process peut faire
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+PrivateTmp=true
+PrivateDevices=false                 # Le scanner réseau a besoin de /dev/net/tun
+ReadWritePaths=/var/lib/kshield-edge /var/log/kshield-edge /etc/kshield-edge
+
+# Réseau — nécessaire pour scan LAN + accès Cloud
+IPAddressAllow=any
+CapabilityBoundingSet=CAP_NET_RAW CAP_NET_ADMIN CAP_NET_BIND_SERVICE
+AmbientCapabilities=CAP_NET_RAW CAP_NET_ADMIN
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=kshield-edge
+
+# Limites ressources
+LimitNOFILE=65536
+MemoryMax=512M
+CPUQuota=200%
+
+[Install]
+WantedBy=multi-user.target
