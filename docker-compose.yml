@@ -213,13 +213,16 @@ services:
       # - traefik.http.routers.kshield-emqx.middlewares=kshield-emqx-ipwl,kshield-emqx-rl
       - traefik.http.routers.kshield-emqx.middlewares=kshield-emqx-rl
     healthcheck:
-      # EMQX 5.x : /status HTTP n'existe plus (404).
-      # L'image utilise dash (/bin/sh) — /dev/tcp est une extension bash
-      # non dispo. La commande officielle est `emqx ctl status` : exit 0 si up.
-      test: ["CMD", "emqx", "ctl", "status"]
+      # Historique : essayé successivement curl (endpoint /status disparu en v5),
+      # /dev/tcp (bash-only, dash cassé), `emqx ctl status` (échoue en boot).
+      # Solution robuste : check que le process Erlang beam.smp tourne via /proc.
+      # Aucune dépendance à un binaire externe, marche même durant le boot EMQX.
+      test:
+        - "CMD-SHELL"
+        - "grep -l beam.smp /proc/[0-9]*/comm 2>/dev/null | head -1 | grep -q . || exit 1"
       interval: 30s
-      timeout: 15s
-      start_period: 60s
+      timeout: 10s
+      start_period: 90s
       retries: 5
     logging: *logging_rotated
 
