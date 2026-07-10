@@ -17,7 +17,9 @@ import (
 	"github.com/sergehoo/kshield/agent-go/internal/actions"
 	"github.com/sergehoo/kshield/agent-go/internal/api"
 	"github.com/sergehoo/kshield/agent-go/internal/config"
+	"github.com/sergehoo/kshield/agent-go/internal/metrics"
 	"github.com/sergehoo/kshield/agent-go/internal/mqtt"
+	"github.com/sergehoo/kshield/agent-go/internal/notify"
 	"github.com/sergehoo/kshield/agent-go/internal/queue"
 	"github.com/sergehoo/kshield/agent-go/internal/scanner"
 	"github.com/sergehoo/kshield/agent-go/internal/updater"
@@ -67,8 +69,17 @@ func runAgent(cmd *cobra.Command, args []string) error {
 	defer q.Close()
 	log.Info().Str("path", q.Path()).Msg("Queue offline prête")
 
+	// ─── Metrics endpoint Prometheus (opt-in) ───────────────────
+	if cfg.Metrics.Enabled && cfg.Metrics.ListenAddr != "" {
+		metrics.StartServer(cfg.Metrics.ListenAddr)
+	}
+
+	// ─── Desktop notifier (best-effort, silent si headless) ─────
+	notifier := notify.New("Kaydan Edge Gateway")
+
 	// ─── Client cloud HTTP ──────────────────────────────────────
 	cloudClient := api.New(cfg.Cloud.ServerURL, cfg.Cloud.APIToken, cfg.Cloud.HMACSecret)
+	_ = notifier // évite unused warning — on l'utilise plus bas
 
 	// ─── Dispatcher d'actions ───────────────────────────────────
 	dispatcher := actions.New()

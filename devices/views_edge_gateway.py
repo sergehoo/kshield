@@ -509,8 +509,30 @@ class GatewayActionView(APIView):
         return a
 
     def _push(self, agent, payload):
+        """Push l'action sur les 2 canaux temps réel simultanément :
+        - WebSocket (Django Channels → agent WS client)
+        - MQTT (broker → agent MQTT sub sur kshield/cmd/edge/<id>/#)
+
+        L'agent recevra la commande via le premier canal joignable.
+        L'exécution est idempotente côté agent (dispatcher dédup par action_id).
+        """
         from .services.event_bus import EventBus
         EventBus.push_to_agent(agent.pk, payload)
+
+        # Publie aussi via MQTT — non-bloquant, fail-safe.
+        try:
+            from .services.mqtt_publisher import publish_command
+            mqtt_res = publish_command(
+                gateway_id=str(agent.pk),
+                action_type=self.action_type,
+                payload=payload,
+            )
+            if not mqtt_res.get("ok"):
+                logger.debug("MQTT publish partial fail: %s", mqtt_res.get("error"))
+        except Exception as exc:
+            # MQTT indisponible ne doit pas bloquer l'API — le WS a déjà
+            # pris le relais et la queue pending_actions (heartbeat) le fera aussi.
+            logger.debug("MQTT publish exception (ignoré): %s", exc)
 
     def post(self, request, gid):
         a = self._get(request, gid)
@@ -520,7 +542,7 @@ class GatewayActionView(APIView):
             return Response({"error": "Gateway révoqué"}, status=403)
         payload = self._payload(request)
         self._push(a, payload)
-        logger.info("Gateway %s : action %s poussée", a.pk, self.action_type)
+        logger.info("Gateway %s : action %s poussée (WS+MQTT)", a.pk, self.action_type)
         return Response({"ok": True, "action": self.action_type})
 
     def _payload(self, request) -> dict:
@@ -697,6 +719,144 @@ class GatewayDownloadPackageView(APIView):
 
 
 # ═══════════════════════════════════════════════════════════════════
+# Update check + Action result (Phase 2.3)
+# ═══════════════════════════════════════════════════════════════════
+class UpdateCheckView(APIView):
+    """GET /api/v1/edge-gateway/updates/check/?version=<sem>&platform=<p>
+
+    Retourne les infos de mise à jour disponible.
+    Auth : HMAC agent (Bearer api_token).
+
+    Réponse :
+      {
+        "has_update":        true/false,
+        "latest_version":    "1.2.3",
+        "current_version":   "1.0.0",
+        "download_url":      "https://.../kshield-agent-linux-amd64",
+        "checksum_sha256":   "...",
+        "release_notes_url": "https://.../releases/1.2.3",
+        "mandatory":         false
+      }
+    """
+    permission_classes = []
+    authentication_classes = [AgentHmacAuthentication]
+
+    def get(self, request):
+        a = getattr(request, "agent", None)
+        if a is None or a.revoked_at:
+            return Response({"error": "Non autorisé"}, status=403)
+
+        current = request.query_params.get("version", "") or ""
+        platform = request.query_params.get("platform", "") or ""
+
+        # Cherche le dernier package publié pour cette plateforme
+        latest = EdgeGatewayPackage.objects.filter(
+            platform=platform, is_latest=True,
+        ).order_by("-published_at").first()
+
+        if not latest:
+            return Response({
+                "has_update":      False,
+                "current_version": current,
+                "message":         f"Aucun package publié pour platform={platform}",
+            })
+
+        has_update = _version_greater(latest.version, current)
+
+        payload = {
+            "has_update":       has_update,
+            "current_version":  current,
+            "latest_version":   latest.version,
+        }
+        if has_update:
+            payload.update({
+                "download_url":      request.build_absolute_uri(
+                    f"/api/v1/devices/edge-gateway/packages/{latest.pk}/download/"
+                ),
+                "checksum_sha256":   latest.checksum_sha256 or "",
+                "release_notes_url": request.build_absolute_uri(
+                    f"/api/v1/devices/edge-gateway/packages/{latest.pk}/"
+                ),
+                "mandatory":         False,   # Phase 3 : marquable via admin
+            })
+        return Response(payload)
+
+
+class ActionResultView(APIView):
+    """POST /api/v1/edge-gateway/action-result/
+
+    L'agent renvoie le résultat d'une action exécutée (restart/sync/scan/update).
+    Utilisé par le dispatcher pour tracer les commandes.
+
+    Body :
+      {
+        "action_id":  "uuid",
+        "success":    true,
+        "error":      "..." (si !success),
+        "output":     { ... },
+        "finished_at": "ISO8601"
+      }
+    """
+    permission_classes = []
+    authentication_classes = [AgentHmacAuthentication]
+
+    def post(self, request):
+        a = getattr(request, "agent", None)
+        if a is None or a.revoked_at:
+            return Response({"error": "Non autorisé"}, status=403)
+
+        data = request.data or {}
+        action_id = data.get("action_id") or ""
+        success = bool(data.get("success"))
+
+        _append_gateway_log(a.pk, {
+            "type":         "action_result",
+            "at":           timezone.now().isoformat(),
+            "action_id":    action_id,
+            "success":      success,
+            "error":        data.get("error") or "",
+            "output":       data.get("output") or {},
+        })
+
+        # Marquer la DeviceCommand comme completed/failed si elle existe
+        try:
+            from devices.models import DeviceCommand
+            cmd = DeviceCommand.objects.filter(pk=action_id).first()
+            if cmd:
+                cmd.status = "completed" if success else "failed"
+                cmd.completed_at = timezone.now()
+                cmd.error_message = (data.get("error") or "")[:500]
+                cmd.result_payload = data.get("output") or {}
+                cmd.save(update_fields=[
+                    "status", "completed_at", "error_message", "result_payload",
+                ])
+        except Exception as e:
+            logger.debug("action_result: DeviceCommand not tracked: %s", e)
+
+        return Response({"ok": True})
+
+
+def _version_greater(latest: str, current: str) -> bool:
+    """Compare deux versions semver-like sans dépendance externe.
+
+    Considère "1.10" > "1.9" (comparaison par tuple d'ints).
+    Fallback string compare si parse échoue (safer than crash).
+    """
+    def parse(v):
+        v = (v or "").strip().lstrip("v")
+        parts = v.split("-")[0].split(".")
+        try:
+            return tuple(int(p) for p in parts)
+        except ValueError:
+            return None
+
+    lv, cv = parse(latest), parse(current)
+    if lv is None or cv is None:
+        return latest > current
+    return lv > cv
+
+
+# ═══════════════════════════════════════════════════════════════════
 # Registration au premier boot (l'agent contacte le serveur)
 # ═══════════════════════════════════════════════════════════════════
 class GatewayActivateView(APIView):
@@ -748,8 +908,19 @@ class GatewayActivateView(APIView):
         a.activated_at = now
         a.activation_token = None            # usage unique
         a.activation_expires_at = None
-        a.os_info = (data.get("os_info") or "")[:120]
-        a.version = (data.get("version") or "")[:32]
+
+        # Support des 2 shapes de POST :
+        # - Python legacy : {"os_info": "...", "version": "...", "ip_local": "..."}
+        # - Go >= 1.0     : {"system_info": {"os": "...", "arch": "...", "hostname": "..."}}
+        sys_info = data.get("system_info") or {}
+        os_field = data.get("os_info") or ""
+        if not os_field and sys_info:
+            os_field = f"{sys_info.get('os', '')}/{sys_info.get('arch', '')} " \
+                       f"{sys_info.get('hostname', '')}".strip()
+        a.os_info = os_field[:120]
+
+        version_field = data.get("version") or sys_info.get("agent_version", "")
+        a.version = version_field[:32]
         a.ip_local = data.get("ip_local")
         a.ip_public = _client_ip(request)
         a.cloud_status = "ok"
@@ -758,15 +929,47 @@ class GatewayActivateView(APIView):
         logger.info("Gateway %s activé (label=%s ip=%s)",
                      a.pk, a.label, a.ip_public)
 
+        # ─── Credentials MQTT provisionnés dynamiquement ─────────────────
+        # Le nom d'user MQTT est dérivé du gateway_id (déterministe, unique).
+        # Le password est stocké chiffré dans a.hmac_secret pour l'instant —
+        # une future version dédiera un champ propre mqtt_password crypto.
+        from django.conf import settings as _settings
+        mqtt_username = f"kshield-edge-{str(a.pk)[:8]}"
+        # Note : pour la Phase 1, on retourne un password vide + username seul.
+        # Phase 2+ : provisioning EMQX via API management HTTP.
+        mqtt_password = ""
+
         return Response({
-            "gateway_id": str(a.pk),
-            "api_token": a.api_token,
-            "hmac_secret": a.hmac_secret,
-            "server_url": _server_url(request),
-            "site_id": a.site_id,
-            "label": a.label,
-            "activated_at": now.isoformat(),
+            # Champs partagés (nouveau + legacy)
+            "success":       True,
+            "gateway_id":    str(a.pk),
+            "gateway_label": a.label,
+            "label":         a.label,       # alias legacy
+            "api_token":     a.api_token,
+            "hmac_secret":   a.hmac_secret,
+            "server_url":    _server_url(request),
+            "tenant_id":     str(a.tenant_id) if a.tenant_id else "",
+            "site_id":       str(a.site_id) if a.site_id else "",
+            "activated_at":  now.isoformat(),
+            "message":       "Gateway activée avec succès",
+            # MQTT — nouveau (Go)
+            "mqtt_host":     getattr(_settings, "MQTT_PUBLIC_HOST", None)
+                                or _mqtt_public_host(request),
+            "mqtt_port":     int(getattr(_settings, "MQTT_PORT", 1883)),
+            "mqtt_use_tls":  bool(getattr(_settings, "MQTT_TLS", False)),
+            "mqtt_username": mqtt_username,
+            "mqtt_password": mqtt_password,
         })
+
+
+def _mqtt_public_host(request):
+    """Dérive un hostname public MQTT depuis Host header quand la var
+    MQTT_PUBLIC_HOST n'est pas définie."""
+    host = request.get_host().split(":")[0]
+    # kaydanshield.com -> mqtt.kaydanshield.com (convention)
+    if not host.startswith("mqtt."):
+        return f"mqtt.{host}" if "." in host else host
+    return host
 
 
 class GatewayHeartbeatView(APIView):

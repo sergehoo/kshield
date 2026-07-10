@@ -299,6 +299,11 @@ CELERY_BEAT_SCHEDULE = {
         "task": "core.refresh_prometheus_gauges",
         "schedule": 30.0,
     },
+    # Heartbeat MQTT toutes les 5 min — vérifie que le publisher tourne
+    "mqtt_health_ping": {
+        "task": "devices.mqtt_health_ping",
+        "schedule": 300.0,   # 5 min
+    },
     # Digest exécutif hebdomadaire — chaque lundi 07h00 Africa/Abidjan
     "weekly_executive_digest": {
         "task": "reports.generate_weekly_digest",

@@ -9,12 +9,13 @@ from .views_edge_gateway import (
     GatewayUpdateView, GatewayLogsView, GatewayDevicesView,
     GatewayActivateView, GatewayHeartbeatView, GatewayPairingQrView,
     GatewayDownloadPackageView,
+    UpdateCheckView, ActionResultView,
 )
 from .views_enrollment import (
     EnrollmentStartView, EnrollmentStopView, EnrollmentConfirmView,
     EnrollmentSessionDetailView, EnrollmentIngestScanView,
     DeviceCommandCreateView, DeviceCommandDetailView, DeviceStatusView,
-    AgentPullCommandsView, AgentEventView,
+    AgentPullCommandsView, AgentEventView, AgentEventBatchView,
     LocalAgentListView, LocalAgentDetailView, LocalAgentRotateTokenView,
     SystemAlertsView, SystemAlertAcknowledgeView, RealtimeStatsView,
     DriversListView, DriverTestView,
@@ -159,6 +160,9 @@ urlpatterns = [
     # Registration public
     path("edge-gateway/activate/",                              GatewayActivateView.as_view(),       name="edge-gateway-activate"),
     path("edge-gateway/heartbeat/",                             GatewayHeartbeatView.as_view(),      name="edge-gateway-heartbeat"),
+    # Auto-update + action result (Phase 2.3)
+    path("edge-gateway/updates/check/",                         UpdateCheckView.as_view(),           name="edge-gateway-update-check"),
+    path("edge-gateway/action-result/",                         ActionResultView.as_view(),          name="edge-gateway-action-result"),
     # Provisioning + supervision
     path("edge-gateway/",                                       GatewayListCreateView.as_view(),     name="edge-gateway-list"),
     path("edge-gateway/<uuid:gid>/",                            GatewayDetailView.as_view(),         name="edge-gateway-detail"),
@@ -184,6 +188,8 @@ urlpatterns = [
     # ═══ Agent local (fallback HTTP polling) ═══
     path("agent/<uuid:agent_id>/commands/",          AgentPullCommandsView.as_view(),    name="agent-pull-commands"),
     path("agent/<uuid:agent_id>/events/",            AgentEventView.as_view(),           name="agent-events"),
+    # Batch events (agent Go — pas d'agent_id dans path, HMAC identifie)
+    path("agent/events/",                            AgentEventBatchView.as_view(),      name="agent-events-batch"),
 
     # Debug — dernières requêtes POST iclock/cdata (utile pour reverse-engineer un firmware inconnu)
     path("<int:pk>/iclock-debug/",                   DeviceIclockDebugView.as_view(),    name="device-iclock-debug"),

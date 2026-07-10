@@ -100,11 +100,30 @@ class MqttListener:
             return
         logger.debug("MQTT %s → %s", msg.topic, payload)
 
-        # Parse topic : kshield/<tenant>/<kind>/<serial>[/status]
         parts = msg.topic.split("/")
-        if len(parts) < 4 or parts[0] != "kshield":
+        if len(parts) < 3 or parts[0] != "kshield":
             return
 
+        # ─── Topic Edge Gateway (Go agent) ─────────────────────────
+        # kshield/edge/<gateway_id>/events    → batch events
+        # kshield/edge/<gateway_id>/status    → heartbeat compact
+        # kshield/edge/<gateway_id>/scan      → résultat scan réseau
+        if parts[1] == "edge" and len(parts) >= 4:
+            gateway_id = parts[2]
+            sub = parts[3]
+            if sub == "events":
+                self._forward_edge_events(gateway_id, payload)
+                return
+            if sub == "status":
+                self._forward_edge_status(gateway_id, payload)
+                return
+            if sub == "scan":
+                self._forward_edge_scan(gateway_id, payload)
+                return
+
+        # ─── Topics devices legacy : kshield/<tenant>/<kind>/<serial> ──
+        if len(parts) < 4:
+            return
         _, _tenant_slug, kind, serial = parts[0], parts[1], parts[2], parts[3]
 
         if kind == "rfid":
@@ -155,3 +174,52 @@ class MqttListener:
         if "battery_level" in payload:
             device.battery_level = int(payload["battery_level"])
         device.save(update_fields=["last_heartbeat_at", "battery_level"])
+
+    # ────────────────────────────────────────────────────────────
+    # Edge Gateway forwarders (Phase 2.3)
+    # ────────────────────────────────────────────────────────────
+    def _forward_edge_events(self, gateway_id: str, payload: dict):
+        """kshield/edge/<gid>/events — batch d'events métier.
+
+        Le payload est le shape EventBatch envoyé par l'agent Go via MQTT
+        en complément du POST HTTP (redondance).
+        """
+        from devices.models import LocalAgent
+        try:
+            agent = LocalAgent.objects.get(pk=gateway_id)
+        except LocalAgent.DoesNotExist:
+            logger.warning("MQTT events pour gateway inconnue: %s", gateway_id)
+            return
+        events = payload.get("events") or []
+        logger.info("MQTT batch %d events depuis gateway %s (label=%s)",
+                     len(events), gateway_id, agent.label)
+        # TODO : implémenter le dispatch dans les services métier.
+        # Pour l'instant on log — le canal HTTP est primary et fait déjà le taf.
+
+    def _forward_edge_status(self, gateway_id: str, payload: dict):
+        """kshield/edge/<gid>/status — heartbeat compact (complémentaire HTTP)."""
+        from devices.models import LocalAgent
+        from django.utils import timezone
+        try:
+            agent = LocalAgent.objects.get(pk=gateway_id)
+        except LocalAgent.DoesNotExist:
+            return
+        agent.last_seen_at = timezone.now()
+        if payload.get("uptime_seconds") is not None:
+            agent.uptime_seconds = int(payload["uptime_seconds"])
+        if payload.get("events_pending") is not None:
+            agent.events_pending = int(payload["events_pending"])
+        agent.save(update_fields=["last_seen_at", "uptime_seconds", "events_pending"])
+
+    def _forward_edge_scan(self, gateway_id: str, payload: dict):
+        """kshield/edge/<gid>/scan — résultat scan réseau."""
+        from devices.models import LocalAgent
+        try:
+            agent = LocalAgent.objects.get(pk=gateway_id)
+        except LocalAgent.DoesNotExist:
+            return
+        devs = payload.get("devices") or []
+        if isinstance(devs, list):
+            agent.devices_discovered = devs[:500]
+            agent.save(update_fields=["devices_discovered"])
+            logger.info("MQTT scan gateway %s → %d devices", gateway_id, len(devs))

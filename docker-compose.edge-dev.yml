@@ -1,0 +1,65 @@
+# ═══════════════════════════════════════════════════════════════════
+# Kaydan Shield — Overlay dev-mode pour tester l'Edge Gateway
+# ═══════════════════════════════════════════════════════════════════
+#
+# À utiliser en complément du docker-compose.yml principal :
+#
+#   docker compose -f docker-compose.yml -f docker-compose.edge-dev.yml up -d
+#
+# Cet overlay ajoute un service kshield-edge simulant une gateway installée
+# sur un site client. Utile pour :
+#   - Tester le flow complet activate/heartbeat/MQTT sans matériel
+#   - Vérifier que le backend Django reçoit les events comme prévu
+#   - Debug d'intégration WebSocket + MQTT
+#
+# ⚠ Nécessite d'avoir généré une config gateway depuis Kaydan Shield
+#   → Admin → Edge Gateway → Créer → Télécharger (linux_sh)
+#   → Extraire config/kshield-agent.toml dans ./edge-dev-config/
+# ═══════════════════════════════════════════════════════════════════
+
+services:
+  kshield_edge_dev:
+    build:
+      context: ./agent-go
+      dockerfile: Dockerfile
+      args:
+        VERSION: dev
+    image: kshield-edge:dev
+    container_name: kshield_edge_dev
+    restart: unless-stopped
+    depends_on:
+      shieldmqtt:
+        condition: service_healthy
+      shieldweb:
+        condition: service_started
+    volumes:
+      # Config gateway générée depuis Kaydan Shield admin
+      - ./edge-dev-config:/etc/kshield-edge:ro
+      # Data persistante (queue SQLite)
+      - kshield_edge_dev_data:/var/lib/kshield-edge
+      # Logs
+      - kshield_edge_dev_logs:/var/log/kshield-edge
+    networks:
+      - kshield_network
+      - dokploy-network
+    # NET_RAW nécessaire pour ARP scan
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+    environment:
+      # Pointe l'agent vers le backend local (nom service Docker)
+      KSHIELD_CONFIG_FILE: /etc/kshield-edge/kshield-agent.toml
+    labels:
+      com.kaydangroupe.gateway.mode: "dev"
+      com.kaydangroupe.gateway.description: "Gateway simulée pour intégration"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+volumes:
+  kshield_edge_dev_data:
+    name: kshield_edge_dev_data
+  kshield_edge_dev_logs:
+    name: kshield_edge_dev_logs

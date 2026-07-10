@@ -446,3 +446,35 @@ def process_pending_ota_updates():
     if stats["processed"]:
         logger.info("OTA sweep : %s", stats)
     return stats
+
+
+@shared_task(name="devices.mqtt_health_ping")
+def mqtt_health_ping():
+    """Publie un heartbeat sur ``kshield/health/ping`` toutes les 5 min.
+
+    Utilité :
+      * Vérifier depuis un moniteur externe (MQTTX, mosquitto_sub) que le
+        publisher Django fonctionne réellement en prod
+      * Vérifier depuis le dashboard EMQX que les messages entrants
+        arrivent — utile pour valider la config broker
+      * Détecter si le publisher se déconnecte silencieusement (compteur
+        Prometheus custom `kshield_mqtt_health_pings_total`)
+
+    Payload : {"at": "ISO8601", "hostname": "...", "revision": "..."}
+    """
+    from django.utils import timezone
+    import socket
+
+    from devices.services.mqtt_publisher import publish_broadcast
+
+    payload = {
+        "at":       timezone.now().isoformat(),
+        "source":   "django-celery-beat",
+        "hostname": socket.gethostname(),
+    }
+    result = publish_broadcast("health.ping", payload=payload, qos=0)
+    if result.get("ok"):
+        logger.debug("MQTT health ping OK: %s", result.get("action_id"))
+    else:
+        logger.warning("MQTT health ping ÉCHEC: %s", result.get("error"))
+    return result

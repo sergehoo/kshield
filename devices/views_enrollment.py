@@ -1419,9 +1419,11 @@ class AgentPullCommandsView(APIView):
 
 
 class AgentEventView(APIView):
-    """POST /api/v1/agent/<agent_id>/events/ — l'agent push un event.
+    """POST /api/v1/agent/<agent_id>/events/ — l'agent push un event (singleton).
 
     Auth : ``AgentHmacAuthentication`` (Bearer token + signature HMAC si configurée).
+
+    Pour un batch de plusieurs events, préférer AgentEventBatchView.
     """
     permission_classes = []
     authentication_classes = [AgentHmacAuthentication]
@@ -1431,6 +1433,7 @@ class AgentEventView(APIView):
         if agent is None or str(agent.pk) != str(agent_id):
             return Response({"error": "Agent hors scope"}, status=403)
 
+        data = request.data or {}
         event = data.get("event")
         if event == "rfid.card.detected":
             uid = data.get("uid")
@@ -1474,3 +1477,124 @@ class AgentEventView(APIView):
             return Response({"error": f"event inconnu: {event}"}, status=400)
 
         return Response({"ok": True})
+
+
+class AgentEventBatchView(APIView):
+    """POST /api/v1/agent/events/  — endpoint batch pour l'agent Go.
+
+    Shape attendu :
+        {
+          "gateway_id": "uuid",
+          "events": [
+            {"type": "...", "occurred_at": "ISO8601", "payload": {...},
+             "source_ip": "...", "source_mac": "...", "signature": "..."}
+          ]
+        }
+
+    L'agent est identifié via le Bearer token (HMAC auth), le gateway_id
+    dans le body sert juste de sanity check.
+
+    Chaque event du batch est traité indépendamment via AgentEventView.
+    Un échec sur un event ne bloque pas les autres.
+    """
+    permission_classes = []
+    authentication_classes = [AgentHmacAuthentication]
+
+    def post(self, request):
+        agent = getattr(request, "agent", None)
+        if agent is None or agent.revoked_at:
+            return Response({"error": "Non autorisé"}, status=403)
+
+        data = request.data or {}
+        gateway_id = data.get("gateway_id")
+        if gateway_id and str(gateway_id) != str(agent.pk):
+            return Response({"error": "gateway_id mismatch avec token"}, status=403)
+
+        events = data.get("events") or []
+        if not isinstance(events, list):
+            return Response({"error": "events doit être une liste"}, status=400)
+
+        processed = 0
+        rejected = 0
+        errors = []
+
+        for i, ev in enumerate(events):
+            try:
+                self._process_one(agent, ev)
+                processed += 1
+            except Exception as exc:  # noqa: BLE001
+                rejected += 1
+                errors.append({"index": i, "error": str(exc)[:200],
+                                "type": ev.get("type") if isinstance(ev, dict) else "?"})
+
+        logger.info(
+            "Agent %s batch: %d processed, %d rejected",
+            agent.pk, processed, rejected,
+        )
+        return Response({
+            "ok": rejected == 0,
+            "processed": processed,
+            "rejected": rejected,
+            "errors": errors[:20],   # capped pour éviter payload énorme
+        })
+
+    def _process_one(self, agent, ev):
+        """Route un event unique vers le bon service métier.
+
+        Le shape event Go a la clé ``type`` (pas ``event``). On normalise ici.
+        """
+        if not isinstance(ev, dict):
+            raise ValueError("event doit être un dict")
+
+        event_type = ev.get("type") or ev.get("event") or ""
+        payload = ev.get("payload") or {}
+
+        if event_type == "access.granted" or event_type == "access.denied":
+            # TODO: hook access_control app
+            logger.debug("Agent event: %s payload=%s", event_type, payload)
+            return
+
+        if event_type == "rfid.card.detected":
+            uid = payload.get("uid") or payload.get("card")
+            device_id = payload.get("device_id")
+            device = None
+            if device_id:
+                try:
+                    device = Device.objects.get(pk=device_id)
+                except Device.DoesNotExist:
+                    pass
+            RFIDEnrollmentService.ingest_scan(
+                tenant=agent.tenant, uid=uid, device=device,
+                rssi=payload.get("rssi"), extra=payload.get("extra") or {},
+            )
+            return
+
+        if event_type == "device.tamper":
+            logger.warning("Device tamper: agent=%s payload=%s", agent.pk, payload)
+            # TODO: hook antifraud
+            return
+
+        if event_type == "device.command.completed":
+            DeviceCommandQueue.complete(
+                payload.get("command_id"),
+                response_raw=payload.get("response_raw") or {},
+                response_normalized=payload.get("response_normalized") or {},
+            )
+            return
+
+        if event_type == "device.command.failed":
+            DeviceCommandQueue.fail(
+                payload.get("command_id"),
+                payload.get("error") or "unknown",
+            )
+            return
+
+        if event_type == "scan_network.result":
+            devs = payload.get("devices_discovered") or payload.get("devices") or []
+            if isinstance(devs, list):
+                agent.devices_discovered = devs[:500]
+                agent.save(update_fields=["devices_discovered"])
+            return
+
+        # Event inconnu — on le log mais on ne rejette pas le batch entier
+        logger.debug("Event agent type inconnu (skip): %s", event_type)

@@ -579,16 +579,51 @@ function GatewayDetailModal({ gateway, onClose }: {
         {/* Devices découverts */}
         {full?.devices_discovered && full.devices_discovered.length > 0 && (
           <div>
-            <div className="text-xs font-medium text-ink-muted mb-1.5 flex items-center gap-1">
-              <Cpu className="w-3.5 h-3.5" /> Équipements découverts
+            <div className="text-xs font-medium text-ink-muted mb-1.5 flex items-center justify-between">
+              <div className="flex items-center gap-1">
+                <Cpu className="w-3.5 h-3.5" /> Équipements découverts
+                <span className="ml-1 text-[10px] px-1.5 py-0.5 bg-info/20 text-info rounded">
+                  {full.devices_discovered.length}
+                </span>
+              </div>
+              <Button size="sm" variant="ghost"
+                      onClick={() => call(() => edgeGatewayService.scanNetwork(g.id),
+                                            "Nouveau scan lancé")}>
+                <Radio className="w-3 h-3 mr-1" />
+                Relancer scan
+              </Button>
             </div>
-            <div className="max-h-40 overflow-auto text-xs space-y-0.5">
+            <div className="max-h-56 overflow-auto text-xs space-y-1 border border-surface-border rounded p-2">
               {full.devices_discovered.map((d: any, i: number) => (
-                <div key={i} className="p-1.5 rounded bg-surface-soft flex items-center gap-2">
-                  <span className="font-mono">{d.ip || d.serial}</span>
-                  <span className="text-ink-muted">
-                    {d.vendor} {d.model}
+                <div key={i} className="p-1.5 rounded bg-surface-soft flex items-center gap-2 flex-wrap">
+                  <span className="font-mono text-brand-600 min-w-[100px]">
+                    {d.ip || d.serial || "?"}
                   </span>
+                  {d.mac && (
+                    <span className="font-mono text-[10px] text-ink-muted">
+                      {d.mac}
+                    </span>
+                  )}
+                  {d.vendor && (
+                    <span className="text-[10px] px-1.5 py-0.5 bg-surface border border-surface-border rounded">
+                      {d.vendor}
+                    </span>
+                  )}
+                  {d.model && (
+                    <span className="text-ink-muted">
+                      {d.model}
+                    </span>
+                  )}
+                  {d.protocol && (
+                    <span className="text-[10px] px-1.5 py-0.5 bg-info/20 text-info rounded ml-auto">
+                      {d.protocol}
+                    </span>
+                  )}
+                  {d.sources && Array.isArray(d.sources) && (
+                    <span className="text-[10px] text-ink-muted">
+                      via {d.sources.join("+")}
+                    </span>
+                  )}
                 </div>
               ))}
             </div>
@@ -626,17 +661,21 @@ function Tile({ label, value, tone }: {
 }
 
 function StatusChip({ label, value }: { label: string; value: string }) {
-  const meta: Record<string, string> = {
-    ok: "text-success bg-success/10 border-success/30",
-    degraded: "text-warning bg-warning/10 border-warning/30",
-    down: "text-danger bg-danger/10 border-danger/30",
-    unknown: "text-ink-muted bg-surface-soft border-surface-border",
+  const meta: Record<string, { cls: string; icon: string; text: string }> = {
+    ok:       { cls: "text-success bg-success/10 border-success/30", icon: "●", text: "connecté" },
+    degraded: { cls: "text-warning bg-warning/10 border-warning/30", icon: "◐", text: "dégradé" },
+    down:     { cls: "text-danger bg-danger/10 border-danger/30",    icon: "○", text: "hors-ligne" },
+    unknown:  { cls: "text-ink-muted bg-surface-soft border-surface-border", icon: "?", text: "inconnu" },
   };
+  const m = meta[value] || meta.unknown;
   return (
-    <div className={cn("rounded border px-2 py-1 text-xs flex items-center justify-between",
-                        meta[value] || meta.unknown)}>
-      <span>{label}</span>
-      <span className="font-mono">{value}</span>
+    <div className={cn("rounded border px-2.5 py-1.5 text-xs flex items-center justify-between gap-2",
+                        m.cls)}>
+      <div className="flex items-center gap-1.5">
+        <span className="text-base leading-none">{m.icon}</span>
+        <span className="font-medium">{label}</span>
+      </div>
+      <span className="font-mono opacity-75">{m.text}</span>
     </div>
   );
 }

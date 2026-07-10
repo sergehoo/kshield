@@ -113,6 +113,13 @@ enable_onvif     = true
 hmac_signature_enabled = true
 websocket_reconnect_delay_seconds = 5
 websocket_max_reconnect_attempts  = 999999
+
+# ─── Metrics Prometheus (opt-in, désactivé par défaut) ────────────
+# Activer si vous souhaitez scraper les métriques runtime de l'agent.
+# Bind sur 127.0.0.1 uniquement — pas d'exposition réseau externe.
+[metrics]
+enabled     = false
+listen_addr = "127.0.0.1:9090"
 """
 
 

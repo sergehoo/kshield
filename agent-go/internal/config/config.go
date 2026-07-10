@@ -32,10 +32,17 @@ type Config struct {
 	Logging  LoggingSection  `toml:"logging"`
 	Devices  DevicesSection  `toml:"devices"`
 	Advanced AdvancedSection `toml:"advanced"`
+	Metrics  MetricsSection  `toml:"metrics"`
 
 	// Path d'où la config a été chargée — utile pour les logs et l'écriture
 	// de tokens rotatés.
 	SourcePath string `toml:"-"`
+}
+
+// MetricsSection configure l'endpoint Prometheus opt-in.
+type MetricsSection struct {
+	Enabled    bool   `toml:"enabled"`
+	ListenAddr string `toml:"listen_addr"` // ex: "127.0.0.1:9090"
 }
 
 type GatewaySection struct {

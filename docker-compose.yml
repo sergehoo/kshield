@@ -492,6 +492,40 @@ services:
       start_period: 30s
     networks: [kshield_network]
 
+  # ═══════════════════════════════════════════════════════════════════
+  # MQTT bridge (Django) — subscribe topics devices + edge → DB
+  # ═══════════════════════════════════════════════════════════════════
+  # Ce service tourne un `manage.py mqtt_listen` en foreground.
+  # Écoute :
+  #   - kshield/<tenant>/rfid/<serial>       → RFID scan events
+  #   - kshield/<tenant>/ble/<serial>        → BLE scan events
+  #   - kshield/<tenant>/device/<serial>/status → device heartbeat
+  #   - kshield/edge/<gateway_id>/events     → batch events depuis agent Go
+  #   - kshield/edge/<gateway_id>/status     → heartbeat compact
+  #   - kshield/edge/<gateway_id>/scan       → résultat scan réseau
+  shieldmqtt_bridge:
+    <<: *django-base
+    container_name: kshield_mqtt_bridge
+    hostname: shieldmqtt_bridge
+    command: >
+      python manage.py mqtt_listen
+      --host shieldmqtt
+      --port 1883
+      --topic kshield/#
+    depends_on:
+      shielddb:
+        condition: service_healthy
+      shieldmqtt:
+        condition: service_healthy
+    healthcheck:
+      # Vérifie juste que le process Python tourne
+      test: ["CMD-SHELL", "pgrep -f 'mqtt_listen' >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks: [kshield_network]
+
   # ===========================================================================
   # Adminer (admin DB) — exposé via Traefik, protégé par basic auth
   # ===========================================================================

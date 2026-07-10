@@ -5,6 +5,8 @@ go 1.22
 require (
 	github.com/BurntSushi/toml v1.3.2
 	github.com/eclipse/paho.mqtt.golang v1.4.3
+	github.com/gen2brain/beeep v0.0.0-20240516210008-9c006672e7f4
+	github.com/getlantern/systray v1.2.2
 	github.com/gorilla/websocket v1.5.1
 	github.com/rs/zerolog v1.31.0
 	github.com/spf13/cobra v1.8.0
