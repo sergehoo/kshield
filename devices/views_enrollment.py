@@ -1273,12 +1273,24 @@ class RealtimeStatsView(APIView):
         from django.db.models import Count
         from django.utils import timezone
 
+        now = timezone.now()
+
         tenant = _resolve_tenant(request.user)
         if tenant is None:
-            return Response({"error": "Aucun tenant disponible — créez-en un d'abord"},
-                              status=403)
+            # Retourne un shape complet même sans tenant : le widget front
+            # affichera des zéros au lieu de crasher avec "undefined.online".
+            return Response({
+                "at": now.isoformat(),
+                "warning": "Aucun tenant — connectez votre compte à un tenant",
+                "devices":    {"total": 0, "online": 0, "offline": 0, "online_ratio": 0},
+                "agents":     {"total": 0, "connected": 0, "disconnected": 0},
+                "enrollment": {"sessions_active": 0, "scans_last_hour": 0,
+                               "enrolled_last_24h": 0},
+                "commands":   {"total_last_hour": 0, "completed_last_hour": 0,
+                               "failed_last_hour": 0, "success_ratio": 100},
+                "alerts":     {"critical": 0, "warning": 0, "total": 0},
+            })
 
-        now = timezone.now()
         last_hour = now - timedelta(hours=1)
         last_24h = now - timedelta(hours=24)
         heartbeat_cutoff = now - timedelta(seconds=90)

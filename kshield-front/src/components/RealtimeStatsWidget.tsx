@@ -14,13 +14,24 @@ import { realtimeStatsService } from "@/services/enrollment";
 import { useDeviceStatusChannel } from "@/hooks/useDeviceStatusChannel";
 import { cn } from "@/lib/cn";
 
+// Shape par défaut si l'endpoint renvoie du vide/partiel — évite les crashes
+// de type "Cannot read properties of undefined (reading 'online')".
+const EMPTY_STATS = {
+  devices:    { online: 0, total: 0, online_ratio: 0 },
+  agents:     { connected: 0, total: 0, disconnected: 0 },
+  enrollment: { sessions_active: 0, scans_last_hour: 0, enrolled_last_24h: 0 },
+  commands:   { completed_last_hour: 0, total_last_hour: 0, success_ratio: 0 },
+  alerts:     { total: 0, critical: 0, warning: 0 },
+};
+
 export function RealtimeStatsWidget() {
   const qc = useQueryClient();
 
-  const { data } = useQuery({
+  const { data: raw } = useQuery({
     queryKey: ["realtime-stats"],
     queryFn: async () => (await realtimeStatsService.get()).data,
     refetchInterval: 10_000,
+    retry: 1, // pas de spam en cas d'endpoint HS
   });
 
   useDeviceStatusChannel({
@@ -34,7 +45,22 @@ export function RealtimeStatsWidget() {
     },
   });
 
-  if (!data) return null;
+  // Merge défensif : fusionne le shape par défaut avec ce qui est arrivé.
+  // Protège contre : data undefined, data.devices undefined, propriétés
+  // manquantes après un changement de schéma serveur.
+  const data = {
+    devices:    { ...EMPTY_STATS.devices,    ...(raw?.devices    ?? {}) },
+    agents:     { ...EMPTY_STATS.agents,     ...(raw?.agents     ?? {}) },
+    enrollment: { ...EMPTY_STATS.enrollment, ...(raw?.enrollment ?? {}) },
+    commands:   { ...EMPTY_STATS.commands,   ...(raw?.commands   ?? {}) },
+    alerts:     { ...EMPTY_STATS.alerts,     ...(raw?.alerts     ?? {}) },
+  };
+
+  // Si aucune data n'a encore été chargée, ne pas monter le widget.
+  if (!raw) return null;
+
+  const agentsHalfDown = data.agents.total > 0
+    && data.agents.disconnected < data.agents.total / 2;
 
   const tiles: TileProps[] = [
     {
@@ -51,7 +77,7 @@ export function RealtimeStatsWidget() {
       hint: `${data.agents.disconnected} hors ligne`,
       icon: <Server className="w-4 h-4" />,
       tone: data.agents.disconnected === 0 ? "ok"
-            : data.agents.disconnected < data.agents.total / 2 ? "warn" : "danger",
+            : agentsHalfDown ? "warn" : "danger",
     },
     {
       label: "Sessions actives",

@@ -273,6 +273,21 @@ CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 CELERY_TIMEZONE = config("TIME_ZONE", default="Africa/Abidjan")
 CELERY_TASK_ALWAYS_EAGER = config("CELERY_TASK_ALWAYS_EAGER", default=False, cast=bool)
 
+# ---------------------------------------------------------------------------
+# MQTT (EMQX broker)
+# ---------------------------------------------------------------------------
+# Le backend Django + les workers Celery se connectent à EMQX pour publier
+# des commandes (unlock, sync, restart) et écouter les événements devices/edges.
+# En prod : passer MQTT_TLS=True + MQTT_PORT=8883 + fournir MQTT_CA_FILE.
+MQTT_HOST = config("MQTT_HOST", default="shieldmqtt")
+MQTT_PORT = config("MQTT_PORT", default=1883, cast=int)
+MQTT_USERNAME = config("MQTT_USERNAME", default="")
+MQTT_PASSWORD = config("MQTT_PASSWORD", default="")
+MQTT_TLS = config("MQTT_TLS", default=False, cast=bool)
+MQTT_CA_FILE = config("MQTT_CA_FILE", default="")
+MQTT_CLIENT_ID_PREFIX = config("MQTT_CLIENT_ID_PREFIX", default="kshield-backend")
+MQTT_KEEPALIVE = config("MQTT_KEEPALIVE", default=60, cast=int)
+
 # ─── Celery Beat — défaut, surchargeable via DatabaseScheduler ─────────
 # DatabaseScheduler ignore ce dict (utilise django_celery_beat.models). Il sert
 # de fallback si on bascule sur PersistentScheduler / docs / dev local.
