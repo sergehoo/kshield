@@ -178,12 +178,44 @@ services:
       - kshield_mqtt_data:/opt/emqx/data
       - kshield_mqtt_log:/opt/emqx/log
     ports:
-      - "1883:1883"     # MQTT clair (dev only)
-      - "8883:8883"     # MQTT TLS
+      # Ports MQTT — TCP direct (Traefik dokploy est HTTP-only, on garde
+      # l'exposition port publique pour que les devices/agents puissent
+      # publier depuis Internet.
+      - "1883:1883"     # MQTT clair (dev only, à désactiver en prod pure)
+      - "8883:8883"     # MQTT TLS ← à utiliser en prod
       - "8083:8083"     # MQTT/WebSocket
       - "8084:8084"     # MQTT/WebSocket TLS
-      - "18083:18083"   # Dashboard EMQX
+      # Le port 18083 (dashboard) n'est PLUS exposé publiquement :
+      # accès uniquement via Traefik → https://mqtt.${BASE_DOMAIN}
     networks: [kshield_network]
+    labels:
+      # ─── Traefik : dashboard EMQX derrière mqtt.${BASE_DOMAIN} ────────
+      - traefik.enable=true
+      - traefik.docker.network=${PROXY_NETWORK:-dokploy-network}
+
+      # Router HTTPS pour le dashboard EMQX
+      - traefik.http.routers.kshield-emqx.rule=Host(`mqtt.${BASE_DOMAIN:-kaydanshield.com}`)
+      - traefik.http.routers.kshield-emqx.entrypoints=websecure
+      - traefik.http.routers.kshield-emqx.tls=true
+      - traefik.http.routers.kshield-emqx.tls.certresolver=${CERT_RESOLVER:-letsencrypt}
+      - traefik.http.routers.kshield-emqx.service=kshield-emqx-svc
+
+      # Service pointe sur le port 18083 (dashboard HTTP interne EMQX)
+      - traefik.http.services.kshield-emqx-svc.loadbalancer.server.port=18083
+      - traefik.http.services.kshield-emqx-svc.loadbalancer.server.scheme=http
+
+      # Middleware : force les headers WebSocket + timeout dashboard live-metrics
+      - traefik.http.services.kshield-emqx-svc.loadbalancer.passhostheader=true
+      - traefik.http.services.kshield-emqx-svc.loadbalancer.responseforwarding.flushinterval=100ms
+
+      # Sécurité : rate limit sur le login dashboard (anti brute force)
+      - traefik.http.middlewares.kshield-emqx-rl.ratelimit.average=30
+      - traefik.http.middlewares.kshield-emqx-rl.ratelimit.burst=60
+
+      # Optionnel : IP allowlist — décommenter et mettre tes IPs bureau
+      # - traefik.http.middlewares.kshield-emqx-ipwl.ipwhitelist.sourcerange=1.2.3.4/32,5.6.7.0/24
+      # - traefik.http.routers.kshield-emqx.middlewares=kshield-emqx-ipwl,kshield-emqx-rl
+      - traefik.http.routers.kshield-emqx.middlewares=kshield-emqx-rl
     healthcheck:
       # EMQX 5.x : /status n'existe plus (404). L'endpoint officiel est
       # `emqx ctl status` — inclus dans l'image, réponse ~1-2s.
