@@ -157,7 +157,7 @@ services:
       EMQX_DASHBOARD__DEFAULT_USERNAME: ${EMQX_DASHBOARD_USER:-admin}
       EMQX_DASHBOARD__DEFAULT_PASSWORD: ${EMQX_DASHBOARD_PASSWORD:-public}
       # Autorisation par défaut (dev) — en prod passer par le fichier ACL
-      EMQX_ALLOW_ANONYMOUS: "true"
+      EMQX_ALLOW_ANONYMOUS: "false"
       # Discovery statique — passer à "dns" pour un vrai cluster K8s/DNS
       EMQX_CLUSTER__DISCOVERY_STRATEGY: "static"
       EMQX_CLUSTER__STATIC__SEEDS: '["emqx@shieldmqtt"]'
@@ -181,9 +181,13 @@ services:
       # Ports MQTT — TCP direct (Traefik dokploy est HTTP-only, on garde
       # l'exposition port publique pour que les devices/agents puissent
       # publier depuis Internet.
-      - "1883:1883"     # MQTT clair (dev only, à désactiver en prod pure)
+      # ─── 1883 (MQTT clair) : accès interne UNIQUEMENT ────────────────
+      # Volontairement NON exposé publiquement — les credentials passeraient
+      # en clair sur le réseau. Django/agents utilisent 8883 (TLS) en prod.
+      # Pour dev local (test avec mosquitto_pub), décommenter :
+      # - "1883:1883"
       - "8883:8883"     # MQTT TLS ← à utiliser en prod
-      - "8083:8083"     # MQTT/WebSocket
+      - "8083:8083"     # MQTT/WebSocket (à supprimer en prod, TLS ci-dessous)
       - "8084:8084"     # MQTT/WebSocket TLS
       # Le port 18083 (dashboard) n'est PLUS exposé publiquement :
       # accès uniquement via Traefik → https://mqtt.${BASE_DOMAIN}
