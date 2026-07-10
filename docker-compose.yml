@@ -216,6 +216,79 @@ services:
       # - traefik.http.middlewares.kshield-emqx-ipwl.ipwhitelist.sourcerange=1.2.3.4/32,5.6.7.0/24
       # - traefik.http.routers.kshield-emqx.middlewares=kshield-emqx-ipwl,kshield-emqx-rl
       - traefik.http.routers.kshield-emqx.middlewares=kshield-emqx-rl
+      shieldmqtt:
+    image: emqx/emqx:5.4
+    container_name: kshield_mqtt
+    hostname: shieldmqtt
+    restart: unless-stopped
+    environment:
+      TZ: Africa/Abidjan
+      # Nom de nœud EMQX (unique dans le cluster)
+      EMQX_NODE__NAME: emqx@shieldmqtt
+      EMQX_NODE__COOKIE: ${EMQX_NODE_COOKIE:-kshield_emqx_cookie_change_me}
+      # Auth API dashboard
+      EMQX_DASHBOARD__DEFAULT_USERNAME: ${EMQX_DASHBOARD_USER:-admin}
+      EMQX_DASHBOARD__DEFAULT_PASSWORD: ${EMQX_DASHBOARD_PASSWORD:-public}
+      # Autorisation par défaut (dev) — en prod passer par le fichier ACL
+      EMQX_ALLOW_ANONYMOUS: "true"
+      # Discovery statique — passer à "dns" pour un vrai cluster K8s/DNS
+      EMQX_CLUSTER__DISCOVERY_STRATEGY: "static"
+      EMQX_CLUSTER__STATIC__SEEDS: '["emqx@shieldmqtt"]'
+      # Prometheus DÉSACTIVÉ — l'endpoint sera activable plus tard via le
+      # Dashboard EMQX (:18083 → Monitoring → Integration) sans variable env.
+      # NB : `EMQX_PROMETHEUS__ENABLE: false` évite tout le legacy schema.
+      EMQX_PROMETHEUS__ENABLE: "false"
+      # ─── SysMon : relève les seuils par défaut (70% → 90%) ────────────
+      # Sur VPS multi-containers, la RAM système dépasse fréquemment 70%
+      # → spam de warnings "high_system_memory_usage" toutes les minutes.
+      # On monte à 90% (RAM system) et 25% (mem d'un process EMQX unique).
+      EMQX_SYSMON__OS__SYSMEM_HIGH_WATERMARK: "90%"
+      EMQX_SYSMON__OS__PROCMEM_HIGH_WATERMARK: "25%"
+      EMQX_SYSMON__OS__MEM_CHECK_INTERVAL: "60s"
+      # Désactive les warnings top-N process (bruit inutile en mono-node).
+      EMQX_SYSMON__TOP__NUM_ITEMS: "0"
+    volumes:
+      - kshield_mqtt_data:/opt/emqx/data
+      - kshield_mqtt_log:/opt/emqx/log
+    ports:
+      # Ports MQTT — TCP direct (Traefik dokploy est HTTP-only, on garde
+      # l'exposition port publique pour que les devices/agents puissent
+      # publier depuis Internet.
+      - "1883:1883"     # MQTT clair (dev only, à désactiver en prod pure)
+      - "8883:8883"     # MQTT TLS ← à utiliser en prod
+      - "8083:8083"     # MQTT/WebSocket
+      - "8084:8084"     # MQTT/WebSocket TLS
+      # Le port 18083 (dashboard) n'est PLUS exposé publiquement :
+      # accès uniquement via Traefik → https://mqtt.${BASE_DOMAIN}
+    networks: [kshield_network]
+    labels:
+      # ─── Traefik : dashboard EMQX derrière mqtt.${BASE_DOMAIN} ────────
+      - traefik.enable=true
+      - traefik.docker.network=${PROXY_NETWORK:-dokploy-network}
+
+      # Router HTTPS pour le dashboard EMQX
+      - traefik.http.routers.kshield-emqx.rule=Host(`mqtt.${BASE_DOMAIN:-kaydanshield.com}`)
+      - traefik.http.routers.kshield-emqx.entrypoints=websecure
+      - traefik.http.routers.kshield-emqx.tls=true
+      - traefik.http.routers.kshield-emqx.tls.certresolver=${CERT_RESOLVER:-letsencrypt}
+      - traefik.http.routers.kshield-emqx.service=kshield-emqx-svc
+
+      # Service pointe sur le port 18083 (dashboard HTTP interne EMQX)
+      - traefik.http.services.kshield-emqx-svc.loadbalancer.server.port=18083
+      - traefik.http.services.kshield-emqx-svc.loadbalancer.server.scheme=http
+
+      # Middleware : force les headers WebSocket + timeout dashboard live-metrics
+      - traefik.http.services.kshield-emqx-svc.loadbalancer.passhostheader=true
+      - traefik.http.services.kshield-emqx-svc.loadbalancer.responseforwarding.flushinterval=100ms
+
+      # Sécurité : rate limit sur le login dashboard (anti brute force)
+      - traefik.http.middlewares.kshield-emqx-rl.ratelimit.average=30
+      - traefik.http.middlewares.kshield-emqx-rl.ratelimit.burst=60
+
+      # Optionnel : IP allowlist — décommenter et mettre tes IPs bureau
+      # - traefik.http.middlewares.kshield-emqx-ipwl.ipwhitelist.sourcerange=1.2.3.4/32,5.6.7.0/24
+      # - traefik.http.routers.kshield-emqx.middlewares=kshield-emqx-ipwl,kshield-emqx-rl
+      - traefik.http.routers.kshield-emqx.middlewares=kshield-emqx-rl
     healthcheck:
       # EMQX 5.x : /status HTTP n'existe plus (404).
       # L'image EMQX utilise dash (/bin/sh) — /dev/tcp est une extension bash
@@ -228,6 +301,8 @@ services:
       start_period: 60s
       retries: 5
     logging: *logging_rotated
+
+  
 
   # ===========================================================================
   # MinIO (S3 compatible) — exposé via Traefik (API + console)
