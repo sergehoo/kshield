@@ -14,6 +14,7 @@ import logging
 from urllib.parse import parse_qs
 
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
+from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
@@ -298,3 +299,79 @@ class AgentConsumer(AsyncJsonWebsocketConsumer):
         """Reçoit les messages push serveur → agent (ex. nouvelles commandes)."""
         payload = {k: v for k, v in event.items() if k != "type"}
         await self.send_json(payload)
+
+
+# ═══════════════════════════════════════════════════════════════════
+# 4) Events Live — Phase 2 refonte cahier des charges §1.3
+# ═══════════════════════════════════════════════════════════════════
+class EventsLiveConsumer(AsyncJsonWebsocketConsumer):
+    """Canal WS pour la vue Events Live (supervision temps réel).
+
+    URL : /ws/events/<tenant_id>/?token=<jwt>
+    Group name : events.<tenant_id>
+
+    Le service ``devices.services.events.EventService`` broadcast sur ce
+    group à chaque DeviceEvent créé. Le frontend reçoit un stream continu
+    de payloads compacts (voir ``EventService.serialize_for_ws``).
+
+    Filtre côté serveur : uniquement les events du tenant du user connecté
+    (isolation multi-tenants stricte).
+
+    Messages entrants supportés :
+      {"type": "ping"} → renvoie {"type": "pong"} (keepalive)
+      {"type": "subscribe", "filters": {...}} → filtre côté client (v2)
+    """
+
+    async def connect(self):
+        user = await _authenticate_from_query(self.scope)
+        if user is None or user.is_anonymous:
+            await self.close(code=4001)
+            return
+
+        # Extrait tenant_id du path + vérifie que le user y a accès
+        tenant_id = self.scope["url_route"]["kwargs"].get("tenant_id")
+        if not tenant_id:
+            await self.close(code=4400)
+            return
+
+        # Scope tenant : le user ne peut souscrire qu'au flux de SON tenant
+        user_tenant_id = getattr(user, "tenant_id", None)
+        if not user.is_superuser and str(user_tenant_id) != str(tenant_id):
+            await self.close(code=4003)
+            return
+
+        self.user = user
+        self.tenant_id = tenant_id
+        self.group_name = f"events.{tenant_id}"
+
+        await self.channel_layer.group_add(self.group_name, self.channel_name)
+        await self.accept()
+        await self.send_json({
+            "type": "hello",
+            "channel": self.group_name,
+            "server_time": timezone.now().isoformat(),
+        })
+
+    async def disconnect(self, code):
+        if hasattr(self, "group_name"):
+            await self.channel_layer.group_discard(self.group_name, self.channel_name)
+
+    async def receive_json(self, content, **kwargs):
+        """Traite les messages entrants (ping keepalive uniquement pour l'instant)."""
+        msg_type = content.get("type", "")
+        if msg_type == "ping":
+            await self.send_json({
+                "type": "pong",
+                "server_time": timezone.now().isoformat(),
+            })
+
+    async def event_new(self, event):
+        """Handler appelé quand EventService broadcast un DeviceEvent.
+
+        Le service push :
+            group_send(group, {"type": "event.new", "payload": {...}})
+        Ce qui traduit en Python : event["type"] = "event.new" → resolve
+        la méthode ``event_new`` (underscore convention Channels).
+        """
+        payload = event.get("payload") or {}
+        await self.send_json({"type": "event", "data": payload})

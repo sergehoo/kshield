@@ -10,6 +10,7 @@ import { NotFoundPage } from "@/pages/NotFound";
 // Cockpit
 import { DashboardPage } from "@/pages/Dashboard";
 import { AccessEventsLivePage } from "@/pages/AccessEventsLive";
+import EventsLivePage from "@/pages/EventsLive";
 import { AntifraudPage } from "@/pages/Antifraud";
 import { SystemStatusPage } from "@/pages/SystemStatus";
 
@@ -144,6 +145,7 @@ export const router = createBrowserRouter([
 
       // Cockpit
       { path: "events", element: <AccessEventsLivePage /> },
+      { path: "events/live", element: <EventsLivePage /> },
       { path: "antifraud", element: <AntifraudPage /> },
       { path: "system", element: <SystemStatusPage /> },
 

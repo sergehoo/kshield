@@ -8,7 +8,7 @@ Monté dans kshield/asgi.py via :
 from django.urls import re_path
 
 from .consumers import (AgentConsumer, DeviceStatusConsumer,
-                         EnrollmentSessionConsumer)
+                         EnrollmentSessionConsumer, EventsLiveConsumer)
 
 websocket_urlpatterns = [
     re_path(
@@ -22,5 +22,10 @@ websocket_urlpatterns = [
     re_path(
         r"^ws/agents/(?P<agent_id>[0-9a-f-]{36})/?$",
         AgentConsumer.as_asgi(),
+    ),
+    # Phase 2 — flux temps réel des événements techniques par tenant
+    re_path(
+        r"^ws/events/(?P<tenant_id>\d+)/?$",
+        EventsLiveConsumer.as_asgi(),
     ),
 ]
