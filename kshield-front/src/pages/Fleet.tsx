@@ -61,7 +61,7 @@ export default function FleetPage() {
       />
 
       <StatsRow
-        items={[
+        stats={[
           { label: "Total équipements", value: total.toString(),
             tone: total > 0 ? "ok" : "warn" },
           { label: "En ligne", value: connected.toString(),
@@ -155,7 +155,7 @@ export default function FleetPage() {
                     <td className="py-2 px-2 font-medium text-ink">
                       {t.label || "—"}
                       {!t.enabled && (
-                        <Badge className="ml-2" variant="warning">désactivé</Badge>
+                        <Badge className="ml-2" tone="warn">désactivé</Badge>
                       )}
                     </td>
                     <td className="py-2 px-2">

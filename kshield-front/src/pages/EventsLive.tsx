@@ -270,7 +270,7 @@ export default function EventsLivePage() {
         {/* Actions */}
         {isPaused ? (
           <Button
-            variant="brand"
+            variant="dark"
             onClick={resume}
             leftIcon={<Play className="w-4 h-4" />}
           >
