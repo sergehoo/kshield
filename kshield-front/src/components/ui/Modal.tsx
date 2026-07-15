@@ -41,7 +41,8 @@ export function Modal({ open, onClose, title, children, footer, size = "md" }: P
     >
       <div
         className={cn(
-          "w-full rounded-2xl border border-surface-border bg-surface-card shadow-2xl",
+          // Style Dappr : rounded-3xl sans bordure, ombre profonde
+          "w-full rounded-3xl bg-surface-card shadow-2xl",
           sizeMap[size],
         )}
         onClick={(e) => e.stopPropagation()}

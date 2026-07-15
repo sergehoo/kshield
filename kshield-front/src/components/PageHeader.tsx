@@ -6,27 +6,36 @@ export function PageHeader({
   subtitle,
   actions,
   live,
+  icon,
 }: {
   title: string;
   subtitle?: ReactNode;
   actions?: ReactNode;
   live?: boolean;
+  icon?: ReactNode;
 }) {
   return (
-    <div className="mb-5 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
-      <div>
-        <div className="flex items-center gap-2">
-          <h1 className="text-xl sm:text-2xl font-bold text-ink">{title}</h1>
-          {live && <LivePulse />}
-        </div>
-        {subtitle && (
-          // <div> plutôt que <p> car certaines pages passent du JSX riche
-          // (icônes, badges, flex containers) dans le subtitle, ce qui viole
-          // les règles HTML si on utilise <p>.
-          <div className="mt-1 text-sm text-ink-muted">{subtitle}</div>
+    <div className="mb-6 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+      <div className="flex items-center gap-3 min-w-0">
+        {icon && (
+          <div className="w-10 h-10 rounded-2xl bg-ink text-white grid place-items-center shrink-0">
+            {icon}
+          </div>
         )}
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            {/* Style Dappr : titre très gros bold */}
+            <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-ink tracking-tight leading-tight">
+              {title}
+            </h1>
+            {live && <LivePulse />}
+          </div>
+          {subtitle && (
+            <div className="mt-1.5 text-sm text-ink-muted">{subtitle}</div>
+          )}
+        </div>
       </div>
-      {actions && <div className="flex items-center gap-2">{actions}</div>}
+      {actions && <div className="flex items-center gap-2 shrink-0">{actions}</div>}
     </div>
   );
 }

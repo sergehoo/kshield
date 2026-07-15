@@ -420,9 +420,10 @@ class PackageGenerator:
     # Contenu du ZIP
     # ──────────────────────────────────────────────────────────
     def _write_zip(self, zf: zipfile.ZipFile, ctx: Dict[str, str]):
-        # 1. Config TOML personnalisée
-        zf.writestr("config/kshield-agent.toml",
-                    CONFIG_TOML_TEMPLATE.format(**ctx))
+        # 1. Config TOML personnalisée + section [[targets]] par équipement
+        toml_content = CONFIG_TOML_TEMPLATE.format(**ctx)
+        toml_content += self._render_targets_toml()
+        zf.writestr("config/kshield-agent.toml", toml_content)
 
         # 2. Certificat CA si présent
         ca_path = getattr(settings, "KSHIELD_CA_CERT_PATH", None)
@@ -450,6 +451,51 @@ class PackageGenerator:
 
         # 6. Manifest de version pour l'auto-update
         zf.writestr("VERSION.json", VERSION_MANIFEST_TEMPLATE.format(**ctx))
+
+    def _render_targets_toml(self) -> str:
+        """Génère les sections [[targets]] TOML pour tous les équipements
+        actifs de cette gateway.
+
+        Format attendu par l'agent Go (config.TargetSection) :
+            [[targets]]
+            id = "uuid"
+            vendor = "hikvision"
+            ip = "192.168.1.20"
+            port = 80
+            username = "admin"
+            password = "***"
+
+            [targets.extra]
+            key = "value"
+        """
+        try:
+            from devices.models import GatewayTarget
+        except Exception:
+            return ""
+
+        targets = GatewayTarget.objects.filter(
+            gateway=self.agent, enabled=True,
+        ).order_by("vendor", "label")
+
+        if not targets.exists():
+            return "\n# Aucun équipement vendor configuré pour cette gateway.\n"
+
+        lines = ["\n\n# ═══ Targets vendors — générés depuis Kaydan Shield admin ═══"]
+        for t in targets:
+            lines.append("")
+            lines.append("[[targets]]")
+            lines.append(f'id       = "{t.pk}"')
+            lines.append(f'vendor   = "{t.vendor}"')
+            lines.append(f'ip       = "{t.ip}"')
+            lines.append(f'port     = {int(t.port or 0)}')
+            lines.append(f'username = "{_toml_escape(t.username or "")}"')
+            lines.append(f'password = "{_toml_escape(t.password or "")}"')
+            if t.extra:
+                lines.append("")
+                lines.append("[targets.extra]")
+                for k, v in t.extra.items():
+                    lines.append(f'{k} = "{_toml_escape(str(v))}"')
+        return "\n".join(lines) + "\n"
 
     def _get_install_script(self, ctx: Dict[str, str]) -> tuple[Optional[str], str]:
         """Retourne (contenu_script, nom_fichier) selon la plateforme."""
@@ -481,3 +527,17 @@ class PackageGenerator:
                     f"exit 1\n")
         with open(script_path, "r", encoding="utf-8") as f:
             return f.read()
+
+
+def _toml_escape(s: str) -> str:
+    """Échappe une string pour un TOML value double-quoted.
+
+    Selon TOML spec 1.0 : escape \\ et " et les control chars.
+    """
+    return (
+        s.replace("\\", "\\\\")
+         .replace('"', '\\"')
+         .replace("\n", "\\n")
+         .replace("\r", "\\r")
+         .replace("\t", "\\t")
+    )

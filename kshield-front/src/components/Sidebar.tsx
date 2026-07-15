@@ -165,23 +165,24 @@ export function Sidebar({ open, onClose }: { open?: boolean; onClose?: () => voi
 
       <aside
         className={cn(
-          "fixed lg:sticky top-0 z-40 h-screen shrink-0 flex flex-col",
-          "border-r border-surface-border bg-surface-soft/60 backdrop-blur-xl",
+          "fixed lg:sticky top-3 lg:top-3 z-40 shrink-0 flex flex-col",
+          // Style Dappr : sidebar flottante noire arrondie
+          "bg-ink text-white rounded-3xl m-3 h-[calc(100vh-1.5rem)]",
           "transition-all duration-200 ease-out",
           width,
           open ? "translate-x-0" : "-translate-x-full lg:translate-x-0",
         )}
       >
-        {/* Brand */}
+        {/* Brand — logo Kaydan Shield */}
         <div className={cn(
-          "flex items-center h-16 border-b border-surface-border shrink-0",
+          "flex items-center h-16 border-b border-white/10 shrink-0",
           collapsed ? "justify-center px-2" : "gap-2.5 px-5",
         )}>
-          <ShieldCheck className="w-6 h-6 text-brand-500 shrink-0" />
+          <ShieldCheck className="w-6 h-6 text-brand-400 shrink-0" />
           {!collapsed && (
             <div className="flex flex-col leading-tight">
-              <span className="text-sm font-semibold text-ink">KAYDAN</span>
-              <span className="text-[10px] font-medium text-brand-500 tracking-widest">
+              <span className="text-sm font-semibold text-white">KAYDAN</span>
+              <span className="text-[10px] font-medium text-brand-400 tracking-widest">
                 SHIELD
               </span>
             </div>
@@ -200,18 +201,18 @@ export function Sidebar({ open, onClose }: { open?: boolean; onClose?: () => voi
                 {!collapsed && (
                   <button
                     onClick={() => toggleSection(section.label)}
-                    className="w-full px-3 mb-1 flex items-center justify-between text-[10px] uppercase tracking-widest text-ink-soft font-semibold hover:text-ink transition"
+                    className="w-full px-3 mb-1 flex items-center justify-between text-[11px] uppercase tracking-widest text-white/70 font-semibold hover:text-white transition"
                   >
                     <span>{section.label}</span>
                     {isSectionCollapsed ? (
-                      <ChevronRight className="w-3 h-3" />
+                      <ChevronRight className="w-3.5 h-3.5" />
                     ) : (
-                      <ChevronDown className="w-3 h-3" />
+                      <ChevronDown className="w-3.5 h-3.5" />
                     )}
                   </button>
                 )}
 
-                {collapsed && <div className="mx-2 mb-1 h-px bg-surface-border/50" />}
+                {collapsed && <div className="mx-2 mb-1 h-px bg-white/10" />}
 
                 {(collapsed || !isSectionCollapsed) && (
                   <div className="space-y-0.5">
@@ -224,11 +225,11 @@ export function Sidebar({ open, onClose }: { open?: boolean; onClose?: () => voi
                         title={collapsed ? item.label : undefined}
                         className={({ isActive }) =>
                           cn(
-                            "flex items-center rounded-lg transition group",
-                            collapsed ? "justify-center p-2.5" : "gap-3 px-3 py-1.5",
+                            "flex items-center rounded-xl transition group",
+                            collapsed ? "justify-center p-2.5" : "gap-3 px-3 py-2",
                             isActive
-                              ? "bg-brand-500/10 text-brand-400 border-l-2 border-brand-500"
-                              : "text-ink-muted hover:text-ink hover:bg-surface-soft",
+                              ? "bg-white text-ink font-semibold shadow-sm"
+                              : "text-white/75 hover:text-white hover:bg-white/10",
                           )
                         }
                       >
@@ -250,17 +251,17 @@ export function Sidebar({ open, onClose }: { open?: boolean; onClose?: () => voi
 
         {/* Footer */}
         <div className={cn(
-          "border-t border-surface-border shrink-0 flex items-center gap-2",
+          "border-t border-white/10 shrink-0 flex items-center gap-2",
           collapsed ? "flex-col p-2" : "px-3 py-2 justify-between",
         )}>
           {!collapsed && (
-            <div className="text-[11px] text-ink-soft">
+            <div className="text-[11px] text-white/40">
               v1.0 · {new Date().getFullYear()}
             </div>
           )}
           <button
             onClick={toggle}
-            className="p-1.5 rounded-md hover:bg-surface-soft text-ink-muted hover:text-ink transition"
+            className="p-1.5 rounded-md hover:bg-white/10 text-white/60 hover:text-white transition"
             title={collapsed ? "Déployer" : "Réduire"}
           >
             {collapsed ? <ChevronsRight className="w-4 h-4" /> : <ChevronsLeft className="w-4 h-4" />}

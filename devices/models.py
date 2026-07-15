@@ -800,6 +800,89 @@ class LocalAgent(UUIDModel, TimeStampedModel):
 
 
 # ═══════════════════════════════════════════════════════════════════
+# GatewayTarget (Phase 3 — équipements vendors pilotés par une gateway)
+# ═══════════════════════════════════════════════════════════════════
+class GatewayTarget(UUIDModel, TimeStampedModel):
+    """Équipement vendor géré par un Kaydan Edge Gateway.
+
+    Chaque LocalAgent (gateway) peut piloter plusieurs équipements vendors
+    (ZKTeco, Hikvision, Suprema, HID, Dahua, Axis). Cette table stocke
+    la config de connexion pour chacun.
+
+    L'agent Go lit cette liste depuis son fichier TOML (section [[targets]]
+    générée dynamiquement lors du download du package) et démarre un driver
+    par target via ``drivers.Manager.Start()``.
+    """
+    VENDOR_CHOICES = [
+        ("zkteco",    "ZKTeco (Push HTTP)"),
+        ("hikvision", "Hikvision (ISAPI)"),
+        ("suprema",   "Suprema (BioStar 2 REST)"),
+        ("hid",       "HID Global (VertX)"),
+        ("dahua",     "Dahua (CGI)"),
+        ("axis",      "Axis (VAPIX)"),
+        ("onvif",     "ONVIF générique"),
+        ("generic",   "Générique (custom)"),
+    ]
+
+    gateway = models.ForeignKey(
+        LocalAgent, on_delete=models.CASCADE, related_name="targets",
+        help_text="Kaydan Edge Gateway qui pilote cet équipement.",
+    )
+    label = models.CharField(max_length=120,
+        help_text='Nom convivial, ex. "Portail entrée principale".')
+    vendor = models.CharField(max_length=24, choices=VENDOR_CHOICES, db_index=True)
+    ip = models.GenericIPAddressField()
+    port = models.PositiveIntegerField(default=0,
+        help_text="0 = port par défaut du vendor (ex: 80 pour Hikvision).")
+
+    # Credentials chiffrés (identifiants d'accès au device vendor)
+    username = models.CharField(max_length=120, blank=True)
+    password = EncryptedCharField(max_length=512, blank=True,
+        help_text="Password vendor (stocké chiffré Fernet).")
+
+    # Métadonnées matérielles
+    mac = models.CharField(max_length=17, blank=True)
+    model = models.CharField(max_length=80, blank=True)
+    firmware = models.CharField(max_length=40, blank=True)
+    serial_number = models.CharField(max_length=64, blank=True, db_index=True)
+
+    # État runtime (poussé par la gateway)
+    connected = models.BooleanField(default=False)
+    last_seen_at = models.DateTimeField(null=True, blank=True)
+    events_count = models.PositiveIntegerField(default=0)
+    last_error = models.TextField(blank=True)
+
+    # Extra JSON pour config vendor-spécifique (chemins door_id, etc.)
+    extra = models.JSONField(default=dict, blank=True)
+
+    enabled = models.BooleanField(default=True,
+        help_text="False = target désactivé (l'agent ne le connectera pas).")
+
+    class Meta:
+        ordering = ["gateway", "vendor", "label"]
+        indexes = [
+            models.Index(fields=["gateway", "enabled"]),
+            models.Index(fields=["vendor", "enabled"]),
+        ]
+        unique_together = [("gateway", "ip", "port")]
+
+    def __str__(self):
+        return f"{self.label} ({self.vendor} @ {self.ip})"
+
+    def to_toml_dict(self) -> dict:
+        """Serialize pour injection dans le TOML de l'agent."""
+        return {
+            "id":       str(self.pk),
+            "vendor":   self.vendor,
+            "ip":       self.ip,
+            "port":     int(self.port or 0),
+            "username": self.username or "",
+            "password": self.password or "",
+            "extra":    self.extra or {},
+        }
+
+
+# ═══════════════════════════════════════════════════════════════════
 # Packages Kaydan Edge Gateway (Vague 9 — téléchargement multi-plateforme)
 # ═══════════════════════════════════════════════════════════════════
 class EdgeGatewayPackage(TimeStampedModel):

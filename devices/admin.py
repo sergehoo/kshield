@@ -2,8 +2,8 @@ from django.contrib import admin
 
 from .models import (
     Badge, BadgeHelmetPairing, Device, DeviceHeartbeat, DeviceMaintenance,
-    DeviceModel, EdgeGatewayPackage, FirmwareVersion, Helmet, LocalAgent,
-    OTAUpdate,
+    DeviceModel, EdgeGatewayPackage, FirmwareVersion, GatewayTarget, Helmet,
+    LocalAgent, OTAUpdate,
 )
 
 
@@ -59,6 +59,15 @@ class EdgeGatewayPackageAdmin(admin.ModelAdmin):
     )
 
 
+class GatewayTargetInline(admin.TabularInline):
+    """Édition inline des targets vendors depuis LocalAgent."""
+    model = GatewayTarget
+    extra = 0
+    fields = ("label", "vendor", "ip", "port", "username", "connected",
+               "events_count", "enabled")
+    readonly_fields = ("connected", "events_count", "last_seen_at")
+
+
 @admin.register(LocalAgent)
 class LocalAgentAdmin(admin.ModelAdmin):
     list_display = ("label", "tenant", "site", "connected", "activated_at",
@@ -67,3 +76,14 @@ class LocalAgentAdmin(admin.ModelAdmin):
     search_fields = ("label", "api_token")
     readonly_fields = ("api_token", "hmac_secret", "activation_token",
                         "activation_expires_at", "activated_at", "channel_name")
+    inlines = [GatewayTargetInline]
+
+
+@admin.register(GatewayTarget)
+class GatewayTargetAdmin(admin.ModelAdmin):
+    list_display = ("label", "vendor", "ip", "port", "gateway",
+                     "connected", "events_count", "enabled", "last_seen_at")
+    list_filter = ("vendor", "enabled", "connected")
+    search_fields = ("label", "ip", "serial_number", "mac")
+    readonly_fields = ("connected", "last_seen_at", "events_count", "last_error",
+                        "firmware", "created_at", "updated_at")

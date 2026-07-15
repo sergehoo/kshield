@@ -27,6 +27,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Badge } from "@/components/ui/Badge";
 import { StatsRow } from "@/components/StatsRow";
 import { DownloadPackageModal } from "@/components/DownloadPackageModal";
+import { TargetsPanel } from "@/components/TargetsPanel";
 import {
   edgeGatewayService, Gateway, GatewayPackage,
 } from "@/services/enrollment";
@@ -555,6 +556,9 @@ function GatewayDetailModal({ gateway, onClose }: {
             Supprimer
           </Button>
         </div>
+
+        {/* Targets vendors (Phase 3) */}
+        <TargetsPanel gatewayId={g.id} />
 
         {/* Logs live */}
         <div>

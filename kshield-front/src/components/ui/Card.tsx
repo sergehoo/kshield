@@ -8,6 +8,8 @@ type Props = Omit<HTMLAttributes<HTMLDivElement>, "title"> & {
   subtitle?: ReactNode;
   actions?: ReactNode;
   padded?: boolean;
+  /** Style Dappr : fond noir + texte blanc (pour CTA importants). */
+  dark?: boolean;
 };
 
 export function Card({
@@ -15,6 +17,7 @@ export function Card({
   subtitle,
   actions,
   padded = true,
+  dark = false,
   className,
   children,
   ...rest
@@ -23,19 +26,34 @@ export function Card({
   return (
     <section
       className={cn(
-        "rounded-2xl border border-surface-border bg-surface-card/70 backdrop-blur-sm shadow-card",
+        // Style Dappr : rounded-3xl, fond gris uni, pas de bordure, ombre légère
+        "rounded-3xl shadow-dappr transition-colors",
+        dark ? "bg-ink text-white" : "bg-surface-card",
         className,
       )}
       {...rest}
     >
       {hasHeader && (
-        <header className="flex items-start justify-between gap-4 px-5 py-4 border-b border-surface-border/60">
+        <header className={cn(
+          "flex items-start justify-between gap-4 px-5 py-4",
+          dark ? "border-b border-white/10" : "border-b border-surface-border/40",
+        )}>
           <div className="min-w-0">
             {title && (
-              <h2 className="text-sm font-semibold text-ink truncate">{title}</h2>
+              <h2 className={cn(
+                "text-sm font-semibold truncate",
+                dark ? "text-white" : "text-ink",
+              )}>
+                {title}
+              </h2>
             )}
             {subtitle && (
-              <p className="text-xs text-ink-muted mt-0.5 truncate">{subtitle}</p>
+              <p className={cn(
+                "text-xs mt-0.5 truncate",
+                dark ? "text-white/60" : "text-ink-muted",
+              )}>
+                {subtitle}
+              </p>
             )}
           </div>
           {actions && <div className="shrink-0 flex items-center gap-2">{actions}</div>}

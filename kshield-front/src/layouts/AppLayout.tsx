@@ -51,16 +51,19 @@ export function AppLayout() {
   }
 
   return (
-    <div className="flex min-h-screen">
+    // Style Dappr : sidebar flottante + main content dans un container arrondi
+    <div className="flex min-h-screen bg-surface">
       <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-      <div className="flex-1 flex flex-col min-w-0">
-        <Topbar
-          onMenuClick={() => setSidebarOpen((s) => !s)}
-          onSearchClick={() => setPaletteOpen(true)}
-        />
-        <main className="flex-1 px-4 md:px-6 py-5 min-w-0">
-          <Outlet />
-        </main>
+      <div className="flex-1 flex flex-col min-w-0 py-3 pr-3">
+        <div className="bg-surface-card rounded-3xl flex-1 flex flex-col min-w-0 overflow-hidden">
+          <Topbar
+            onMenuClick={() => setSidebarOpen((s) => !s)}
+            onSearchClick={() => setPaletteOpen(true)}
+          />
+          <main className="flex-1 px-4 md:px-8 py-6 min-w-0 overflow-auto">
+            <Outlet />
+          </main>
+        </div>
       </div>
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
     </div>

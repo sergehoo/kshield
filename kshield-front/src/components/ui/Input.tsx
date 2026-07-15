@@ -34,14 +34,15 @@ export const Input = forwardRef<HTMLInputElement, Props>(
             ref={ref}
             required={required}
             className={cn(
-              "w-full px-3.5 py-2.5 rounded-lg bg-surface-soft border text-ink placeholder-ink-soft",
-              "focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-brand-500/60",
-              "transition-all",
+              // Style Dappr : rounded-2xl, fond soft, pas de bordure par défaut
+              "w-full px-4 py-3 rounded-2xl bg-surface-soft text-ink placeholder-ink-soft",
+              "focus:outline-none focus:ring-2 focus:ring-ink/20 focus:bg-white",
+              "transition-all border",
               error
                 ? "border-danger/60 focus:ring-danger/30 focus:border-danger"
-                : "border-surface-border",
-              leftIcon && "pl-10",
-              rightIcon && "pr-10",
+                : "border-transparent",
+              leftIcon && "pl-11",
+              rightIcon && "pr-11",
               className,
             )}
             {...rest}

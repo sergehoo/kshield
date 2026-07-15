@@ -39,6 +39,13 @@ export default {
       },
       boxShadow: {
         card: "0 6px 24px rgb(0 0 0 / var(--shadow-strength, 0.35))",
+        // Ombre très légère style Dappr — juste un lift subtil
+        dappr: "0 2px 12px rgb(0 0 0 / 0.04)",
+      },
+      borderRadius: {
+        // Coins ultra-arrondis pour cards style Dappr
+        "4xl": "2rem",
+        "5xl": "2.5rem",
       },
       animation: {
         "pulse-dot": "pulse-dot 1.4s ease-in-out infinite",

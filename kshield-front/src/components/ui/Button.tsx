@@ -2,7 +2,7 @@ import { ButtonHTMLAttributes, forwardRef, ReactNode } from "react";
 import { cn } from "@/lib/cn";
 import { Loader2 } from "lucide-react";
 
-type Variant = "primary" | "ghost" | "danger" | "outline" | "secondary";
+type Variant = "primary" | "ghost" | "danger" | "outline" | "secondary" | "dark" | "invert";
 type Size = "sm" | "md" | "lg";
 
 type Props = ButtonHTMLAttributes<HTMLButtonElement> & {
@@ -13,18 +13,21 @@ type Props = ButtonHTMLAttributes<HTMLButtonElement> & {
   rightIcon?: ReactNode;
 };
 
+// Style Dappr : boutons noirs pleins, coins arrondis prononcés (rounded-xl)
 const variantMap: Record<Variant, string> = {
-  primary: "bg-brand-500 hover:bg-brand-600 text-white shadow-lg shadow-brand-500/20",
-  ghost: "border border-surface-border text-ink hover:bg-surface-soft",
-  danger: "bg-danger/90 hover:bg-danger text-white",
-  outline: "border border-brand-500/40 text-brand-400 hover:bg-brand-500/10",
-  secondary: "bg-surface-soft hover:bg-surface-hover text-ink border border-surface-border",
+  primary:   "bg-brand-500 hover:bg-brand-600 text-white",
+  dark:      "bg-ink hover:bg-ink/85 text-white",
+  invert:    "bg-white hover:bg-white/90 text-ink",
+  ghost:     "bg-transparent text-ink hover:bg-ink/5",
+  secondary: "bg-surface-soft hover:bg-surface-soft/70 text-ink",
+  outline:   "border-2 border-ink/10 text-ink hover:bg-ink/5",
+  danger:    "bg-danger/90 hover:bg-danger text-white",
 };
 
 const sizeMap: Record<Size, string> = {
-  sm: "px-2.5 py-1.5 text-xs",
-  md: "px-3.5 py-2 text-sm",
-  lg: "px-5 py-3 text-base",
+  sm: "px-3 py-1.5 text-xs rounded-lg",
+  md: "px-4 py-2.5 text-sm rounded-xl",
+  lg: "px-6 py-3.5 text-base rounded-2xl",
 };
 
 export const Button = forwardRef<HTMLButtonElement, Props>(
@@ -46,7 +49,7 @@ export const Button = forwardRef<HTMLButtonElement, Props>(
       ref={ref}
       disabled={disabled || loading}
       className={cn(
-        "inline-flex items-center gap-2 rounded-lg font-medium transition-all",
+        "inline-flex items-center gap-2 font-medium transition-all",
         "disabled:opacity-50 disabled:cursor-not-allowed",
         variantMap[variant],
         sizeMap[size],

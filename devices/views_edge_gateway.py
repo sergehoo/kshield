@@ -633,6 +633,343 @@ class GatewayDevicesView(APIView):
 
 
 # ═══════════════════════════════════════════════════════════════════
+# GatewayTarget CRUD (Phase 3 — équipements vendors)
+# ═══════════════════════════════════════════════════════════════════
+class GatewayTargetsView(APIView):
+    """GET / POST /api/v1/devices/edge-gateway/<gid>/targets/
+
+    GET : liste des targets de la gateway.
+    POST : crée un nouveau target (body = {vendor, ip, port, username,
+      password, label, extra, enabled}).
+    """
+    permission_classes = [IsAuthenticated]
+
+    def _get_gateway(self, request, gid):
+        tenant = _resolve_tenant(request.user)
+        if tenant is None:
+            return None, Response({"error": "Aucun tenant"}, status=403)
+        try:
+            return LocalAgent.objects.get(pk=gid, tenant=tenant), None
+        except LocalAgent.DoesNotExist:
+            return None, Response({"error": "Gateway introuvable"}, status=404)
+
+    def get(self, request, gid):
+        gw, err = self._get_gateway(request, gid)
+        if err is not None:
+            return err
+        from .models import GatewayTarget
+        targets = GatewayTarget.objects.filter(gateway=gw).order_by("vendor", "label")
+        return Response({
+            "count": targets.count(),
+            "targets": [_serialize_target(t) for t in targets],
+        })
+
+    def post(self, request, gid):
+        gw, err = self._get_gateway(request, gid)
+        if err is not None:
+            return err
+        from .models import GatewayTarget
+
+        data = request.data or {}
+        if not data.get("vendor") or not data.get("ip"):
+            return Response({"error": "vendor et ip requis"}, status=400)
+
+        try:
+            t = GatewayTarget.objects.create(
+                gateway=gw,
+                vendor=(data.get("vendor") or "").strip()[:24],
+                ip=data["ip"],
+                port=int(data.get("port") or 0),
+                label=(data.get("label") or "")[:120],
+                username=(data.get("username") or "")[:120],
+                password=data.get("password") or "",
+                mac=(data.get("mac") or "")[:17],
+                model=(data.get("model") or "")[:80],
+                serial_number=(data.get("serial_number") or "")[:64],
+                extra=data.get("extra") or {},
+                enabled=bool(data.get("enabled", True)),
+            )
+        except Exception as exc:
+            return Response({"error": str(exc)}, status=400)
+
+        return Response(_serialize_target(t), status=201)
+
+
+class GatewayTargetDetailView(APIView):
+    """GET / PATCH / DELETE /api/v1/devices/edge-gateway/<gid>/targets/<tid>/"""
+    permission_classes = [IsAuthenticated]
+
+    def _get(self, request, gid, tid):
+        tenant = _resolve_tenant(request.user)
+        if tenant is None:
+            return None, Response({"error": "Aucun tenant"}, status=403)
+        from .models import GatewayTarget
+        try:
+            t = GatewayTarget.objects.get(pk=tid, gateway_id=gid, gateway__tenant=tenant)
+            return t, None
+        except GatewayTarget.DoesNotExist:
+            return None, Response({"error": "Target introuvable"}, status=404)
+
+    def get(self, request, gid, tid):
+        t, err = self._get(request, gid, tid)
+        if err is not None:
+            return err
+        return Response(_serialize_target(t, full=True))
+
+    def patch(self, request, gid, tid):
+        t, err = self._get(request, gid, tid)
+        if err is not None:
+            return err
+        data = request.data or {}
+        for field in ("label", "ip", "port", "username", "password",
+                       "mac", "model", "serial_number", "extra", "enabled"):
+            if field in data:
+                setattr(t, field, data[field])
+        t.save()
+        return Response(_serialize_target(t, full=True))
+
+    def delete(self, request, gid, tid):
+        t, err = self._get(request, gid, tid)
+        if err is not None:
+            return err
+        t.delete()
+        return Response({"ok": True})
+
+
+class FleetTargetsView(APIView):
+    """GET /api/v1/devices/edge-gateway/fleet/targets/
+
+    Vue agrégée : tous les targets de toutes les gateways du tenant.
+    Filtres query params : ?vendor=hikvision, ?connected=true, ?search=IP.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        tenant = _resolve_tenant(request.user)
+        if tenant is None:
+            return Response({"count": 0, "targets": []})
+
+        from .models import GatewayTarget
+        qs = GatewayTarget.objects.filter(gateway__tenant=tenant).select_related(
+            "gateway", "gateway__site"
+        )
+
+        vendor = (request.query_params.get("vendor") or "").strip()
+        if vendor:
+            qs = qs.filter(vendor=vendor)
+
+        connected = request.query_params.get("connected")
+        if connected == "true":
+            qs = qs.filter(connected=True)
+        elif connected == "false":
+            qs = qs.filter(connected=False)
+
+        search = (request.query_params.get("search") or "").strip()
+        if search:
+            from django.db.models import Q
+            qs = qs.filter(
+                Q(label__icontains=search) |
+                Q(ip__icontains=search) |
+                Q(serial_number__icontains=search) |
+                Q(gateway__label__icontains=search)
+            )
+
+        # Pagination simple
+        limit = int(request.query_params.get("limit") or 100)
+        offset = int(request.query_params.get("offset") or 0)
+        total = qs.count()
+        qs = qs[offset:offset + limit]
+
+        targets = []
+        for t in qs:
+            d = _serialize_target(t)
+            d["gateway_id"]    = str(t.gateway_id)
+            d["gateway_label"] = t.gateway.label
+            d["gateway_site"]  = str(t.gateway.site) if t.gateway.site else ""
+            targets.append(d)
+
+        # Stats par vendor
+        by_vendor = {}
+        for t in GatewayTarget.objects.filter(gateway__tenant=tenant).values("vendor"):
+            by_vendor[t["vendor"]] = by_vendor.get(t["vendor"], 0) + 1
+
+        return Response({
+            "count":     total,
+            "returned":  len(targets),
+            "offset":    offset,
+            "limit":     limit,
+            "by_vendor": by_vendor,
+            "targets":   targets,
+        })
+
+
+class GatewayScanResultsView(APIView):
+    """POST /api/v1/devices/edge-gateway/<gid>/scan-results/
+
+    L'agent Go push le résultat d'un scan réseau LAN. On stocke le résultat
+    dans LocalAgent.devices_discovered et on log une entrée dans le buffer
+    d'événements pour l'UI supervision.
+
+    Auth : HMAC agent (Bearer api_token).
+
+    Body :
+      {
+        "devices": [
+          {"ip":"...", "mac":"...", "vendor":"...", "model":"...",
+           "protocol":"...", "sources":["arp","onvif"], "found_at":"..."}
+        ],
+        "duration_ms": 1234,
+        "probes_run": ["arp","onvif","mdns"]
+      }
+    """
+    permission_classes = []
+    authentication_classes = [AgentHmacAuthentication]
+
+    def post(self, request, gid):
+        agent = getattr(request, "agent", None)
+        if agent is None or str(agent.pk) != str(gid):
+            return Response({"error": "Agent hors scope"}, status=403)
+        if agent.revoked_at:
+            return Response({"error": "Gateway révoquée"}, status=403)
+
+        data = request.data or {}
+        devices = data.get("devices") or []
+        if not isinstance(devices, list):
+            return Response({"error": "devices doit être une liste"}, status=400)
+
+        # Persiste dans LocalAgent.devices_discovered (max 500)
+        agent.devices_discovered = devices[:500]
+        agent.save(update_fields=["devices_discovered"])
+
+        # Log dans le buffer de supervision live
+        _append_gateway_log(agent.pk, {
+            "type":         "scan_result",
+            "at":           timezone.now().isoformat(),
+            "count":        len(devices),
+            "duration_ms":  data.get("duration_ms", 0),
+            "probes_run":   data.get("probes_run", []),
+        })
+
+        # Auto-match : si un device scanné correspond à un GatewayTarget
+        # existant (même IP), on met à jour mac/model/firmware.
+        _auto_enrich_targets(agent, devices)
+
+        return Response({
+            "ok": True,
+            "processed": len(devices),
+            "server_time": timezone.now().isoformat(),
+        })
+
+
+def _auto_enrich_targets(agent, devices: list):
+    """Enrichit les targets existants avec les métadonnées trouvées au scan.
+
+    Match par IP → recopie mac/model/firmware/serial si absent.
+    """
+    from .models import GatewayTarget
+    ips = {}
+    for d in devices:
+        if isinstance(d, dict) and d.get("ip"):
+            ips[d["ip"]] = d
+
+    if not ips:
+        return
+
+    updates = 0
+    for t in GatewayTarget.objects.filter(gateway=agent, ip__in=list(ips.keys())):
+        d = ips.get(t.ip)
+        if not d:
+            continue
+        changed = False
+        if not t.mac and d.get("mac"):
+            t.mac = d["mac"][:17]
+            changed = True
+        if not t.model and d.get("model"):
+            t.model = d["model"][:80]
+            changed = True
+        if not t.serial_number and d.get("serial"):
+            t.serial_number = str(d["serial"])[:64]
+            changed = True
+        if changed:
+            t.save(update_fields=["mac", "model", "serial_number"])
+            updates += 1
+    if updates > 0:
+        logger.info("scan_results: enriched %d targets de gateway %s",
+                     updates, agent.pk)
+
+
+class GatewayTargetActionView(APIView):
+    """POST /api/v1/devices/edge-gateway/<gid>/targets/<tid>/<action>/
+
+    Actions : door-unlock / test-connect
+    Publie une commande MQTT ciblée vers l'agent qui délègue au driver.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, gid, tid, action):
+        tenant = _resolve_tenant(request.user)
+        if tenant is None:
+            return Response({"error": "Aucun tenant"}, status=403)
+        try:
+            gw = LocalAgent.objects.get(pk=gid, tenant=tenant)
+        except LocalAgent.DoesNotExist:
+            return Response({"error": "Gateway introuvable"}, status=404)
+
+        from .models import GatewayTarget
+        try:
+            t = GatewayTarget.objects.get(pk=tid, gateway=gw)
+        except GatewayTarget.DoesNotExist:
+            return Response({"error": "Target introuvable"}, status=404)
+
+        action_key = action.strip().lower()
+        if action_key not in ("door_unlock", "door-unlock",
+                                "test_connect", "test-connect"):
+            return Response({"error": f"Action inconnue: {action}"}, status=400)
+
+        # Normalise (URL utilise -, dispatcher agent utilise _)
+        mqtt_action = action_key.replace("-", "_")
+
+        payload = {"target_id": str(t.pk), **(request.data or {})}
+        try:
+            from .services.mqtt_publisher import publish_command
+            res = publish_command(
+                gateway_id=str(gw.pk),
+                action_type=mqtt_action,
+                payload=payload,
+            )
+        except Exception as exc:
+            return Response({"ok": False, "error": str(exc)}, status=500)
+
+        return Response(res)
+
+
+def _serialize_target(t, full: bool = False) -> dict:
+    """Serialize un GatewayTarget pour JSON — password jamais exposé."""
+    d = {
+        "id":            str(t.pk),
+        "label":         t.label,
+        "vendor":        t.vendor,
+        "ip":            t.ip,
+        "port":          t.port,
+        "connected":     t.connected,
+        "last_seen_at":  t.last_seen_at.isoformat() if t.last_seen_at else None,
+        "events_count":  t.events_count,
+        "enabled":       t.enabled,
+    }
+    if full:
+        d.update({
+            "username":       t.username,
+            "mac":            t.mac,
+            "model":          t.model,
+            "firmware":       t.firmware,
+            "serial_number":  t.serial_number,
+            "last_error":     t.last_error,
+            "extra":          t.extra or {},
+        })
+    return d
+
+
+# ═══════════════════════════════════════════════════════════════════
 # Download dynamique — package personnalisé par gateway (Phase 1)
 # ═══════════════════════════════════════════════════════════════════
 class GatewayDownloadPackageView(APIView):
@@ -1003,6 +1340,14 @@ class GatewayHeartbeatView(APIView):
             a.devices_discovered = data["devices_discovered"][:500]
         a.save()
 
+        # ─── Mise à jour des target statuses ────────────────────────
+        target_statuses = data.get("target_statuses") or []
+        if isinstance(target_statuses, list) and target_statuses:
+            _apply_target_statuses(a, target_statuses)
+
+        # ─── Récupère les pending actions (device commands en attente) ───
+        pending_actions = _pending_actions_for_gateway(a)
+
         # Ajoute au buffer de logs pour supervision live
         _append_gateway_log(a.pk, {
             "type": "heartbeat",
@@ -1010,9 +1355,64 @@ class GatewayHeartbeatView(APIView):
             "ip_local": a.ip_local, "ip_public": a.ip_public,
             "uptime_seconds": a.uptime_seconds,
             "events_pending": a.events_pending,
+            "targets_reported": len(target_statuses),
         })
 
-        return Response({"ok": True, "server_time": timezone.now().isoformat()})
+        return Response({
+            "ok": True,
+            "server_time": timezone.now().isoformat(),
+            "pending_actions": pending_actions,
+        })
+
+
+def _apply_target_statuses(agent, statuses: list):
+    """Applique la liste des target statuses envoyés par l'agent à la DB."""
+    from .models import GatewayTarget
+    from django.utils import timezone as _tz
+
+    now = _tz.now()
+    for ts in statuses:
+        if not isinstance(ts, dict):
+            continue
+        tid = ts.get("id")
+        if not tid:
+            continue
+        try:
+            t = GatewayTarget.objects.get(pk=tid, gateway=agent)
+        except (GatewayTarget.DoesNotExist, ValueError):
+            continue
+
+        t.connected = bool(ts.get("connected"))
+        t.events_count = int(ts.get("events_count") or 0)
+        t.last_error = (ts.get("last_error") or "")[:1000]
+        t.last_seen_at = now
+        t.save(update_fields=["connected", "events_count",
+                               "last_error", "last_seen_at"])
+
+
+def _pending_actions_for_gateway(agent) -> list:
+    """Retourne les DeviceCommand en attente pour cette gateway.
+
+    Utilisé par le heartbeat pour permettre à l'agent de pull les actions
+    même si MQTT/WS sont down (fallback HTTP polling).
+    """
+    try:
+        from .models import DeviceCommand
+        # Prend les commandes queued/dispatched liées à la gateway
+        pending = DeviceCommand.objects.filter(
+            gateway=agent,
+            status__in=["queued", "dispatched"],
+        )[:20]
+        return [
+            {
+                "id":      str(c.pk),
+                "type":    c.command_type,
+                "payload": c.payload or {},
+            }
+            for c in pending
+        ]
+    except Exception:
+        return []
 
 
 def _client_ip(request) -> Optional[str]:

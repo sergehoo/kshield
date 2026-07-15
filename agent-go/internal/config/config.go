@@ -34,9 +34,25 @@ type Config struct {
 	Advanced AdvancedSection `toml:"advanced"`
 	Metrics  MetricsSection  `toml:"metrics"`
 
+	// Targets : équipements vendors pilotés par cette gateway.
+	// Alimenté depuis Kaydan Shield admin lors du download personnalisé,
+	// mis à jour ensuite via commandes MQTT ou heartbeat pull.
+	Targets []TargetSection `toml:"targets"`
+
 	// Path d'où la config a été chargée — utile pour les logs et l'écriture
 	// de tokens rotatés.
 	SourcePath string `toml:"-"`
+}
+
+// TargetSection déclare un équipement vendor à connecter.
+type TargetSection struct {
+	ID       string            `toml:"id"`
+	Vendor   string            `toml:"vendor"`     // "zkteco" / "hikvision" / ...
+	IP       string            `toml:"ip"`
+	Port     int               `toml:"port"`
+	Username string            `toml:"username"`
+	Password string            `toml:"password"`
+	Extra    map[string]string `toml:"extra"`
 }
 
 // MetricsSection configure l'endpoint Prometheus opt-in.

@@ -15,29 +15,34 @@
  * ============================================================ */
 
 @layer base {
-  /* ── Light mode (défaut) ───────────────────────────────── */
+  /* ─────────────────────────────────────────────────────────
+   * Style "Dappr" — fond gris bleuté très clair, noir profond,
+   * cards sans bordure avec coins ultra-arrondis.
+   * ───────────────────────────────────────────────────────── */
+
+  /* ── Light mode (défaut Dappr — fond blanc pur) ────────── */
   :root {
-    --c-surface:        250 250 251;   /* #FAFAFB — presque blanc */
-    --c-surface-soft:   241 245 249;   /* #F1F5F9 slate-100 */
-    --c-surface-card:   255 255 255;   /* #FFFFFF pur */
-    --c-surface-border: 226 232 240;   /* #E2E8F0 slate-200 */
-    --c-ink:            15 23 42;      /* #0F172A slate-900 */
-    --c-ink-muted:      71 85 105;     /* #475569 slate-600 */
-    --c-ink-soft:       148 163 184;   /* #94A3B8 slate-400 */
-    --shadow-strength:  0.10;
+    --c-surface:        255 255 255;   /* #FFFFFF blanc pur (fond général) */
+    --c-surface-soft:   240 244 250;   /* #F0F4FA gris bleuté clair pour KPI */
+    --c-surface-card:   255 255 255;   /* #FFFFFF blanc pur (container principal) */
+    --c-surface-border: 226 232 240;   /* #E2E8F0 fallback bordures */
+    --c-ink:            10 15 25;      /* #0A0F19 noir profond */
+    --c-ink-muted:      82 96 116;     /* #526074 gris moyen */
+    --c-ink-soft:       142 158 178;   /* #8E9EB2 gris pâle */
+    --shadow-strength:  0.06;
     color-scheme: light;
   }
 
-  /* ── Dark mode ─────────────────────────────────────────── */
+  /* ── Dark mode (adapté) ────────────────────────────────── */
   .dark {
-    --c-surface:        11 15 20;      /* #0B0F14 near-black */
-    --c-surface-soft:   17 24 35;      /* #111823 */
-    --c-surface-card:   15 22 32;      /* #0F1620 */
-    --c-surface-border: 30 41 59;      /* #1E293B slate-800 (approx pour Tailwind) */
-    --c-ink:            229 231 235;   /* #E5E7EB gray-200 */
-    --c-ink-muted:      148 163 184;   /* #94A3B8 slate-400 */
-    --c-ink-soft:       100 116 139;   /* #64748B slate-500 */
-    --shadow-strength:  0.35;
+    --c-surface:        14 18 25;      /* #0E1219 fond ultra-dark */
+    --c-surface-soft:   22 28 40;      /* #161C28 KPI cards */
+    --c-surface-card:   20 26 36;      /* #141A24 card fond */
+    --c-surface-border: 32 42 58;      /* #202A3A */
+    --c-ink:            240 243 248;   /* #F0F3F8 blanc doux */
+    --c-ink-muted:      160 174 194;   /* #A0AEC2 */
+    --c-ink-soft:       100 116 139;   /* #64748B */
+    --shadow-strength:  0.30;
     color-scheme: dark;
   }
 
@@ -54,21 +59,9 @@
     transition: background-color 0.2s ease, color 0.2s ease;
   }
 
-  /* Aura brand légère en fond (subtile en light, plus prononcée en dark) */
+  /* Style Dappr : pas d'aura, fond gris uni pour lisibilité maximale */
   body::before {
-    content: "";
-    position: fixed;
-    inset: 0;
-    z-index: -1;
-    pointer-events: none;
-    background:
-      radial-gradient(1200px 600px at 10% -10%, rgba(249, 115, 22, 0.06), transparent 60%),
-      radial-gradient(900px 500px at 110% 10%, rgba(56, 189, 248, 0.05), transparent 60%);
-  }
-  .dark body::before {
-    background:
-      radial-gradient(1200px 600px at 10% -10%, rgba(249, 115, 22, 0.10), transparent 60%),
-      radial-gradient(900px 500px at 110% 10%, rgba(56, 189, 248, 0.08), transparent 60%);
+    content: none;
   }
 
   ::selection {
@@ -90,30 +83,45 @@
   }
 }
 
-/* Utilitaires composants — restent inchangés, s'adaptent automatiquement */
+/* Utilitaires composants — style Dappr */
 @layer components {
+  /* Card : rounded-3xl, fond gris uni sans bordure */
   .card {
-    @apply rounded-2xl border border-surface-border bg-surface-card/70 backdrop-blur-sm shadow-card;
+    @apply rounded-3xl bg-surface-card;
+  }
+  .card-dark {
+    @apply rounded-3xl bg-ink text-white;
+  }
+  .card-elevated {
+    @apply rounded-3xl bg-surface-card shadow-[0_2px_12px_rgb(0_0_0_/_0.04)];
   }
 
+  /* Boutons — coins arrondis prononcés, noir ou blanc plein */
   .btn {
-    @apply inline-flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-medium
+    @apply inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium
            transition-all disabled:opacity-50 disabled:cursor-not-allowed;
   }
   .btn-primary {
+    @apply btn bg-ink text-white hover:bg-ink/90;
+  }
+  .btn-brand {
     @apply btn bg-brand-500 hover:bg-brand-600 text-white shadow-lg shadow-brand-500/20;
   }
   .btn-ghost {
-    @apply btn border border-surface-border text-ink hover:bg-surface-soft;
+    @apply btn bg-surface-soft text-ink hover:bg-surface-soft/70;
   }
   .btn-danger {
     @apply btn bg-danger/90 hover:bg-danger text-white;
   }
+  /* Bouton blanc plein (usage sur card noire) */
+  .btn-invert {
+    @apply btn bg-white text-ink hover:bg-white/90;
+  }
 
   .field {
-    @apply w-full px-3.5 py-2.5 rounded-lg bg-surface-soft border border-surface-border
-           text-ink placeholder-ink-soft focus:outline-none focus:ring-2 focus:ring-brand-500/40
-           focus:border-brand-500/60 transition-all;
+    @apply w-full px-4 py-3 rounded-2xl bg-surface-soft
+           text-ink placeholder-ink-soft focus:outline-none focus:ring-2 focus:ring-ink/20
+           transition-all;
   }
 
   .chip {
@@ -137,5 +145,24 @@
   }
   .table tbody tr:hover {
     @apply bg-surface-soft/40;
+  }
+
+  /* KPI card style Dappr : gros chiffre + petit sous-texte gris */
+  .kpi-card {
+    @apply relative rounded-3xl bg-surface-soft/60 p-5 min-h-[140px] flex flex-col justify-between;
+  }
+  .kpi-icon {
+    @apply w-10 h-10 rounded-2xl bg-ink text-white grid place-items-center;
+  }
+  .kpi-value {
+    @apply text-3xl md:text-4xl font-bold text-ink tracking-tight;
+  }
+  .kpi-label {
+    @apply text-xs md:text-sm text-ink-muted font-medium;
+  }
+
+  /* Titre H1 très gros pour dashboard "Bonjour, X!" style Dappr */
+  .h1-dappr {
+    @apply text-3xl md:text-4xl font-bold text-ink tracking-tight;
   }
 }

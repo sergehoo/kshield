@@ -134,9 +134,24 @@ type HeartbeatRequest struct {
 	WSStatus       string             `json:"ws_status"`
 	CloudStatus    string             `json:"cloud_status"`
 	DevicesDiscovered []DeviceSummary `json:"devices_discovered,omitempty"`
+
+	// État des targets vendors — inclus dans chaque heartbeat pour permettre
+	// à Kaydan Shield admin de suivre l'état des équipements en temps réel.
+	TargetStatuses []TargetStatus `json:"target_statuses,omitempty"`
+
 	// Optional metrics
 	CPUPercent    float64 `json:"cpu_percent,omitempty"`
 	MemoryPercent float64 `json:"memory_percent,omitempty"`
+}
+
+// TargetStatus représente l'état d'un équipement vendor géré par la gateway.
+type TargetStatus struct {
+	ID           string `json:"id"`
+	Vendor       string `json:"vendor"`
+	IP           string `json:"ip"`
+	Connected    bool   `json:"connected"`
+	EventsCount  int64  `json:"events_count"`
+	LastError    string `json:"last_error,omitempty"`
 }
 
 type DeviceSummary struct {

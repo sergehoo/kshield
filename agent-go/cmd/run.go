@@ -17,6 +17,7 @@ import (
 	"github.com/sergehoo/kshield/agent-go/internal/actions"
 	"github.com/sergehoo/kshield/agent-go/internal/api"
 	"github.com/sergehoo/kshield/agent-go/internal/config"
+	"github.com/sergehoo/kshield/agent-go/internal/drivers"
 	"github.com/sergehoo/kshield/agent-go/internal/metrics"
 	"github.com/sergehoo/kshield/agent-go/internal/mqtt"
 	"github.com/sergehoo/kshield/agent-go/internal/notify"
@@ -117,6 +118,57 @@ func runAgent(cmd *cobra.Command, args []string) error {
 		}
 	})
 
+	// ─── Drivers manager (targets vendors ZKTeco/Hikvision/etc.) ─
+	driverSink := &queueEventSink{q: q}
+	driverMgr := drivers.NewManager(driverSink)
+	for _, t := range cfg.Targets {
+		if t.Vendor == "" {
+			continue
+		}
+		target := drivers.Target{
+			ID:       t.ID,
+			IP:       t.IP,
+			Port:     t.Port,
+			Vendor:   t.Vendor,
+			Username: t.Username,
+			Password: t.Password,
+			Extra:    t.Extra,
+		}
+		if err := driverMgr.Start(ctx, target); err != nil {
+			log.Warn().Err(err).
+				Str("vendor", t.Vendor).
+				Str("id", t.ID).
+				Msg("Driver start échoué — ignoré")
+		} else {
+			log.Info().
+				Str("vendor", t.Vendor).
+				Str("id", t.ID).
+				Str("ip", t.IP).
+				Msg("Driver démarré")
+		}
+	}
+	defer driverMgr.StopAll()
+
+	// Handler door_unlock via drivers manager
+	dispatcher.Register("door_unlock", func(ctx context.Context, a actions.Action) actions.Result {
+		targetID, _ := a.Payload["target_id"].(string)
+		doorID, _ := a.Payload["door_id"].(string)
+		if targetID == "" {
+			return actions.Result{Success: false, Error: "target_id manquant"}
+		}
+		drv, ok := driverMgr.GetDriver(targetID)
+		if !ok {
+			return actions.Result{Success: false,
+				Error: fmt.Sprintf("driver introuvable pour target %s", targetID)}
+		}
+		res := drv.DoorUnlock(ctx, doorID)
+		return actions.Result{
+			Success: res.OK,
+			Error:   res.Error,
+			Output:  res.Data,
+		}
+	})
+
 	// Handler scan_network = utilise le scanner intégré
 	dispatcher.Register("scan_network", func(ctx context.Context, a actions.Action) actions.Result {
 		timeout := 30 * time.Second
@@ -181,7 +233,7 @@ func runAgent(cmd *cobra.Command, args []string) error {
 	defer wsCli.Stop()
 
 	// ─── Boucles background ─────────────────────────────────────
-	go heartbeatLoop(ctx, cfg, cloudClient, q, mqttCli, wsCli, dispatcher)
+	go heartbeatLoop(ctx, cfg, cloudClient, q, mqttCli, wsCli, dispatcher, driverMgr)
 	go flushQueueLoop(ctx, q, cloudClient, cfg, mqttCli)
 
 	if cfg.Agent.ScanNetworkEnabled {
@@ -210,7 +262,7 @@ func runAgent(cmd *cobra.Command, args []string) error {
 // ═══════════════════════════════════════════════════════════════════
 func heartbeatLoop(ctx context.Context, cfg *config.Config, client *api.Client,
 	q *queue.Queue, mqttCli *mqtt.Client, wsCli *ws.Client,
-	disp *actions.Dispatcher) {
+	disp *actions.Dispatcher, driverMgr *drivers.Manager) {
 
 	interval := time.Duration(cfg.Agent.HeartbeatIntervalSeconds) * time.Second
 	if interval == 0 {
@@ -220,7 +272,7 @@ func heartbeatLoop(ctx context.Context, cfg *config.Config, client *api.Client,
 	startedAt := time.Now()
 	hostname, _ := os.Hostname()
 
-	sendHeartbeat(ctx, cfg, client, q, mqttCli, wsCli, disp, startedAt, hostname)
+	sendHeartbeat(ctx, cfg, client, q, mqttCli, wsCli, disp, driverMgr, startedAt, hostname)
 
 	tick := time.NewTicker(interval)
 	defer tick.Stop()
@@ -230,14 +282,15 @@ func heartbeatLoop(ctx context.Context, cfg *config.Config, client *api.Client,
 		case <-ctx.Done():
 			return
 		case <-tick.C:
-			sendHeartbeat(ctx, cfg, client, q, mqttCli, wsCli, disp, startedAt, hostname)
+			sendHeartbeat(ctx, cfg, client, q, mqttCli, wsCli, disp, driverMgr, startedAt, hostname)
 		}
 	}
 }
 
 func sendHeartbeat(ctx context.Context, cfg *config.Config, client *api.Client,
 	q *queue.Queue, mqttCli *mqtt.Client, wsCli *ws.Client,
-	disp *actions.Dispatcher, startedAt time.Time, hostname string) {
+	disp *actions.Dispatcher, driverMgr *drivers.Manager,
+	startedAt time.Time, hostname string) {
 
 	hbCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
@@ -246,15 +299,31 @@ func sendHeartbeat(ctx context.Context, cfg *config.Config, client *api.Client,
 	osInfo := fmt.Sprintf("%s/%s %s", runtime.GOOS, runtime.GOARCH, hostname)
 	pending, _ := q.CountPending(hbCtx)
 
+	// Collecte les statuses des targets depuis le driver manager
+	var targetStatuses []api.TargetStatus
+	if driverMgr != nil {
+		for _, ds := range driverMgr.Status() {
+			targetStatuses = append(targetStatuses, api.TargetStatus{
+				ID:          ds.ID,
+				Vendor:      ds.Vendor,
+				IP:          ds.IP,
+				Connected:   ds.Status == "connected",
+				EventsCount: ds.Events,
+				LastError:   ds.Error,
+			})
+		}
+	}
+
 	req := api.HeartbeatRequest{
-		GatewayID:     cfg.Gateway.ID,
-		Version:       Version,
-		OSInfo:        osInfo,
-		UptimeSeconds: uptime,
-		EventsPending: pending,
-		MQTTStatus:    mqttCli.Status(),
-		WSStatus:      wsCli.Status(),
-		CloudStatus:   "ok",
+		GatewayID:      cfg.Gateway.ID,
+		Version:        Version,
+		OSInfo:         osInfo,
+		UptimeSeconds:  uptime,
+		EventsPending:  pending,
+		MQTTStatus:     mqttCli.Status(),
+		WSStatus:       wsCli.Status(),
+		CloudStatus:    "ok",
+		TargetStatuses: targetStatuses,
 	}
 
 	resp, err := client.Heartbeat(hbCtx, req)
@@ -454,6 +523,32 @@ func autoUpdateLoop(ctx context.Context, cfg *config.Config, client *api.Client)
 			doCheck()
 		}
 	}
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// queueEventSink — adapte drivers.EventSink vers queue offline
+// ═══════════════════════════════════════════════════════════════════
+// Chaque event émis par un driver (badge scan, tamper, motion, ...) est
+// enqueué en local. La boucle flushQueueLoop se charge ensuite du push.
+type queueEventSink struct {
+	q *queue.Queue
+}
+
+func (s *queueEventSink) Emit(ctx context.Context, ev drivers.Event) error {
+	metrics.Global.EventsEnqueued.Add(1)
+	payload := ev.Payload
+	if payload == nil {
+		payload = map[string]interface{}{}
+	}
+	if ev.DeviceID != "" {
+		payload["device_id"] = ev.DeviceID
+	}
+	return s.q.Enqueue(ctx, queue.Event{
+		Type:       ev.Type,
+		OccurredAt: ev.OccurredAt,
+		Payload:    payload,
+		SourceIP:   ev.SourceIP,
+	})
 }
 
 // ═══════════════════════════════════════════════════════════════════

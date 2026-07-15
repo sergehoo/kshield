@@ -10,6 +10,8 @@ from .views_edge_gateway import (
     GatewayActivateView, GatewayHeartbeatView, GatewayPairingQrView,
     GatewayDownloadPackageView,
     UpdateCheckView, ActionResultView,
+    GatewayTargetsView, GatewayTargetDetailView, GatewayTargetActionView,
+    GatewayScanResultsView, FleetTargetsView,
 )
 from .views_enrollment import (
     EnrollmentStartView, EnrollmentStopView, EnrollmentConfirmView,
@@ -179,6 +181,14 @@ urlpatterns = [
     path("edge-gateway/<uuid:gid>/devices/",                    GatewayDevicesView.as_view(),        name="edge-gateway-devices"),
     # Download dynamique — génère un ZIP personnalisé par gateway/plateforme
     path("edge-gateway/<uuid:gid>/download/",                   GatewayDownloadPackageView.as_view(), name="edge-gateway-download"),
+    # Résultats scan réseau depuis l'agent (auth HMAC)
+    path("edge-gateway/<uuid:gid>/scan-results/",               GatewayScanResultsView.as_view(),    name="edge-gateway-scan-results"),
+    # Fleet — vue agrégée de tous les targets du tenant
+    path("edge-gateway/fleet/targets/",                         FleetTargetsView.as_view(),          name="edge-gateway-fleet-targets"),
+    # Targets vendors (équipements pilotés par cette gateway)
+    path("edge-gateway/<uuid:gid>/targets/",                    GatewayTargetsView.as_view(),        name="edge-gateway-targets"),
+    path("edge-gateway/<uuid:gid>/targets/<uuid:tid>/",         GatewayTargetDetailView.as_view(),   name="edge-gateway-target-detail"),
+    path("edge-gateway/<uuid:gid>/targets/<uuid:tid>/<str:action>/", GatewayTargetActionView.as_view(), name="edge-gateway-target-action"),
 
     # ═══ Agent local — Admin (provisioning + gestion) ═══
     path("local-agents/",                            LocalAgentListView.as_view(),        name="local-agent-list"),

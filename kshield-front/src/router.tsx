@@ -53,6 +53,7 @@ import { MaintenancePage } from "@/pages/Maintenance";
 import { TopologyPage } from "@/pages/Topology";
 import { MarketplacePage } from "@/pages/Marketplace";
 import { EdgeGatewayPage } from "@/pages/EdgeGateway";
+import FleetPage from "@/pages/Fleet";
 import { AuditLogPage } from "@/pages/AuditLog";
 
 // Compte
@@ -185,6 +186,7 @@ export const router = createBrowserRouter([
       { path: "topology", element: <TopologyPage /> },
       { path: "marketplace", element: <MarketplacePage /> },
       { path: "edge-gateway", element: <EdgeGatewayPage /> },
+      { path: "fleet", element: <FleetPage /> },
       { path: "api-keys", element: <ApiKeysPage /> },
       { path: "audit", element: <AuditLogPage /> },
 

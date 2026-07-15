@@ -413,10 +413,6 @@ export const edgeGatewayService = {
     api.get<{ count: number; devices: any[] }>(`/api/v1/devices/edge-gateway/${id}/devices/`),
 
   // Download personnalisé — Phase 1 : génère un ZIP avec config injectée.
-  // Utilisation : ouvre un nouvel onglet ou déclenche le browser pour DL.
-  //   window.open(edgeGatewayService.downloadPackageUrl(id, "windows_exe"));
-  // ou fetch + blob si on veut afficher un spinner :
-  //   const r = await api.get(edgeGatewayService.downloadPackageUrl(...), { responseType: "blob" });
   downloadPackageUrl: (id: string, platform: string) =>
     `/api/v1/devices/edge-gateway/${id}/download/?platform=${encodeURIComponent(platform)}`,
   downloadPackageBlob: (id: string, platform: string) =>
@@ -424,7 +420,85 @@ export const edgeGatewayService = {
       params: { platform },
       responseType: "blob",
     }),
+
+  // ═══ Targets vendors (Phase 3) ═══
+  // Équipements ZKTeco/Hikvision/Suprema/HID/Dahua/Axis pilotés par cette gateway.
+  listTargets: (gid: string) =>
+    api.get<{ count: number; targets: GatewayTarget[] }>(
+      `/api/v1/devices/edge-gateway/${gid}/targets/`,
+    ),
+  createTarget: (gid: string, body: Partial<GatewayTargetInput>) =>
+    api.post<GatewayTarget>(
+      `/api/v1/devices/edge-gateway/${gid}/targets/`, body,
+    ),
+  getTarget: (gid: string, tid: string) =>
+    api.get<GatewayTarget>(
+      `/api/v1/devices/edge-gateway/${gid}/targets/${tid}/`,
+    ),
+  updateTarget: (gid: string, tid: string, body: Partial<GatewayTargetInput>) =>
+    api.patch<GatewayTarget>(
+      `/api/v1/devices/edge-gateway/${gid}/targets/${tid}/`, body,
+    ),
+  deleteTarget: (gid: string, tid: string) =>
+    api.delete(`/api/v1/devices/edge-gateway/${gid}/targets/${tid}/`),
+  targetDoorUnlock: (gid: string, tid: string, doorId?: string) =>
+    api.post(`/api/v1/devices/edge-gateway/${gid}/targets/${tid}/door-unlock/`, {
+      door_id: doorId || "1",
+    }),
+  targetTestConnect: (gid: string, tid: string) =>
+    api.post(`/api/v1/devices/edge-gateway/${gid}/targets/${tid}/test-connect/`),
+
+  // Fleet view — tous les targets du tenant, filtrable
+  fleetTargets: (params?: {
+    vendor?: string;
+    connected?: "true" | "false";
+    search?: string;
+    limit?: number;
+    offset?: number;
+  }) =>
+    api.get<{
+      count: number;
+      returned: number;
+      by_vendor: Record<string, number>;
+      targets: (GatewayTarget & {
+        gateway_id: string;
+        gateway_label: string;
+        gateway_site: string;
+      })[];
+    }>("/api/v1/devices/edge-gateway/fleet/targets/", { params }),
 };
+
+// ─── Types Targets (Phase 3) ─────────────────────────────────────
+export interface GatewayTarget {
+  id: string;
+  label: string;
+  vendor: string;
+  ip: string;
+  port: number;
+  connected: boolean;
+  last_seen_at: string | null;
+  events_count: number;
+  enabled: boolean;
+  // Full seulement
+  username?: string;
+  mac?: string;
+  model?: string;
+  firmware?: string;
+  serial_number?: string;
+  last_error?: string;
+  extra?: Record<string, string>;
+}
+
+export interface GatewayTargetInput {
+  label: string;
+  vendor: string;
+  ip: string;
+  port?: number;
+  username?: string;
+  password?: string;
+  extra?: Record<string, string>;
+  enabled?: boolean;
+}
 
 export const marketplaceService = {
   list: () => api.get<{ count: number; plugins: PluginCatalogItem[] }>(

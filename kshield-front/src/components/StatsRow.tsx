@@ -51,42 +51,64 @@ export function StatsRow({
 }
 
 function StatCard({ stat, loading }: { stat: Stat; loading?: boolean }) {
-  const tone = stat.tone || "brand";
   const clickable = !!stat.onClick;
+
+  // Tone → couleur de la pastille chip en bas (au lieu d'une bordure)
+  const chipTone: Record<string, string> = {
+    brand:  "bg-brand-500/15 text-brand-600",
+    ok:     "bg-ok/15 text-ok",
+    warn:   "bg-warn/15 text-warn",
+    danger: "bg-danger/15 text-danger",
+    info:   "bg-info/15 text-info",
+    muted:  "bg-ink/5 text-ink-muted",
+  };
 
   return (
     <div
       onClick={stat.onClick}
       className={cn(
-        "rounded-xl border bg-surface-card/60 p-3 transition-all",
-        toneMap[tone].split(" ").filter((c) => c.startsWith("border-")).join(" "),
-        clickable && "cursor-pointer hover:bg-surface-card hover:scale-[1.02]",
+        // Style Dappr : rounded-3xl, fond gris uni, icône noire en haut,
+        // gros chiffre bold, label petit et pâle
+        "relative rounded-3xl bg-surface-soft/60 p-5 min-h-[130px] flex flex-col justify-between transition-all",
+        clickable && "cursor-pointer hover:bg-surface-soft/80",
       )}
     >
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0 flex-1">
-          <div className="text-[10px] uppercase tracking-wider text-ink-soft font-semibold truncate">
-            {stat.label}
+      {/* Ligne du haut : icône dans un carré noir arrondi + menu 3 points fantôme */}
+      <div className="flex items-start justify-between">
+        {stat.icon && (
+          <div className="w-10 h-10 rounded-2xl bg-ink text-white grid place-items-center shrink-0">
+            {stat.icon}
           </div>
-          <div className="mt-1 text-xl font-bold text-ink tabular-nums">
-            {loading ? (
-              <span className="inline-block w-10 h-5 rounded bg-surface-soft animate-pulse" />
-            ) : (
-              stat.value
-            )}
-          </div>
-          {stat.hint && (
-            <div className="text-[10px] text-ink-soft mt-0.5 truncate">{stat.hint}</div>
+        )}
+        <button
+          className="w-6 h-6 rounded-full bg-ink/5 text-ink-muted grid place-items-center opacity-40 hover:opacity-100"
+          type="button"
+          aria-label="Actions"
+        >
+          <span className="inline-block w-0.5 h-0.5 rounded-full bg-current mx-0.5" />
+          <span className="inline-block w-0.5 h-0.5 rounded-full bg-current mx-0.5" />
+          <span className="inline-block w-0.5 h-0.5 rounded-full bg-current mx-0.5" />
+        </button>
+      </div>
+
+      {/* Ligne du bas : gros chiffre + label */}
+      <div className="mt-3">
+        <div className="text-3xl md:text-4xl font-bold text-ink tabular-nums tracking-tight leading-none">
+          {loading ? (
+            <span className="inline-block w-24 h-9 rounded bg-ink/5 animate-pulse" />
+          ) : (
+            stat.value
           )}
         </div>
-        {stat.icon && (
-          <div
-            className={cn(
-              "w-9 h-9 rounded-lg grid place-items-center shrink-0 border",
-              toneMap[tone],
-            )}
-          >
-            {stat.icon}
+        <div className="mt-1 text-xs md:text-sm text-ink-muted font-medium leading-snug">
+          {stat.label}
+        </div>
+        {stat.hint && (
+          <div className={cn(
+            "inline-flex items-center mt-2 px-2 py-0.5 rounded-full text-[11px] font-semibold",
+            chipTone[stat.tone || "brand"],
+          )}>
+            {stat.hint}
           </div>
         )}
       </div>

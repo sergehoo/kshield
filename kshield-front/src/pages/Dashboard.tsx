@@ -1,11 +1,11 @@
 import { useLive } from "@/hooks/useLive";
-import { PageHeader } from "@/components/PageHeader";
 import { KpiCard } from "@/components/KpiCard";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { LivePulse } from "@/components/LivePulse";
 import { SystemAlertsBanner } from "@/components/SystemAlertsBanner";
 import { RealtimeStatsWidget } from "@/components/RealtimeStatsWidget";
+import { HeroDashboard } from "@/components/HeroDashboard";
 import { accessEventsService, devicesService, attendanceService, notificationsService } from "@/services";
 import { fmtRelative, fmtNumber, fmtTime } from "@/lib/format";
 import { Users, Cpu, ShieldAlert, Activity, Radar, HardHat } from "lucide-react";
@@ -84,13 +84,10 @@ export function DashboardPage() {
 
   return (
     <div>
-      <PageHeader
-        title="Vue d'ensemble"
-        subtitle="État en temps réel de tous vos chantiers et équipements"
-        live
-      />
+      {/* Hero principal : notifications si dispo, sinon greeting + stats équipements */}
+      <HeroDashboard />
 
-      {/* Bannière alertes système (temps réel + poll 30s) */}
+      {/* Bannière alertes système compact (secondaire — le hero prend la priorité) */}
       <SystemAlertsBanner />
 
       {/* Widget métriques temps réel (devices/agents/sessions/commandes/alertes) */}
