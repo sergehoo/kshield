@@ -72,11 +72,15 @@ class EnrollmentSessionConsumer(AsyncJsonWebsocketConsumer):
 
         @database_sync_to_async
         def _fetch():
-            try:
-                s = RFIDEnrollmentSession.objects.get(pk=self.session_id)
-                return s if s.tenant_id == getattr(user, "tenant_id", None) else None
-            except RFIDEnrollmentSession.DoesNotExist:
+            from .utils import resolve_tenant
+
+            tenant = resolve_tenant(user)
+            if tenant is None:
                 return None
+            return RFIDEnrollmentSession.objects.filter(
+                uuid=self.session_id,
+                tenant=tenant,
+            ).first()
 
         session = await _fetch()
         if session is None:

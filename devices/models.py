@@ -633,7 +633,7 @@ class RFIDEnrollmentSession(UUIDModel, TimeStampedModel):
     @property
     def channel_group(self) -> str:
         """Nom du groupe Channels pour broadcaster les events de cette session."""
-        return f"enrollment.{self.pk}"
+        return f"enrollment.{self.uuid}"
 
 
 class RFIDEnrollmentEvent(TimeStampedModel):

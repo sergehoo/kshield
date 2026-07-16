@@ -19,6 +19,8 @@ from django.contrib.contenttypes.models import ContentType
 from django.db import transaction
 from django.utils import timezone
 
+from ..utils import resolve_tenant
+
 logger = logging.getLogger(__name__)
 
 
@@ -54,7 +56,7 @@ class RFIDEnrollmentService:
         from devices.models import RFIDEnrollmentSession
         from .command_queue import DeviceCommandQueue
 
-        tenant = getattr(user, "tenant", None)
+        tenant = resolve_tenant(user)
         if tenant is None:
             raise EnrollmentError("Utilisateur sans tenant — session impossible",
                                     code="no_tenant")
@@ -64,29 +66,11 @@ class RFIDEnrollmentService:
             raise EnrollmentError("Ce lecteur n'appartient pas à votre tenant",
                                     code="reader_forbidden")
 
-        # Résolution du porteur (générique)
-        holder_ct = None
-        holder_obj_id = None
-        if holder_kind and holder_id:
-            model_map = {
-                "worker":   ("ouvriers",  "worker"),
-                "employee": ("employees", "employee"),
-                "visitor":  ("visitors",  "visitor"),
-            }
-            if holder_kind not in model_map:
-                raise EnrollmentError(
-                    f"Type de porteur invalide : {holder_kind}",
-                    code="invalid_holder_kind",
-                )
-            app_label, model_name = model_map[holder_kind]
-            try:
-                holder_ct = ContentType.objects.get(app_label=app_label, model=model_name)
-                holder_obj_id = int(holder_id)
-            except ContentType.DoesNotExist:
-                raise EnrollmentError(
-                    f"Modèle {app_label}.{model_name} introuvable",
-                    code="content_type_missing",
-                )
+        holder_ct, holder_obj_id = _resolve_holder_reference(
+            tenant,
+            holder_kind,
+            holder_id,
+        )
 
         session = RFIDEnrollmentSession.objects.create(
             tenant=tenant,
@@ -107,7 +91,7 @@ class RFIDEnrollmentService:
         for r in readers_qs:
             DeviceCommandQueue.enqueue(
                 device=r, kind="START_RFID_ENROLLMENT",
-                payload={"session_id": str(session.pk),
+                payload={"session_id": str(session.uuid),
                          "timeout_seconds": timeout_seconds,
                          "mode": mode},
                 issued_by=user, session=session,
@@ -136,7 +120,7 @@ class RFIDEnrollmentService:
         for r in readers_qs:
             DeviceCommandQueue.enqueue(
                 device=r, kind="STOP_RFID_ENROLLMENT",
-                payload={"session_id": str(session.pk)},
+                payload={"session_id": str(session.uuid)},
                 issued_by=user, session=session,
                 timeout_seconds=10,
             )
@@ -214,7 +198,7 @@ class RFIDEnrollmentService:
             # Broadcast Channels
             if is_duplicate:
                 EventBus.emit_card_duplicate(
-                    session.pk, uid,
+                    session.uuid, uid,
                     existing_badge={
                         "id": existing_badge.pk,
                         "uid": existing_badge.uid,
@@ -224,7 +208,7 @@ class RFIDEnrollmentService:
                 )
             else:
                 EventBus.emit_card_detected(
-                    session.pk, uid,
+                    session.uuid, uid,
                     device_id=device.pk if device else None,
                     device_serial=device.serial_number if device else "",
                     rssi=rssi, extra=extra,
@@ -232,7 +216,7 @@ class RFIDEnrollmentService:
             return {
                 "status": "duplicate" if is_duplicate else "detected",
                 "event_id": evt.pk,
-                "session_id": str(session.pk),
+                "session_id": str(session.uuid),
                 "existing_badge_id": existing_badge.pk if existing_badge else None,
                 "is_duplicate": is_duplicate,
             }
@@ -280,21 +264,12 @@ class RFIDEnrollmentService:
         holder_object_id = None
         holder_kind_str = ""
         if kind and obj_id:
-            model_map = {
-                "worker":   ("ouvriers",  "worker"),
-                "employee": ("employees", "employee"),
-                "visitor":  ("visitors",  "visitor"),
-            }
-            if kind in model_map:
-                app_label, model_name = model_map[kind]
-                try:
-                    holder_content_type = ContentType.objects.get(
-                        app_label=app_label, model=model_name,
-                    )
-                    holder_object_id = int(obj_id)
-                    holder_kind_str = kind
-                except ContentType.DoesNotExist:
-                    pass
+            holder_content_type, holder_object_id = _resolve_holder_reference(
+                session.tenant,
+                kind,
+                obj_id,
+            )
+            holder_kind_str = kind
 
         badge = Badge.objects.create(
             tenant=session.tenant,
@@ -316,7 +291,7 @@ class RFIDEnrollmentService:
         )
 
         EventBus.emit_card_enrolled(
-            session.pk, uid,
+            session.uuid, uid,
             badge={
                 "id": badge.pk,
                 "uid": badge.uid,
@@ -330,7 +305,12 @@ class RFIDEnrollmentService:
             rfid_scans_total.labels(result="enrolled").inc()
         except Exception:
             pass
-        logger.info("Enrolled badge %s (uid=%s) via session %s", badge.pk, uid, session.pk)
+        logger.info(
+            "Enrolled badge %s (uid=%s) via session %s",
+            badge.pk,
+            uid,
+            session.uuid,
+        )
         return badge
 
 
@@ -352,6 +332,52 @@ def _resolve_readers(tenant, reader=None):
     )
 
 
+def _resolve_holder_reference(tenant, holder_kind, holder_id):
+    if not holder_kind or not holder_id:
+        return None, None
+
+    model_map = {
+        "worker": ("ouvriers", "worker"),
+        "employee": ("employees", "employee"),
+        "visitor": ("visitors", "visitor"),
+    }
+    if holder_kind not in model_map:
+        raise EnrollmentError(
+            f"Type de porteur invalide : {holder_kind}",
+            code="invalid_holder_kind",
+        )
+
+    app_label, model_name = model_map[holder_kind]
+    try:
+        holder_pk = int(holder_id)
+        holder_ct = ContentType.objects.get(
+            app_label=app_label,
+            model=model_name,
+        )
+    except (TypeError, ValueError):
+        raise EnrollmentError(
+            "Identifiant de porteur invalide",
+            code="invalid_holder_id",
+        )
+    except ContentType.DoesNotExist:
+        raise EnrollmentError(
+            f"Modèle {app_label}.{model_name} introuvable",
+            code="content_type_missing",
+        )
+
+    holder_model = holder_ct.model_class()
+    holder = holder_model.objects.filter(
+        pk=holder_pk,
+        tenant=tenant,
+    ).first()
+    if holder is None:
+        raise EnrollmentError(
+            "Porteur introuvable dans ce tenant",
+            code="holder_not_found",
+        )
+    return holder_ct, holder.pk
+
+
 def _find_active_session(tenant, device):
     """Cherche une session listening pour ce tenant + device."""
     from devices.models import RFIDEnrollmentSession
@@ -370,7 +396,7 @@ RFIDEnrollmentService._find_active_session = staticmethod(_find_active_session)
 
 def _emit_session(session, status: str, message: str = ""):
     from .event_bus import EventBus
-    EventBus.emit_session_status(session.pk, status, message)
+    EventBus.emit_session_status(session.uuid, status, message)
 
 
 def _serialize_holder(badge):

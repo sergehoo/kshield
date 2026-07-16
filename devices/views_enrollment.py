@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 # ═══════════════════════════════════════════════════════════════════
 def _serialize_session(s: RFIDEnrollmentSession) -> dict:
     return {
-        "id": str(s.pk),
+        "id": str(s.uuid),
         "status": s.status,
         "mode": s.mode,
         "site_id": s.site_id,
@@ -104,18 +104,44 @@ class EnrollmentStartView(APIView):
 
     def post(self, request):
         data = request.data or {}
+        tenant = _resolve_tenant(request.user)
+        if tenant is None:
+            return Response(
+                {"error": "Utilisateur sans tenant", "code": "no_tenant"},
+                status=400,
+            )
         try:
             reader = None
             if data.get("reader_id"):
-                reader = Device.objects.get(pk=data["reader_id"])
+                reader = Device.objects.get(
+                    pk=data["reader_id"],
+                    tenant=tenant,
+                )
             site = None
             zone = None
             if data.get("site_id"):
                 from sites.models import Site
-                site = Site.objects.get(pk=data["site_id"])
+
+                site = Site.objects.filter(
+                    pk=data["site_id"],
+                    tenant=tenant,
+                ).first()
+                if site is None:
+                    return Response({"error": "Site introuvable"}, status=404)
             if data.get("zone_id"):
                 from sites.models import Zone
-                zone = Zone.objects.get(pk=data["zone_id"])
+
+                zone = Zone.objects.filter(
+                    pk=data["zone_id"],
+                    site__tenant=tenant,
+                ).first()
+                if zone is None:
+                    return Response({"error": "Zone introuvable"}, status=404)
+                if site is not None and zone.site_id != site.pk:
+                    return Response(
+                        {"error": "Cette zone n'appartient pas au site sélectionné"},
+                        status=400,
+                    )
 
             session = RFIDEnrollmentService.start_session(
                 user=request.user,
@@ -139,12 +165,13 @@ class EnrollmentStopView(APIView):
 
     def post(self, request, session_id):
         try:
-            session = RFIDEnrollmentSession.objects.get(pk=session_id)
+            session = RFIDEnrollmentSession.objects.get(uuid=session_id)
         except RFIDEnrollmentSession.DoesNotExist:
             return Response({"error": "Session introuvable"}, status=404)
 
         # RBAC minimal — l'opérateur ou un admin de son tenant
-        if session.tenant_id != getattr(request.user, "tenant_id", None):
+        tenant = _resolve_tenant(request.user)
+        if tenant is None or session.tenant_id != tenant.pk:
             return Response({"error": "Session hors tenant"}, status=403)
 
         reason = request.data.get("reason") or ""
@@ -172,11 +199,12 @@ class EnrollmentConfirmView(APIView):
 
     def post(self, request, session_id):
         try:
-            session = RFIDEnrollmentSession.objects.get(pk=session_id)
+            session = RFIDEnrollmentSession.objects.get(uuid=session_id)
         except RFIDEnrollmentSession.DoesNotExist:
             return Response({"error": "Session introuvable"}, status=404)
 
-        if session.tenant_id != getattr(request.user, "tenant_id", None):
+        tenant = _resolve_tenant(request.user)
+        if tenant is None or session.tenant_id != tenant.pk:
             return Response({"error": "Session hors tenant"}, status=403)
 
         data = request.data or {}
@@ -211,11 +239,14 @@ class EnrollmentSessionDetailView(APIView):
 
     def get(self, request, session_id):
         try:
-            session = RFIDEnrollmentSession.objects.select_related("reader").get(pk=session_id)
+            session = RFIDEnrollmentSession.objects.select_related("reader").get(
+                uuid=session_id,
+            )
         except RFIDEnrollmentSession.DoesNotExist:
             return Response({"error": "Session introuvable"}, status=404)
 
-        if session.tenant_id != getattr(request.user, "tenant_id", None):
+        tenant = _resolve_tenant(request.user)
+        if tenant is None or session.tenant_id != tenant.pk:
             return Response({"error": "Session hors tenant"}, status=403)
 
         limit = min(int(request.query_params.get("limit", 100)), 500)
@@ -237,11 +268,14 @@ class EnrollmentSessionExportView(APIView):
 
     def get(self, request, session_id):
         try:
-            session = RFIDEnrollmentSession.objects.select_related("reader").get(pk=session_id)
+            session = RFIDEnrollmentSession.objects.select_related("reader").get(
+                uuid=session_id,
+            )
         except RFIDEnrollmentSession.DoesNotExist:
             return Response({"error": "Session introuvable"}, status=404)
 
-        if session.tenant_id != getattr(request.user, "tenant_id", None):
+        tenant = _resolve_tenant(request.user)
+        if tenant is None or session.tenant_id != tenant.pk:
             return Response({"error": "Session hors tenant"}, status=403)
 
         fmt = (request.query_params.get("format") or "csv").lower()
@@ -261,7 +295,7 @@ def _export_csv(session, events):
 
     buf = StringIO()
     w = csv.writer(buf)
-    w.writerow(["Session", str(session.pk)])
+    w.writerow(["Session", str(session.uuid)])
     w.writerow(["Statut", session.status])
     w.writerow(["Mode", session.mode])
     w.writerow(["Démarrée", session.started_at.isoformat() if session.started_at else ""])
@@ -281,7 +315,7 @@ def _export_csv(session, events):
             e.message or "",
         ])
     resp = HttpResponse(buf.getvalue(), content_type="text/csv")
-    resp["Content-Disposition"] = f'attachment; filename="enrollment_{session.pk}.csv"'
+    resp["Content-Disposition"] = f'attachment; filename="enrollment_{session.uuid}.csv"'
     return resp
 
 
@@ -308,7 +342,7 @@ def _export_pdf(session, events):
 
     elems.append(Paragraph("<b>KAYDAN SHIELD — Rapport d'enrôlement RFID</b>",
                             styles["Title"]))
-    elems.append(Paragraph(f"Session <b>{session.pk}</b>", styles["Normal"]))
+    elems.append(Paragraph(f"Session <b>{session.uuid}</b>", styles["Normal"]))
     elems.append(Paragraph(
         f"Statut : {session.status} · Mode : {session.mode} · "
         f"Scans : {session.scans_count} "
@@ -349,7 +383,7 @@ def _export_pdf(session, events):
     doc.build(elems)
 
     resp = HttpResponse(buf.getvalue(), content_type="application/pdf")
-    resp["Content-Disposition"] = f'attachment; filename="enrollment_{session.pk}.pdf"'
+    resp["Content-Disposition"] = f'attachment; filename="enrollment_{session.uuid}.pdf"'
     return resp
 
 
@@ -376,23 +410,36 @@ class EnrollmentIngestScanView(APIView):
         if not uid:
             return Response({"error": "UID manquant"}, status=400)
 
+        tenant = _resolve_tenant(request.user)
+        if tenant is None:
+            return Response(
+                {"error": "Utilisateur sans tenant", "code": "no_tenant"},
+                status=400,
+            )
+
         session = None
         device = None
         if data.get("session_id"):
             try:
-                session = RFIDEnrollmentSession.objects.get(pk=data["session_id"])
+                session = RFIDEnrollmentSession.objects.get(
+                    uuid=data["session_id"],
+                    tenant=tenant,
+                )
             except RFIDEnrollmentSession.DoesNotExist:
                 return Response({"error": "Session introuvable"}, status=404)
         if data.get("device_id"):
             try:
-                device = Device.objects.get(pk=data["device_id"])
+                device = Device.objects.get(
+                    pk=data["device_id"],
+                    tenant=tenant,
+                )
             except Device.DoesNotExist:
                 pass  # scan orphelin admis
 
         try:
             result = RFIDEnrollmentService.ingest_scan(
                 session=session,
-                tenant=getattr(request.user, "tenant", None),
+                tenant=tenant,
                 uid=uid,
                 device=device,
                 rssi=data.get("rssi"),
