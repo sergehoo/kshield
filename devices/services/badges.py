@@ -40,8 +40,8 @@ STATE_TRANSITIONS: dict[str, set[str]] = {
     "enrolling":  {"available", "assigned", "disabled"},
     "assigned":   {"active", "suspended", "expired", "lost", "stolen",
                    "disabled", "revoked", "available"},
-    "active":     {"suspended", "expired", "lost", "stolen", "disabled",
-                   "revoked", "available"},   # available après restitution
+    "active":     {"assigned", "suspended", "expired", "lost", "stolen",
+                   "disabled", "revoked", "available"},
     "suspended":  {"active", "expired", "revoked", "disabled", "lost", "stolen"},
     "expired":    {"archived", "destroyed", "available"},   # renouvellement possible
     "lost":       {"revoked", "archived"},   # peut être marqué révoqué après recherche

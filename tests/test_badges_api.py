@@ -58,3 +58,48 @@ def test_badge_create_rejects_duplicate_uid(
     )
 
     assert response.status_code == 400
+
+
+@pytest.mark.django_db
+def test_badge_associate_and_dissociate_worker(
+    api_client, badge_api_user, kaydan_tenant, worker
+):
+    from devices.models import Badge
+    from devices.models_badges import BadgeAssignment
+
+    badge = Badge.objects.create(
+        tenant=kaydan_tenant,
+        uid="BADGE-API-ASSOC",
+        status="active",
+    )
+    api_client.force_authenticate(badge_api_user)
+
+    associated = api_client.post(
+        f"/api/v1/devices/badges/{badge.pk}/associate/",
+        {"holder_kind": "worker", "holder_id": worker.pk},
+        format="json",
+    )
+
+    assert associated.status_code == 201
+    badge.refresh_from_db()
+    assignment = BadgeAssignment.objects.get(
+        badge=badge,
+        closed_at__isnull=True,
+    )
+    assert badge.status == "assigned"
+    assert badge.category == "worker_rfid"
+    assert badge.holder == worker
+    assert assignment.holder == worker
+
+    dissociated = api_client.post(
+        f"/api/v1/devices/badges/{badge.pk}/dissociate/",
+        {},
+        format="json",
+    )
+
+    assert dissociated.status_code == 200
+    badge.refresh_from_db()
+    assignment.refresh_from_db()
+    assert badge.status == "available"
+    assert badge.holder_object_id is None
+    assert assignment.closed_at is not None

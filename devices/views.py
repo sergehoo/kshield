@@ -1,6 +1,8 @@
 import logging
 
+from django.db import transaction
 from django.http import Http404, HttpResponse, StreamingHttpResponse
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.views import View
 from drf_spectacular.utils import extend_schema, extend_schema_view
@@ -15,6 +17,8 @@ from accounts.hmac_auth import HMACAPIKeyAuthentication
 from accounts.permissions import IsAuthenticatedOrAPIKey
 from accounts.rbac import HasKshieldPermission
 from core.tenancy import resolve_request_tenant
+
+from .services.badges import BadgeAssignmentService
 
 logger = logging.getLogger(__name__)
 
@@ -132,6 +136,97 @@ class BadgeViewSet(viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         serializer.save(updated_by=self.request.user)
+
+    def _get_tenant_badge(self, request, pk):
+        tenant = resolve_request_tenant(request)
+        badge = get_object_or_404(self.get_queryset(), pk=pk, tenant=tenant)
+        self.check_object_permissions(request, badge)
+        return badge
+
+    @action(detail=True, methods=["post"])
+    @transaction.atomic
+    def associate(self, request, pk=None):
+        badge = self._get_tenant_badge(request, pk)
+        holder_kind = request.data.get("holder_kind")
+        try:
+            holder_id = int(request.data.get("holder_id"))
+        except (TypeError, ValueError):
+            return Response(
+                {"holder_id": ["Ce champ est obligatoire."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if holder_kind == "worker":
+            from ouvriers.models import Worker
+
+            holder_model = Worker
+            category = "worker_rfid"
+        elif holder_kind == "employee":
+            from employees.models import Employee
+
+            holder_model = Employee
+            category = "employee_rfid"
+        else:
+            return Response(
+                {"holder_kind": ["Valeur attendue : worker ou employee."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        holder = holder_model.objects.filter(
+            pk=holder_id,
+            tenant=badge.tenant,
+        ).first()
+        if holder is None:
+            return Response(
+                {"holder_id": ["Porteur introuvable dans ce tenant."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Le formulaire historique ne transmettait pas la catégorie métier.
+        # Le service la valide, donc on la déduit du type de porteur.
+        badge.category = category
+        try:
+            result = BadgeAssignmentService.assign(
+                badge=badge,
+                holder_kind=holder_kind,
+                holder_object=holder,
+                assigned_by=request.user,
+            )
+        except ValueError as exc:
+            return Response(
+                {"error": str(exc), "error_code": "invalid_transition"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not result.ok:
+            return Response(
+                {"error": result.error, "error_code": result.error_code},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        badge.updated_by = request.user
+        badge.save(update_fields=["category", "updated_by", "updated_at"])
+        return Response(
+            self.get_serializer(badge).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    @action(detail=True, methods=["post"])
+    @transaction.atomic
+    def dissociate(self, request, pk=None):
+        badge = self._get_tenant_badge(request, pk)
+        result = BadgeAssignmentService.unassign(
+            badge=badge,
+            close_notes=request.data.get("notes", ""),
+            performed_by=request.user,
+        )
+        if not result.ok:
+            return Response(
+                {"error": result.error, "error_code": result.error_code},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        badge.updated_by = request.user
+        badge.save(update_fields=["updated_by", "updated_at"])
+        return Response(self.get_serializer(badge).data)
 
     @action(detail=True, methods=["post"])
     def revoke(self, request, pk=None):
