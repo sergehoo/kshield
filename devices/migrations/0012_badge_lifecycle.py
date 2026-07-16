@@ -15,6 +15,41 @@ from django.conf import settings
 from django.db import migrations, models
 
 
+def migrate_legacy_assignments(apps, schema_editor):
+    """Complète les anciennes affectations sans perdre leur historique."""
+    BadgeAssignment = apps.get_model("devices", "BadgeAssignment")
+    database = schema_editor.connection.alias
+    latest_open_at = {}
+
+    assignments = (
+        BadgeAssignment.objects.using(database)
+        .select_related("badge")
+        .order_by("badge_id", "-assigned_at", "-pk")
+    )
+    for assignment in assignments.iterator():
+        update_fields = []
+
+        assignment.tenant_id = assignment.badge.tenant_id
+        update_fields.append("tenant")
+
+        if assignment.visit_request_id and not assignment.reason:
+            assignment.reason = f"Visite #{assignment.visit_request_id}"
+            update_fields.append("reason")
+
+        if assignment.closed_at is not None:
+            if not assignment.close_reason:
+                assignment.close_reason = "unassigned"
+                update_fields.append("close_reason")
+        elif assignment.badge_id in latest_open_at:
+            assignment.closed_at = latest_open_at[assignment.badge_id]
+            assignment.close_reason = "replaced"
+            update_fields.extend(["closed_at", "close_reason"])
+        else:
+            latest_open_at[assignment.badge_id] = assignment.assigned_at
+
+        assignment.save(update_fields=update_fields)
+
+
 class Migration(migrations.Migration):
 
     dependencies = [

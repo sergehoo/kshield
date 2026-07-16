@@ -26,7 +26,7 @@ from core.mixins import TimeStampedModel
 # ═══════════════════════════════════════════════════════════════════
 # BadgeAssignment — historique immutable des attributions
 # ═══════════════════════════════════════════════════════════════════
-class BadgeAssignment(models.Model):
+class BadgeAssignment(TimeStampedModel):
     """Représente une période d'attribution d'un badge à un titulaire.
 
     Cahier des charges §3.4 :
@@ -78,7 +78,6 @@ class BadgeAssignment(models.Model):
         ("critical",   "Critique (direction/sécurité)"),
     ]
 
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     badge = models.ForeignKey(
         "devices.Badge", on_delete=models.CASCADE, related_name="assignments",
     )
@@ -97,7 +96,7 @@ class BadgeAssignment(models.Model):
     # Version textuelle du titulaire — pour affichage historique même si
     # l'objet référencé est supprimé.
     holder_label = models.CharField(
-        max_length=200,
+        max_length=240,
         help_text="Nom complet du titulaire au moment de l'attribution.",
     )
 
@@ -191,11 +190,11 @@ class BadgeAssignment(models.Model):
         verbose_name = "Attribution de badge"
         verbose_name_plural = "Attributions de badges"
         indexes = [
-            models.Index(fields=["badge", "-assigned_at"]),
-            models.Index(fields=["tenant", "-assigned_at"]),
-            models.Index(fields=["holder_kind", "closed_at"]),
-            models.Index(fields=["site", "closed_at"]),
-            models.Index(fields=["expires_at"]),
+            models.Index(fields=["badge", "-assigned_at"], name="badge_assign_bg_dt_idx"),
+            models.Index(fields=["tenant", "-assigned_at"], name="badge_assign_ten_dt_idx"),
+            models.Index(fields=["holder_kind", "closed_at"], name="badge_assign_hk_cl_idx"),
+            models.Index(fields=["site", "closed_at"], name="badge_assign_st_cl_idx"),
+            models.Index(fields=["expires_at"], name="badge_assign_exp_idx"),
         ]
         constraints = [
             # Un badge ne peut avoir qu'UNE assignation active (closed_at IS NULL)
@@ -254,8 +253,8 @@ class BadgeLifecycleEvent(models.Model):
         ordering = ["-created_at"]
         verbose_name = "Événement cycle de vie badge"
         indexes = [
-            models.Index(fields=["badge", "-created_at"]),
-            models.Index(fields=["to_status", "-created_at"]),
+            models.Index(fields=["badge", "-created_at"], name="badge_lc_bg_dt_idx"),
+            models.Index(fields=["to_status", "-created_at"], name="badge_lc_st_dt_idx"),
         ]
 
     def __str__(self) -> str:
