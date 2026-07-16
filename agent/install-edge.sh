@@ -127,11 +127,45 @@ pip install --quiet --upgrade pip
 pip install --quiet -e .
 
 # ─── Activation (échange token) ────────────────────────────────
+# Le TOML final est écrit dans ~/.kshield-agent.toml. En sudo, $HOME = /var/root
+# mais le service tournera comme SUDO_USER → il faut écrire dans son home à lui.
 log "Appairage avec le cloud (activation token)..."
-kshield-agent activate \
-    --server-url "$KSHIELD_SERVER_URL" \
-    --token "$KSHIELD_ACTIVATION_TOKEN" \
-    || err "Activation échouée. Vérifier le token et l'URL serveur."
+ACTIVATE_USER="${SUDO_USER:-$(whoami)}"
+ACTIVATE_HOME=$(eval echo "~${ACTIVATE_USER}")
+
+if [ "$(id -u)" -eq 0 ] && [ "$ACTIVATE_USER" != "root" ]; then
+    # Délègue à l'utilisateur cible pour que ~/.kshield-agent.toml soit
+    # bien créé dans /Users/<user>/ ou /home/<user>/ (pas /var/root/).
+    sudo -u "$ACTIVATE_USER" -H "$INSTALL_DIR/agent/.venv/bin/kshield-agent" activate \
+        --server-url "$KSHIELD_SERVER_URL" \
+        --token "$KSHIELD_ACTIVATION_TOKEN" \
+        || err "Activation échouée. Vérifier le token et l'URL serveur."
+else
+    kshield-agent activate \
+        --server-url "$KSHIELD_SERVER_URL" \
+        --token "$KSHIELD_ACTIVATION_TOKEN" \
+        || err "Activation échouée. Vérifier le token et l'URL serveur."
+fi
+
+# S'assurer que le TOML est bien lisible par le user cible.
+# Le venv de root peut avoir créé le fichier avec ownership root:wheel
+# même si $HOME était bien résolu vers /Users/<user>/ — c'est le comportement
+# de Python 3.14 quand SUDO_USER n'est pas explicitement propagé.
+CFG_PATH="$ACTIVATE_HOME/.kshield-agent.toml"
+if [ ! -f "$CFG_PATH" ] && [ -f "/var/root/.kshield-agent.toml" ] \
+     && [ "$ACTIVATE_USER" != "root" ]; then
+    warn "Config écrite dans /var/root/ — copie vers $CFG_PATH"
+    cp /var/root/.kshield-agent.toml "$CFG_PATH"
+fi
+
+if [ -f "$CFG_PATH" ]; then
+    # Force ownership + permissions pour que le LaunchAgent puisse lire.
+    chown "$ACTIVATE_USER" "$CFG_PATH" 2>/dev/null || true
+    chmod 600 "$CFG_PATH" 2>/dev/null || true
+    log "Config prête : $CFG_PATH (owner: $ACTIVATE_USER, mode: 0600)"
+else
+    warn "$CFG_PATH introuvable après activation — l'agent va crasher au boot."
+fi
 
 log "Activation réussie ✓"
 
@@ -175,7 +209,15 @@ UNIT
 # ─── Service launchd (macOS) ───────────────────────────────────
 elif [ "$PLATFORM" = "macos" ]; then
     log "Installation du LaunchAgent macOS..."
-    PLIST_PATH="$HOME/Library/LaunchAgents/com.kaydangroupe.kshield-edge.plist"
+
+    # Résoudre le vrai HOME de l'utilisateur (SUDO_USER si sudo, sinon $USER).
+    # Quand on est en `sudo bash install-edge.sh`, $HOME peut pointer sur /var/root
+    # et launchctl load ne peut pas charger dans la session GUI. On force l'user.
+    TARGET_USER="${SUDO_USER:-$(whoami)}"
+    TARGET_UID=$(id -u "$TARGET_USER")
+    TARGET_HOME=$(eval echo "~${TARGET_USER}")
+
+    PLIST_PATH="$TARGET_HOME/Library/LaunchAgents/com.kaydangroupe.kshield-edge.plist"
     mkdir -p "$(dirname "$PLIST_PATH")"
 
     cat > "$PLIST_PATH" << PLIST
@@ -204,13 +246,32 @@ elif [ "$PLATFORM" = "macos" ]; then
 </plist>
 PLIST
 
-    launchctl unload "$PLIST_PATH" 2>/dev/null || true
-    launchctl load "$PLIST_PATH"
-    sleep 3
-    if launchctl list | grep -q com.kaydangroupe.kshield-edge; then
-        log "LaunchAgent actif ✓"
+    # Le plist appartient à l'utilisateur (pas root) — sinon launchctl refuse.
+    chown "$TARGET_USER" "$PLIST_PATH" 2>/dev/null || true
+
+    # Charge dans la session GUI de l'utilisateur cible.
+    # `launchctl bootstrap gui/<uid>` fonctionne même si on est en sudo,
+    # contrairement à `launchctl load` qui hérite du contexte root.
+    launchctl bootout "gui/$TARGET_UID/com.kaydangroupe.kshield-edge" 2>/dev/null || true
+
+    if command -v sudo >/dev/null 2>&1 && [ "$(id -u)" -eq 0 ] && [ "$TARGET_USER" != "root" ]; then
+        # Lancé en sudo → délègue à l'utilisateur cible pour bootstrap correct
+        sudo -u "$TARGET_USER" launchctl bootstrap "gui/$TARGET_UID" "$PLIST_PATH" \
+          || sudo -u "$TARGET_USER" launchctl load "$PLIST_PATH"
     else
-        warn "LaunchAgent chargé mais pas actif. Voir : cat /tmp/kshield-edge.err"
+        launchctl bootstrap "gui/$TARGET_UID" "$PLIST_PATH" \
+          || launchctl load "$PLIST_PATH"
+    fi
+
+    sleep 3
+    if sudo -u "$TARGET_USER" launchctl list 2>/dev/null | grep -q com.kaydangroupe.kshield-edge \
+       || launchctl list | grep -q com.kaydangroupe.kshield-edge; then
+        log "LaunchAgent actif ✓ (utilisateur : $TARGET_USER, UID : $TARGET_UID)"
+    else
+        warn "LaunchAgent chargé mais pas actif. Diagnostic :"
+        warn "  cat /tmp/kshield-edge.err"
+        warn "  launchctl list | grep kshield"
+        warn "  launchctl kickstart -k gui/$TARGET_UID/com.kaydangroupe.kshield-edge"
     fi
 fi
 
