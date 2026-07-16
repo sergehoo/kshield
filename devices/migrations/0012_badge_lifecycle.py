@@ -4,12 +4,11 @@
 Migration manuelle pour :
   1. Étendre Badge.STATUS_CHOICES (8 → 12 états)
   2. Étendre Badge.HOLDER_KIND_CHOICES (3 → 8 types)
-  3. Créer BadgeAssignment (historique immutable)
+  3. Faire évoluer BadgeAssignment sans perdre l'historique de 0002
   4. Créer BadgeLifecycleEvent (transitions d'état)
 """
 import uuid
 
-import django.contrib.contenttypes.models
 import django.db.models.deletion
 from django.conf import settings
 from django.db import migrations, models
@@ -109,120 +108,325 @@ class Migration(migrations.Migration):
             ),
         ),
 
-        # ─── 3. BadgeAssignment (historique immutable) ──────────────
-        migrations.CreateModel(
-            name="BadgeAssignment",
-            fields=[
-                ("id", models.UUIDField(
-                    primary_key=True, default=uuid.uuid4,
-                    editable=False, serialize=False,
-                )),
-                ("holder_kind", models.CharField(
-                    max_length=16, choices=HOLDER_KIND_CHOICES,
-                )),
-                ("holder_object_id", models.PositiveBigIntegerField(
-                    null=True, blank=True,
-                )),
-                ("holder_label", models.CharField(max_length=200)),
-                ("access_level", models.CharField(
-                    max_length=16, default="basic",
-                    choices=[
-                        ("none",     "Aucun"),
-                        ("basic",    "Basique"),
-                        ("standard", "Standard"),
-                        ("elevated", "Élevé"),
-                        ("critical", "Critique"),
-                    ],
-                )),
-                ("assigned_at", models.DateTimeField(
-                    auto_now_add=True, db_index=True,
-                )),
-                ("activated_at", models.DateTimeField(null=True, blank=True)),
-                ("expires_at", models.DateTimeField(
-                    null=True, blank=True, db_index=True,
-                )),
-                ("time_window_start", models.TimeField(null=True, blank=True)),
-                ("time_window_end", models.TimeField(null=True, blank=True)),
-                ("allowed_weekdays", models.CharField(max_length=20, blank=True)),
-                ("is_permanent", models.BooleanField(default=False)),
-                ("reason", models.CharField(max_length=240, blank=True)),
-                ("closed_at", models.DateTimeField(
-                    null=True, blank=True, db_index=True,
-                )),
-                ("close_reason", models.CharField(max_length=16, blank=True)),
-                ("close_notes", models.TextField(blank=True)),
-                ("notes", models.TextField(blank=True)),
-                ("metadata", models.JSONField(default=dict, blank=True)),
-                ("badge", models.ForeignKey(
-                    on_delete=django.db.models.deletion.CASCADE,
-                    related_name="assignments",
-                    to="devices.badge",
-                )),
-                ("tenant", models.ForeignKey(
-                    on_delete=django.db.models.deletion.CASCADE,
-                    related_name="badge_assignments",
-                    to="core.tenant",
-                )),
-                ("holder_content_type", models.ForeignKey(
-                    null=True, blank=True,
-                    on_delete=django.db.models.deletion.SET_NULL,
-                    related_name="+",
-                    to="contenttypes.contenttype",
-                )),
-                ("site", models.ForeignKey(
-                    null=True, blank=True,
-                    on_delete=django.db.models.deletion.PROTECT,
-                    related_name="badge_assignments",
-                    to="sites.site",
-                )),
-                ("assigned_by", models.ForeignKey(
-                    null=True, blank=True,
-                    on_delete=django.db.models.deletion.SET_NULL,
-                    related_name="+",
-                    to=settings.AUTH_USER_MODEL,
-                )),
-                ("validated_by", models.ForeignKey(
-                    null=True, blank=True,
-                    on_delete=django.db.models.deletion.SET_NULL,
-                    related_name="+",
-                    to=settings.AUTH_USER_MODEL,
-                )),
-                ("closed_by", models.ForeignKey(
-                    null=True, blank=True,
-                    on_delete=django.db.models.deletion.SET_NULL,
-                    related_name="+",
-                    to=settings.AUTH_USER_MODEL,
-                )),
-                ("zones", models.ManyToManyField(
-                    blank=True,
-                    related_name="badge_assignments",
-                    to="sites.zone",
-                )),
-            ],
+        # ─── 3. Évolution de BadgeAssignment sans perte de données ──
+        # La table existe depuis 0002. On conserve sa PK BigAutoField et ses
+        # champs d'audit, puis on l'enrichit avec le nouveau cycle de vie.
+        migrations.AlterModelOptions(
+            name="badgeassignment",
             options={
                 "ordering": ["-assigned_at"],
                 "verbose_name": "Attribution de badge",
                 "verbose_name_plural": "Attributions de badges",
-                "indexes": [
-                    models.Index(fields=["badge", "-assigned_at"],
-                                  name="badge_assign_bg_dt_idx"),
-                    models.Index(fields=["tenant", "-assigned_at"],
-                                  name="badge_assign_ten_dt_idx"),
-                    models.Index(fields=["holder_kind", "closed_at"],
-                                  name="badge_assign_hk_cl_idx"),
-                    models.Index(fields=["site", "closed_at"],
-                                  name="badge_assign_st_cl_idx"),
-                    models.Index(fields=["expires_at"],
-                                  name="badge_assign_exp_idx"),
-                ],
-                "constraints": [
-                    models.UniqueConstraint(
-                        fields=["badge"],
-                        condition=models.Q(closed_at__isnull=True),
-                        name="badge_one_active_assignment",
-                    ),
-                ],
             },
+        ),
+        migrations.RemoveIndex(
+            model_name="badgeassignment",
+            name="devices_bad_badge_i_7afb11_idx",
+        ),
+        migrations.RemoveIndex(
+            model_name="badgeassignment",
+            name="devices_bad_holder__16809b_idx",
+        ),
+        migrations.RenameField(
+            model_name="badgeassignment",
+            old_name="released_at",
+            new_name="closed_at",
+        ),
+        migrations.RenameField(
+            model_name="badgeassignment",
+            old_name="released_by",
+            new_name="closed_by",
+        ),
+        migrations.AlterField(
+            model_name="badgeassignment",
+            name="holder_kind",
+            field=models.CharField(max_length=16, choices=HOLDER_KIND_CHOICES),
+        ),
+        migrations.AlterField(
+            model_name="badgeassignment",
+            name="holder_object_id",
+            field=models.PositiveBigIntegerField(null=True, blank=True),
+        ),
+        migrations.AlterField(
+            model_name="badgeassignment",
+            name="holder_label",
+            field=models.CharField(
+                max_length=240,
+                help_text="Nom complet du titulaire au moment de l'attribution.",
+            ),
+        ),
+        migrations.AlterField(
+            model_name="badgeassignment",
+            name="assigned_at",
+            field=models.DateTimeField(
+                auto_now_add=True,
+                db_index=True,
+                help_text="Date d'attribution (immuable).",
+            ),
+        ),
+        migrations.AlterField(
+            model_name="badgeassignment",
+            name="assigned_by",
+            field=models.ForeignKey(
+                null=True,
+                blank=True,
+                on_delete=django.db.models.deletion.SET_NULL,
+                related_name="+",
+                to=settings.AUTH_USER_MODEL,
+                help_text="Utilisateur qui a créé l'attribution.",
+            ),
+        ),
+        migrations.AlterField(
+            model_name="badgeassignment",
+            name="closed_at",
+            field=models.DateTimeField(
+                null=True,
+                blank=True,
+                db_index=True,
+                help_text="NULL = active. Non-NULL = fermée.",
+            ),
+        ),
+        migrations.AlterField(
+            model_name="badgeassignment",
+            name="closed_by",
+            field=models.ForeignKey(
+                null=True,
+                blank=True,
+                on_delete=django.db.models.deletion.SET_NULL,
+                related_name="+",
+                to=settings.AUTH_USER_MODEL,
+            ),
+        ),
+        migrations.AddField(
+            model_name="badgeassignment",
+            name="tenant",
+            field=models.ForeignKey(
+                null=True,
+                on_delete=django.db.models.deletion.CASCADE,
+                related_name="badge_assignments",
+                to="core.tenant",
+            ),
+        ),
+        migrations.AddField(
+            model_name="badgeassignment",
+            name="holder_content_type",
+            field=models.ForeignKey(
+                null=True,
+                blank=True,
+                on_delete=django.db.models.deletion.SET_NULL,
+                related_name="+",
+                to="contenttypes.contenttype",
+            ),
+        ),
+        migrations.AddField(
+            model_name="badgeassignment",
+            name="site",
+            field=models.ForeignKey(
+                null=True,
+                blank=True,
+                on_delete=django.db.models.deletion.PROTECT,
+                related_name="badge_assignments",
+                to="sites.site",
+                help_text="Site principal — le badge n'est actif que sur ce site.",
+            ),
+        ),
+        migrations.AddField(
+            model_name="badgeassignment",
+            name="access_level",
+            field=models.CharField(
+                max_length=16,
+                default="basic",
+                choices=[
+                    ("none", "Aucun (badge visiteur simple)"),
+                    ("basic", "Basique"),
+                    ("standard", "Standard"),
+                    ("elevated", "Élevé (superviseur)"),
+                    ("critical", "Critique (direction/sécurité)"),
+                ],
+            ),
+        ),
+        migrations.AddField(
+            model_name="badgeassignment",
+            name="activated_at",
+            field=models.DateTimeField(
+                null=True,
+                blank=True,
+                help_text="Date à partir de laquelle le badge peut être utilisé.",
+            ),
+        ),
+        migrations.AddField(
+            model_name="badgeassignment",
+            name="expires_at",
+            field=models.DateTimeField(
+                null=True,
+                blank=True,
+                db_index=True,
+                help_text="Fin de validité — le badge passe auto en state expired.",
+            ),
+        ),
+        migrations.AddField(
+            model_name="badgeassignment",
+            name="time_window_start",
+            field=models.TimeField(
+                null=True,
+                blank=True,
+                help_text="Heure de début autorisée dans la journée (ex: 06:00).",
+            ),
+        ),
+        migrations.AddField(
+            model_name="badgeassignment",
+            name="time_window_end",
+            field=models.TimeField(
+                null=True,
+                blank=True,
+                help_text="Heure de fin autorisée dans la journée (ex: 22:00).",
+            ),
+        ),
+        migrations.AddField(
+            model_name="badgeassignment",
+            name="allowed_weekdays",
+            field=models.CharField(
+                max_length=20,
+                blank=True,
+                default="",
+                help_text='Jours autorisés séparés par virgule (ex: "0,1,2,3,4" = lun-ven, 0=lundi, 6=dimanche). Vide = tous les jours.',
+            ),
+            preserve_default=False,
+        ),
+        migrations.AddField(
+            model_name="badgeassignment",
+            name="is_permanent",
+            field=models.BooleanField(
+                default=False,
+                help_text="True : attribution permanente sans expires_at. False : attribution temporaire (dates obligatoires).",
+            ),
+        ),
+        migrations.AddField(
+            model_name="badgeassignment",
+            name="reason",
+            field=models.CharField(
+                max_length=240,
+                blank=True,
+                default="",
+                help_text='Motif d\'attribution : "Mission chantier Riviera 2026-Q3", "Visiteur ENT-CI", etc.',
+            ),
+            preserve_default=False,
+        ),
+        migrations.AddField(
+            model_name="badgeassignment",
+            name="validated_by",
+            field=models.ForeignKey(
+                null=True,
+                blank=True,
+                on_delete=django.db.models.deletion.SET_NULL,
+                related_name="+",
+                to=settings.AUTH_USER_MODEL,
+                help_text="Responsable qui a validé cette attribution (workflow d'approbation pour niveaux élevés).",
+            ),
+        ),
+        migrations.AddField(
+            model_name="badgeassignment",
+            name="close_reason",
+            field=models.CharField(
+                max_length=16,
+                blank=True,
+                default="",
+                choices=[
+                    ("unassigned", "Désaffecté volontairement"),
+                    ("expired", "Expiré (fin de validité)"),
+                    ("lost", "Perdu"),
+                    ("stolen", "Volé"),
+                    ("suspended", "Suspendu (temporaire)"),
+                    ("revoked", "Révoqué (sanction)"),
+                    ("holder_left", "Titulaire parti (démission/fin visite)"),
+                    ("destroyed", "Badge détruit"),
+                    ("replaced", "Remplacé par un nouveau badge"),
+                    ("archived", "Archivé (RGPD)"),
+                ],
+            ),
+            preserve_default=False,
+        ),
+        migrations.AddField(
+            model_name="badgeassignment",
+            name="close_notes",
+            field=models.TextField(blank=True, default=""),
+            preserve_default=False,
+        ),
+        migrations.AddField(
+            model_name="badgeassignment",
+            name="metadata",
+            field=models.JSONField(
+                default=dict,
+                blank=True,
+                help_text="Champs additionnels (n° véhicule, catégorie ressource, etc.)",
+            ),
+        ),
+        migrations.AddField(
+            model_name="badgeassignment",
+            name="zones",
+            field=models.ManyToManyField(
+                blank=True,
+                related_name="badge_assignments",
+                to="sites.zone",
+                help_text="Zones autorisées (vide = toutes les zones du site).",
+            ),
+        ),
+        migrations.RunPython(migrate_legacy_assignments, migrations.RunPython.noop),
+        migrations.AlterField(
+            model_name="badgeassignment",
+            name="tenant",
+            field=models.ForeignKey(
+                on_delete=django.db.models.deletion.CASCADE,
+                related_name="badge_assignments",
+                to="core.tenant",
+            ),
+        ),
+        migrations.RemoveField(
+            model_name="badgeassignment",
+            name="visit_request",
+        ),
+        migrations.AddIndex(
+            model_name="badgeassignment",
+            index=models.Index(
+                fields=["badge", "-assigned_at"],
+                name="badge_assign_bg_dt_idx",
+            ),
+        ),
+        migrations.AddIndex(
+            model_name="badgeassignment",
+            index=models.Index(
+                fields=["tenant", "-assigned_at"],
+                name="badge_assign_ten_dt_idx",
+            ),
+        ),
+        migrations.AddIndex(
+            model_name="badgeassignment",
+            index=models.Index(
+                fields=["holder_kind", "closed_at"],
+                name="badge_assign_hk_cl_idx",
+            ),
+        ),
+        migrations.AddIndex(
+            model_name="badgeassignment",
+            index=models.Index(
+                fields=["site", "closed_at"],
+                name="badge_assign_st_cl_idx",
+            ),
+        ),
+        migrations.AddIndex(
+            model_name="badgeassignment",
+            index=models.Index(
+                fields=["expires_at"],
+                name="badge_assign_exp_idx",
+            ),
+        ),
+        migrations.AddConstraint(
+            model_name="badgeassignment",
+            constraint=models.UniqueConstraint(
+                fields=["badge"],
+                condition=models.Q(closed_at__isnull=True),
+                name="badge_one_active_assignment",
+            ),
         ),
 
         # ─── 4. BadgeLifecycleEvent (transitions immuables) ─────────

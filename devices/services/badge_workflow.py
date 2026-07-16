@@ -27,7 +27,7 @@ from django.core.files.base import ContentFile
 from django.utils import timezone
 
 if TYPE_CHECKING:
-    from .models import Badge
+    from ..models import Badge
 
 log = logging.getLogger(__name__)
 
@@ -1008,7 +1008,7 @@ class BadgeWorkflowService:
         """Crée N badges QR visiteurs disponibles (sans porteur)."""
         from core.services import get_kaydan_tenant
 
-        from .models import Badge
+        from ..models import Badge
         tenant = get_kaydan_tenant()
         created = []
         for _ in range(count):
@@ -1029,7 +1029,7 @@ class BadgeWorkflowService:
     @classmethod
     def assign_qr_to_visit(cls, badge, visit_request, holder_label: str = ""):
         """Attribue un badge QR libre à une visite spécifique."""
-        from .models import BadgeAssignment
+        from ..models import BadgeAssignment
         if badge.category != "visitor_qr":
             raise ValueError("Seul un badge visitor_qr peut être attribué à une visite.")
         if badge.status not in ("available", "active"):
@@ -1060,7 +1060,7 @@ class BadgeWorkflowService:
     @classmethod
     def release(cls, badge, by_user=None):
         """Libère un badge (fin de visite, restitution employé/ouvrier)."""
-        from .models import BadgeAssignment
+        from ..models import BadgeAssignment
         active_assignment = BadgeAssignment.objects.filter(
             badge=badge, closed_at__isnull=True,
         ).first()
@@ -1122,7 +1122,7 @@ class BadgeWorkflowService:
 
     @classmethod
     def revoke(cls, badge, reason: str = "", by_user=None):
-        from .models import BadgeAssignment
+        from ..models import BadgeAssignment
         if badge.status == "revoked":
             return badge
         active_assignment = BadgeAssignment.objects.filter(
@@ -1146,7 +1146,7 @@ class BadgeWorkflowService:
 
     @classmethod
     def mark_lost(cls, badge, reason: str = "", by_user=None):
-        from .models import BadgeAssignment
+        from ..models import BadgeAssignment
         active_assignment = BadgeAssignment.objects.filter(
             badge=badge, closed_at__isnull=True,
         ).first()
@@ -1179,7 +1179,7 @@ class BadgeWorkflowService:
 
         from employees.models import Employee
 
-        from .models import Badge, BadgeAssignment
+        from ..models import Badge, BadgeAssignment
 
         # Casque ignoré pour employés — réservé aux ouvriers
         helmet = None
@@ -1235,7 +1235,7 @@ class BadgeWorkflowService:
         from employees.models import Employee
         from ouvriers.models import Worker
 
-        from .models import BadgeAssignment
+        from ..models import BadgeAssignment
 
         if badge.holder_object_id and badge.status not in ("available", "expired", "revoked", "lost"):
             raise ValueError(
@@ -1295,7 +1295,7 @@ class BadgeWorkflowService:
 
         from ouvriers.models import Worker
 
-        from .models import Badge, BadgeAssignment
+        from ..models import Badge, BadgeAssignment
 
         if helmet is None:
             raise ValueError(

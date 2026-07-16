@@ -136,7 +136,7 @@ class Badge(UUIDModel, TimeStampedModel):
         help_text="Casque associé pour le couplage badge+casque (chantier).",
     )
 
-    holder_kind = models.CharField(max_length=12, choices=HOLDER_KIND_CHOICES, blank=True)
+    holder_kind = models.CharField(max_length=16, choices=HOLDER_KIND_CHOICES, blank=True)
     holder_content_type = models.ForeignKey(
         ContentType, null=True, blank=True, on_delete=models.SET_NULL, related_name="+",
     )

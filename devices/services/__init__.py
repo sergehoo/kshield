@@ -9,6 +9,11 @@ Cette couche isole toute la logique métier de :
 Les vues DRF n'appellent QUE ces services — pas de modèles ni Redis en direct.
 """
 from .alert_service import AlertService
+from .badge_workflow import (
+    BadgePDFService,
+    BadgeThumbnailService,
+    BadgeWorkflowService,
+)
 from .command_queue import DeviceCommandQueue
 from .enrollment import RFIDEnrollmentService
 from .event_bus import EventBus
@@ -18,6 +23,9 @@ from .twin_service import TwinService
 
 __all__ = [
     "AlertService",
+    "BadgePDFService",
+    "BadgeThumbnailService",
+    "BadgeWorkflowService",
     "DeviceCommandQueue",
     "RFIDEnrollmentService",
     "EventBus",
