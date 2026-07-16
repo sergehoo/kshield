@@ -323,10 +323,10 @@ services:
       - traefik.enable=true
       - traefik.docker.network=${PROXY_NETWORK:-dokploy-network}
 
-      # Routing par path : Django reçoit uniquement l'API + WS + admin + assets
+      # Routing par path : Django reçoit uniquement l'API + admin + assets
       # techniques ; tout le reste (SPA React) tombe sur shieldfront (règle
       # catch-all Host sans PathPrefix, priorité plus basse).
-      - traefik.http.routers.kshield-api.rule=Host(`${BASE_DOMAIN:-kaydanshield.com}`) && (PathPrefix(`/api/`) || PathPrefix(`/ws/`) || PathPrefix(`/django-admin/`) || PathPrefix(`/static/`) || PathPrefix(`/media/`) || PathPrefix(`/metrics`) || Path(`/healthz`) || Path(`/readyz`) || PathPrefix(`/iclock/`) || PathPrefix(`/pub/api`) || PathPrefix(`/sso/`) || PathPrefix(`/badges/`))
+      - traefik.http.routers.kshield-api.rule=Host(`${BASE_DOMAIN:-kaydanshield.com}`) && (PathPrefix(`/api/`) || PathPrefix(`/django-admin/`) || PathPrefix(`/static/`) || PathPrefix(`/media/`) || PathPrefix(`/metrics`) || Path(`/healthz`) || Path(`/readyz`) || PathPrefix(`/iclock/`) || PathPrefix(`/pub/api`) || PathPrefix(`/sso/`) || PathPrefix(`/badges/`))
       - traefik.http.routers.kshield-api.priority=100
       - traefik.http.routers.kshield-api.entrypoints=websecure
       - traefik.http.routers.kshield-api.tls=true
@@ -419,6 +419,15 @@ services:
       - traefik.enable=true
       - traefik.docker.network=${PROXY_NETWORK:-dokploy-network}
 
+      # Même origine pour le front React : wss://<BASE_DOMAIN>/ws/...
+      - traefik.http.routers.kshield-ws-main.rule=Host(`${BASE_DOMAIN:-kaydanshield.com}`) && PathPrefix(`/ws/`)
+      - traefik.http.routers.kshield-ws-main.priority=200
+      - traefik.http.routers.kshield-ws-main.entrypoints=websecure
+      - traefik.http.routers.kshield-ws-main.tls=true
+      - traefik.http.routers.kshield-ws-main.tls.certresolver=${CERT_RESOLVER:-letsencrypt}
+      - traefik.http.routers.kshield-ws-main.service=kshield-ws-svc
+
+      # Domaine dédié optionnel : wss://ws.<BASE_DOMAIN>/ws/...
       - traefik.http.routers.kshield-ws.rule=Host(`ws.${BASE_DOMAIN:-kaydanshield.com}`)
       - traefik.http.routers.kshield-ws.entrypoints=websecure
       - traefik.http.routers.kshield-ws.tls=true
