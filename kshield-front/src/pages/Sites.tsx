@@ -14,6 +14,7 @@ import { toApiError } from "@/lib/api";
 import { fmtDate } from "@/lib/format";
 import { Plus, MapPin, Search, Trash2, Edit3, Building2, HardHat, Warehouse, Home } from "lucide-react";
 import toast from "react-hot-toast";
+import { MapLocationPicker } from "@/components/MapLocationPicker";
 
 type SiteForm = {
   name: string; code: string; type: string; status: string;
@@ -106,6 +107,13 @@ export function SitesPage() {
   const closeModal = () => { setModalOpen(false); setEditId(null); setForm(emptyForm); };
   const onSubmit = () => {
     if (!form.name || !form.code) return toast.error("Nom et code obligatoires");
+    const lat = Number(form.latitude), lng = Number(form.longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return toast.error("Position GPS requise — clique sur la carte ou utilise la recherche");
+    }
+    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+      return toast.error("Coordonnées GPS hors bornes");
+    }
     if (editId) updateMut.mutate(); else createMut.mutate();
   };
 
@@ -232,8 +240,22 @@ export function SitesPage() {
               {companies?.results?.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </label>
-          <Input label="Latitude" placeholder="5.348" value={form.latitude} onChange={(e) => setForm({...form, latitude: e.target.value})} />
-          <Input label="Longitude" placeholder="-4.027" value={form.longitude} onChange={(e) => setForm({...form, longitude: e.target.value})} />
+          <div className="col-span-2">
+            <label className="block text-xs font-medium text-ink-muted mb-1.5">
+              Position GPS <span className="text-danger">*</span>
+            </label>
+            <MapLocationPicker
+              latitude={form.latitude ? Number(form.latitude) : null}
+              longitude={form.longitude ? Number(form.longitude) : null}
+              onChange={({ latitude, longitude }) =>
+                setForm((f) => ({
+                  ...f,
+                  latitude: String(latitude),
+                  longitude: String(longitude),
+                }))
+              }
+            />
+          </div>
           <Input label="Chef de projet" value={form.project_manager_name} onChange={(e) => setForm({...form, project_manager_name: e.target.value})} />
           <label className="block">
             <span className="text-xs font-medium text-ink-muted">Niveau de risque</span>

@@ -10,7 +10,11 @@ class TradeSerializer(serializers.ModelSerializer):
 
 
 class SubcontractorSerializer(serializers.ModelSerializer):
-    class Meta: model = Subcontractor; fields = "__all__"
+    class Meta:
+        model = Subcontractor
+        fields = "__all__"
+        # tenant auto-injecté par TenantScopedViewSetMixin côté ViewSet.
+        read_only_fields = ("tenant",)
 
 
 class WorkerSerializer(serializers.ModelSerializer):

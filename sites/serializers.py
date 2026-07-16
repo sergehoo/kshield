@@ -7,6 +7,8 @@ class SiteSerializer(serializers.ModelSerializer):
     class Meta:
         model = Site
         fields = "__all__"
+        # tenant est auto-injecté côté ViewSet (TenantScopedViewSetMixin).
+        read_only_fields = ("tenant",)
 
 
 class ZoneSerializer(serializers.ModelSerializer):

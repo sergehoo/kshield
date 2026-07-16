@@ -11,7 +11,11 @@ class VisitPurposeSerializer(serializers.ModelSerializer):
 
 
 class VisitorSerializer(serializers.ModelSerializer):
-    class Meta: model = Visitor; fields = "__all__"
+    class Meta:
+        model = Visitor
+        fields = "__all__"
+        # tenant auto-injecté par TenantScopedViewSetMixin côté ViewSet.
+        read_only_fields = ("tenant",)
 
 
 class VisitorIDDocumentSerializer(serializers.ModelSerializer):

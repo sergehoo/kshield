@@ -7,6 +7,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from accounts.rbac import HasKshieldPermission
+from core.tenant_mixins import TenantScopedViewSetMixin
 
 from .models import (
     VisitLog, VisitPurpose, VisitRequest, Visitor, VisitorIDDocument,
@@ -44,7 +45,7 @@ class VisitPurposeViewSet(viewsets.ModelViewSet):
     partial_update=extend_schema(tags=["Visiteurs"]),
     destroy=extend_schema(tags=["Visiteurs"]),
 )
-class VisitorViewSet(viewsets.ModelViewSet):
+class VisitorViewSet(TenantScopedViewSetMixin, viewsets.ModelViewSet):
     """OCR pièce d'identité + QR self-service / walk-in à l'accueil."""
     queryset = Visitor.objects.all(); serializer_class = VisitorSerializer
     search_fields = ("first_name", "last_name", "id_number", "phone", "email")

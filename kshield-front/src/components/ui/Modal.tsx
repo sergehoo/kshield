@@ -41,14 +41,17 @@ export function Modal({ open, onClose, title, children, footer, size = "md" }: P
     >
       <div
         className={cn(
-          // Style Dappr : rounded-3xl sans bordure, ombre profonde
+          // Style Dappr : rounded-3xl sans bordure, ombre profonde.
+          // Colonne flex avec max-height pour laisser le corps scroller
+          // pendant que header/footer restent visibles.
           "w-full rounded-3xl bg-surface-card shadow-2xl",
+          "flex flex-col max-h-[calc(100vh-2rem)]",
           sizeMap[size],
         )}
         onClick={(e) => e.stopPropagation()}
       >
         {title && (
-          <header className="flex items-center justify-between px-5 py-4 border-b border-surface-border">
+          <header className="flex items-center justify-between px-5 py-4 border-b border-surface-border shrink-0">
             <h3 className="text-sm font-semibold text-ink">{title}</h3>
             <button
               onClick={onClose}
@@ -59,9 +62,9 @@ export function Modal({ open, onClose, title, children, footer, size = "md" }: P
             </button>
           </header>
         )}
-        <div className="p-5">{children}</div>
+        <div className="p-5 overflow-y-auto flex-1 min-h-0">{children}</div>
         {footer && (
-          <footer className="px-5 py-3 border-t border-surface-border/60 flex justify-end gap-2">
+          <footer className="px-5 py-3 border-t border-surface-border/60 flex justify-end gap-2 shrink-0">
             {footer}
           </footer>
         )}

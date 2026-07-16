@@ -3,6 +3,7 @@ from drf_spectacular.utils import extend_schema, extend_schema_view
 from rest_framework import viewsets
 
 from core.tenancy import resolve_request_tenant
+from core.tenant_mixins import TenantScopedViewSetMixin
 
 from .models import Crew, Subcontractor, Trade, Worker, WorkerAssignment, WorkerCertification
 from .serializers import (
@@ -31,7 +32,7 @@ class TradeViewSet(viewsets.ModelViewSet):
     partial_update=extend_schema(tags=["Ouvriers"]),
     destroy=extend_schema(tags=["Ouvriers"]),
 )
-class SubcontractorViewSet(viewsets.ModelViewSet):
+class SubcontractorViewSet(TenantScopedViewSetMixin, viewsets.ModelViewSet):
     queryset = Subcontractor.objects.all(); serializer_class = SubcontractorSerializer
     search_fields = ("name", "code"); filterset_fields = ("tenant", "is_active")
 

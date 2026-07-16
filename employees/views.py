@@ -18,6 +18,7 @@ from .serializers import (
     DepartmentSerializer, EmployeeAuthorizationSerializer, EmployeeContractSerializer,
     EmployeeScheduleSerializer, EmployeeSerializer, JobPositionSerializer,
 )
+from core.tenant_mixins import TenantScopedViewSetMixin
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +47,7 @@ class JobPositionViewSet(viewsets.ModelViewSet):
     partial_update=extend_schema(tags=["Employes"]),
     destroy=extend_schema(tags=["Employes"]),
 )
-class EmployeeViewSet(viewsets.ModelViewSet):
+class EmployeeViewSet(TenantScopedViewSetMixin, viewsets.ModelViewSet):
     """Annuaire RH des collaborateurs KAYDAN porteurs de badge NFC."""
     queryset = Employee.objects.select_related(
         "tenant", "company", "department", "position", "manager",
@@ -59,6 +60,8 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         # RBAC multi-filiale : restreint aux filiales du user (sauf super-admin)
         from accounts.scoping import scope_queryset_by_company
         return scope_queryset_by_company(super().get_queryset(), self.request.user, "company")
+
+    # tenant auto-injecté par TenantScopedViewSetMixin (voir base class ci-dessus).
 
     @action(detail=True, methods=["post"])
     def deactivate(self, request, pk=None):

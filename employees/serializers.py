@@ -12,11 +12,18 @@ class JobPositionSerializer(serializers.ModelSerializer):
 
 
 class EmployeeSerializer(serializers.ModelSerializer):
+    """Sérializer employé.
+
+    ``tenant`` est en read_only : il est auto-résolu côté ViewSet
+    (perform_create) depuis ``request.user`` — l'API front n'a jamais
+    besoin de le fournir, ce qui évite l'erreur « ce champ est obligatoire ».
+    """
     full_name = serializers.SerializerMethodField()
 
     class Meta:
         model = Employee
         fields = "__all__"
+        read_only_fields = ("tenant",)
 
     def get_full_name(self, obj): return f"{obj.first_name} {obj.last_name}"
 

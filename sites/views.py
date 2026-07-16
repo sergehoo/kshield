@@ -1,6 +1,7 @@
 from rest_framework import viewsets
 
 from accounts.scoping import scope_queryset_by_company
+from core.tenant_mixins import TenantScopedViewSetMixin
 
 from .models import Checkpoint, OpeningHours, Site, SitePolicy, Zone
 from .serializers import (
@@ -9,7 +10,7 @@ from .serializers import (
 )
 
 
-class SiteViewSet(viewsets.ModelViewSet):
+class SiteViewSet(TenantScopedViewSetMixin, viewsets.ModelViewSet):
     queryset = Site.objects.select_related("tenant", "company", "address").all()
     serializer_class = SiteSerializer
     search_fields = ("name", "code")
