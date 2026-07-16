@@ -288,6 +288,19 @@ MQTT_CA_FILE = config("MQTT_CA_FILE", default="")
 MQTT_CLIENT_ID_PREFIX = config("MQTT_CLIENT_ID_PREFIX", default="kshield-backend")
 MQTT_KEEPALIVE = config("MQTT_KEEPALIVE", default=60, cast=int)
 
+# ─── MQTT — hôte + credentials PUBLICS pour les agents Go ───────────────
+# ``MQTT_PUBLIC_HOST`` : hostname joignable depuis l'extérieur du réseau
+# Docker (par défaut ``mqtt.<BASE_DOMAIN>``). Utilisé quand on inscrit
+# les creds dans le TOML de l'agent et dans la réponse /activate/.
+# ``MQTT_AGENT_USERNAME`` / ``MQTT_AGENT_PASSWORD`` : compte MQTT partagé
+# par tous les agents (Option A — provisioning simple). Si absent, on
+# retombe sur ``MQTT_USERNAME``/``MQTT_PASSWORD`` (utilisé aussi par le
+# backend). Créer ce compte manuellement dans le dashboard EMQX.
+MQTT_PUBLIC_HOST = config("MQTT_PUBLIC_HOST", default="")
+MQTT_PUBLIC_PORT = config("MQTT_PUBLIC_PORT", default=0, cast=int)
+MQTT_AGENT_USERNAME = config("MQTT_AGENT_USERNAME", default="")
+MQTT_AGENT_PASSWORD = config("MQTT_AGENT_PASSWORD", default="")
+
 # ─── Celery Beat — défaut, surchargeable via DatabaseScheduler ─────────
 # DatabaseScheduler ignore ce dict (utilise django_celery_beat.models). Il sert
 # de fallback si on bascule sur PersistentScheduler / docs / dev local.

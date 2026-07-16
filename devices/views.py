@@ -2846,9 +2846,13 @@ class ScanInboxView(APIView):
             devices_qs = Device.objects.select_related("model").filter(
                 model__type__in=types, status="active",
             )
-            tenant = getattr(request.user, "tenant", None)
-            if tenant is not None:
-                devices_qs = devices_qs.filter(tenant=tenant)
+            tenant = resolve_request_tenant(request)
+            if tenant is None:
+                return Response(
+                    {"error": "Utilisateur sans tenant"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            devices_qs = devices_qs.filter(tenant=tenant)
 
             # Pull live ZKTeco pour les face_terminals
             for dev in devices_qs:
@@ -2903,10 +2907,14 @@ class ScanInboxView(APIView):
         # Si le lecteur est un terminal ZKTeco, on PULL en live
         # Cap à 1 pull toutes les 3s par device pour ne pas saturer le terminal.
         device = None
+        tenant = resolve_request_tenant(request)
         try:
-            device = Device.objects.select_related("model").get(pk=reader_id)
+            device = Device.objects.select_related("model").get(
+                pk=reader_id,
+                tenant=tenant,
+            )
         except (Device.DoesNotExist, ValueError):
-            pass
+            return Response({"error": "Lecteur introuvable"}, status=404)
 
         if device and is_zkteco_device(device) and device.ip_address:
             throttle_key = f"zk_pull_lock:{device.pk}"
@@ -3016,6 +3024,20 @@ class ScanInboxView(APIView):
                         "punch":  getattr(a, "punch", None),
                     },
                 })
+                try:
+                    from .services.enrollment import RFIDEnrollmentService
+
+                    RFIDEnrollmentService.ingest_scan(
+                        tenant=device.tenant,
+                        uid=uid_to_push,
+                        device=device,
+                        extra={"source": "zkteco"},
+                    )
+                except Exception:
+                    logger.exception(
+                        "Impossible de publier le scan ZKTeco %s",
+                        uid_to_push,
+                    )
                 existing_uids.add(uid_to_push)
                 if max_ts is None or ts > max_ts:
                     max_ts = ts
@@ -3062,7 +3084,24 @@ class ScanInboxView(APIView):
         if len(items) > self.MAX_ITEMS:
             items = items[-self.MAX_ITEMS:]
         cache.set(key, items, self.CACHE_TTL)
-        return Response({"ok": True, "queued": len(items)})
+        enrollment = None
+        try:
+            from .services.enrollment import RFIDEnrollmentService
+
+            enrollment = RFIDEnrollmentService.ingest_scan(
+                tenant=device.tenant,
+                uid=uid,
+                device=device,
+                rssi=rssi,
+                extra={"source": "scan_inbox"},
+            )
+        except Exception:
+            logger.exception("Impossible de publier le scan RFID %s", uid)
+        return Response({
+            "ok": True,
+            "queued": len(items),
+            "enrollment": enrollment,
+        })
 
     def delete(self, request):
         from django.core.cache import cache
@@ -3087,9 +3126,13 @@ class ScanInboxView(APIView):
             devices_qs = Device.objects.filter(
                 model__type__in=types, status="active",
             )
-            tenant = getattr(request.user, "tenant", None)
-            if tenant is not None:
-                devices_qs = devices_qs.filter(tenant=tenant)
+            tenant = resolve_request_tenant(request)
+            if tenant is None:
+                return Response(
+                    {"error": "Utilisateur sans tenant"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            devices_qs = devices_qs.filter(tenant=tenant)
             cleared = 0
             for dev in devices_qs:
                 cache.delete(self._cache_key(dev.pk))
@@ -3101,7 +3144,11 @@ class ScanInboxView(APIView):
                 {"error": "Paramètre requis : reader_id ou kind."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        cache.delete(self._cache_key(reader_id))
+        tenant = resolve_request_tenant(request)
+        device = Device.objects.filter(pk=reader_id, tenant=tenant).first()
+        if device is None:
+            return Response({"error": "Lecteur introuvable"}, status=404)
+        cache.delete(self._cache_key(device.pk))
         return Response({"ok": True})
 
 

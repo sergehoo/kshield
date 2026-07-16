@@ -13,6 +13,18 @@ def enrollment_company_user(db, kaydan_company):
     )
 
 
+@pytest.fixture
+def enrollment_scan_user(db, kaydan_company):
+    from django.contrib.auth import get_user_model
+
+    return get_user_model().objects.create_superuser(
+        email="rfid-scan@kaydan.test",
+        password="x",
+        company=kaydan_company,
+        tenant=None,
+    )
+
+
 @pytest.mark.django_db
 def test_rfid_enrollment_uses_company_tenant_for_full_session(
     api_client, enrollment_company_user, kaydan_tenant
@@ -70,3 +82,35 @@ def test_rfid_enrollment_uses_company_tenant_for_full_session(
     )
     assert stopped.status_code == 200
     assert stopped.json()["status"] == "completed"
+
+
+@pytest.mark.django_db
+def test_scan_inbox_forwards_scan_to_active_enrollment_session(
+    api_client, enrollment_scan_user, kaydan_tenant, device
+):
+    from devices.models import RFIDEnrollmentEvent, RFIDEnrollmentSession
+
+    session = RFIDEnrollmentSession.objects.create(
+        tenant=kaydan_tenant,
+        initiated_by=enrollment_scan_user,
+        status="listening",
+        mode="single",
+    )
+    api_client.force_authenticate(enrollment_scan_user)
+
+    response = api_client.post(
+        "/api/v1/devices/scan/inbox/",
+        {
+            "reader_id": device.pk,
+            "uid": "live-scan-001",
+            "rssi": -42,
+        },
+        format="json",
+    )
+
+    assert response.status_code == 200
+    assert response.json()["enrollment"]["session_id"] == str(session.uuid)
+    event = RFIDEnrollmentEvent.objects.get(session=session)
+    assert event.uid == "LIVE-SCAN-001"
+    assert event.device_id == device.pk
+    assert event.rssi == -42

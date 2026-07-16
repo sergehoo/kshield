@@ -7,14 +7,14 @@
  *   4. Confirmation : récap + validation → POST /badges/<id>/assign/
  *
  * Le badge peut être un badge existant (statut "unassigned") ou fraîchement
- * enrôlé via l'inbox RFID (POST /badges/ puis assign).
+ * enrôlé via une session RFID temps réel (POST /badges/ puis assign).
  */
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   ArrowLeft, ArrowRight, CheckCircle2, User, Users, UserPlus,
   Hash, MapPin, Shield, CalendarClock, Clock, Radar, Sparkles,
-  X, Loader2,
+  X, Loader2, Wifi, WifiOff,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -32,6 +32,8 @@ import {
   HolderKind, HOLDER_LABELS, ACCESS_LEVEL_LABELS, AccessLevel,
   BadgeAssignBody,
 } from "@/services/badgeLifecycle";
+import { enrollmentService } from "@/services/enrollment";
+import { useEnrollmentSession } from "@/hooks/useEnrollmentSession";
 
 interface Props {
   open: boolean;
@@ -69,6 +71,13 @@ export function BadgeEnrollmentWizard({
   const [uid, setUid] = useState(presetUid || "");
   const [badgeId, setBadgeId] = useState<string | "">(presetBadgeId || "");
   const [tech, setTech] = useState<"nfc" | "uhf" | "ble" | "qr">("nfc");
+  const [liveSessionId, setLiveSessionId] = useState<string | null>(null);
+  const [liveState, setLiveState] = useState<"idle" | "starting" | "listening" | "error">("idle");
+  const [liveError, setLiveError] = useState("");
+  const [liveStartedAt, setLiveStartedAt] = useState("");
+  const [liveRetry, setLiveRetry] = useState(0);
+  const [lastLiveScan, setLastLiveScan] = useState<any | null>(null);
+  const seenLiveUids = useRef(new Set<string>());
 
   // Étape 3
   const [siteId, setSiteId] = useState<number | "">("");
@@ -86,6 +95,8 @@ export function BadgeEnrollmentWizard({
     setStep(1);
     setHolderKind(""); setHolderId(""); setHolderQ("");
     setUid(""); setBadgeId(""); setTech("nfc");
+    setLiveSessionId(null); setLiveState("idle"); setLiveError("");
+    setLiveStartedAt(""); setLastLiveScan(null); seenLiveUids.current.clear();
     setSiteId(""); setZoneIds([]); setAccessLevel("basic");
     setWindowStart(""); setWindowEnd(""); setWeekdays([]);
     setExpiresAt(""); setIsPermanent(false);
@@ -123,13 +134,117 @@ export function BadgeEnrollmentWizard({
     enabled: open && !!siteId,
   });
 
-  // Poll de l'inbox RFID pour attraper un scan récent
-  const inbox = useQuery({
-    queryKey: ["wizard", "rfid-inbox"],
-    queryFn: async () => (await badgesService.scanInbox()).data,
-    enabled: open && step === 2 && !uid,
-    refetchInterval: 2000,
+  const captureLiveScan = useCallback((scan: any, duplicate = false) => {
+    const scannedUid = String(scan?.uid || "").trim().toUpperCase();
+    if (!scannedUid || seenLiveUids.current.has(scannedUid)) return;
+    seenLiveUids.current.add(scannedUid);
+    setLastLiveScan({ ...scan, uid: scannedUid, duplicate });
+    if (duplicate) {
+      toast.error(`Le badge ${scannedUid} est déjà enrôlé`);
+      return;
+    }
+    const scannedTech = scan?.tech || scan?.extra?.tech;
+    if (["nfc", "uhf", "ble", "qr"].includes(scannedTech)) {
+      setTech(scannedTech);
+    }
+    setUid(scannedUid);
+    toast.success(`Badge détecté : ${scannedUid}`);
+  }, []);
+
+  const liveWs = useEnrollmentSession({
+    sessionId: liveSessionId,
+    enabled: open && step === 2 && liveState === "listening",
+    onEvent: (event: any) => {
+      const eventType = event.event || event.event_type;
+      if (eventType === "rfid.card.detected" || eventType === "card.detected") {
+        captureLiveScan(event);
+      } else if (eventType === "rfid.card.duplicate" || eventType === "card.duplicate") {
+        captureLiveScan(event, true);
+      }
+    },
   });
+
+  // Ouvre une vraie session quand l'étape UID est affichée. Sans lecteur ciblé,
+  // le backend active tous les lecteurs RFID du tenant.
+  useEffect(() => {
+    if (!open || step !== 2 || uid || badgeId) return;
+
+    let cancelled = false;
+    let startedSessionId: string | null = null;
+    const startedAt = new Date().toISOString();
+    setLiveStartedAt(startedAt);
+    setLiveState("starting");
+    setLiveError("");
+    setLastLiveScan(null);
+    seenLiveUids.current.clear();
+
+    const sessionHolderKind = ["worker", "employee", "visitor"].includes(holderKind)
+      ? holderKind as "worker" | "employee" | "visitor"
+      : "";
+
+    enrollmentService.start({
+      mode: "single",
+      holder_kind: sessionHolderKind,
+      holder_id: holderId ? Number(holderId) : null,
+      timeout_seconds: 180,
+    }).then((response) => {
+      startedSessionId = response.data.id;
+      if (cancelled) {
+        enrollmentService.stop(startedSessionId, "wizard_closed").catch(() => undefined);
+        return;
+      }
+      setLiveSessionId(startedSessionId);
+      setLiveState("listening");
+    }).catch((error: any) => {
+      if (cancelled) return;
+      setLiveState("error");
+      setLiveError(
+        error?.response?.data?.error || "Impossible de démarrer l'écoute RFID",
+      );
+    });
+
+    return () => {
+      cancelled = true;
+      if (startedSessionId) {
+        enrollmentService.stop(startedSessionId, "wizard_step_closed").catch(() => undefined);
+      }
+      setLiveSessionId(null);
+      setLiveState("idle");
+    };
+  }, [open, step, uid, badgeId, holderKind, holderId, liveRetry]);
+
+  // Inbox de secours : déclenche aussi le pull live des terminaux ZKTeco.
+  const inbox = useQuery({
+    queryKey: ["wizard", "rfid-inbox", liveStartedAt],
+    queryFn: async () => (
+      await badgesService.scanInbox({ since: liveStartedAt || undefined })
+    ).data,
+    enabled: open && step === 2 && !uid && !!liveStartedAt,
+    refetchInterval: 1500,
+  });
+
+  // Poll de la session en secours si le WebSocket n'est pas disponible.
+  const liveSession = useQuery({
+    queryKey: ["wizard", "rfid-session", liveSessionId],
+    queryFn: async () => (await enrollmentService.get(liveSessionId!)).data,
+    enabled: open && step === 2 && !uid && !!liveSessionId,
+    refetchInterval: 1500,
+  });
+
+  useEffect(() => {
+    const events = liveSession.data?.events || [];
+    for (let index = events.length - 1; index >= 0; index -= 1) {
+      const event = events[index];
+      if (event.event_type === "card.detected") {
+        captureLiveScan(event);
+        break;
+      }
+      if (event.event_type === "card.duplicate") {
+        captureLiveScan(event, true);
+        break;
+      }
+    }
+  }, [liveSession.dataUpdatedAt, captureLiveScan]);
 
   // ─── Mutations ──────────────────────────────────────────
   const createBadgeMut = useMutation({
@@ -236,7 +351,13 @@ export function BadgeEnrollmentWizard({
           <Step2
             uid={uid} setUid={setUid}
             tech={tech} setTech={setTech}
-            inbox={inbox.data}
+            lastScan={lastLiveScan}
+            liveState={liveState}
+            liveError={liveError}
+            wsStatus={liveWs.status}
+            sessionId={liveSessionId}
+            readersCount={inbox.data?.readers_count}
+            onRetry={() => setLiveRetry((value) => value + 1)}
           />
         )}
         {step === 3 && (
@@ -415,8 +536,10 @@ function Step1({
 // ═══════════════════════════════════════════════════════════════
 // STEP 2 — UID (scan ou saisie)
 // ═══════════════════════════════════════════════════════════════
-function Step2({ uid, setUid, tech, setTech, inbox }: any) {
-  const lastScan = inbox?.scans?.[0];
+function Step2({
+  uid, setUid, tech, setTech, lastScan, liveState, liveError,
+  wsStatus, sessionId, readersCount, onRetry,
+}: any) {
   return (
     <div className="space-y-4">
       <div>
@@ -464,25 +587,56 @@ function Step2({ uid, setUid, tech, setTech, inbox }: any) {
           </div>
           {lastScan ? (
             <div className="mt-3">
-              <div className="text-2xl font-mono font-bold text-ok">
+              <div className={cn(
+                "text-2xl font-mono font-bold",
+                lastScan.duplicate ? "text-danger" : "text-ok",
+              )}>
                 {lastScan.uid}
               </div>
               <div className="text-[11px] text-ink-muted mt-1">
-                détecté sur lecteur {lastScan.reader_id || "?"}
+                détecté sur lecteur {lastScan.device_serial || lastScan.device_id || "?"}
               </div>
-              <Button
-                size="sm"
-                variant="dark"
-                className="mt-3"
-                onClick={() => setUid(lastScan.uid)}
-              >
-                Utiliser cet UID
+              {lastScan.duplicate ? (
+                <div className="mt-3 flex items-center gap-1.5 text-xs text-danger">
+                  <WifiOff size={14} /> Badge déjà enrôlé
+                </div>
+              ) : (
+                <div className="mt-3 flex items-center gap-1.5 text-xs text-ok">
+                  <CheckCircle2 size={14} /> UID capturé automatiquement
+                </div>
+              )}
+            </div>
+          ) : liveState === "starting" ? (
+            <div className="mt-3 flex items-center gap-2 text-xs text-info">
+              <Loader2 size={14} className="animate-spin" /> Démarrage des lecteurs…
+            </div>
+          ) : liveState === "error" ? (
+            <div className="mt-3 space-y-2">
+              <div className="flex items-center gap-2 text-xs text-danger">
+                <WifiOff size={14} /> {liveError}
+              </div>
+              <Button size="sm" variant="ghost" onClick={onRetry}>
+                Réessayer
               </Button>
             </div>
           ) : (
-            <div className="mt-3 text-xs text-ink-muted">
-              En attente d'un scan… présente un badge devant un lecteur RFID
-              connecté au réseau Shield.
+            <div className="mt-3 space-y-2 text-xs text-ink-muted">
+              <div className="flex items-center gap-2">
+                {wsStatus === "open" ? (
+                  <Wifi size={14} className="text-ok" />
+                ) : (
+                  <Radar size={14} className="animate-pulse text-info" />
+                )}
+                <span>
+                  {wsStatus === "open" ? "Écoute temps réel active" : "Écoute active (polling de secours)"}
+                </span>
+              </div>
+              {readersCount === 0 && (
+                <div className="text-warning">Aucun lecteur RFID actif détecté.</div>
+              )}
+              {sessionId && (
+                <div className="font-mono text-[10px]">Session {sessionId.slice(0, 8)}</div>
+              )}
             </div>
           )}
         </div>

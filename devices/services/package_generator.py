@@ -79,7 +79,9 @@ host             = "{mqtt_host}"
 port             = {mqtt_port}
 use_tls          = {mqtt_use_tls}
 username         = "{mqtt_username}"
-# Password sera récupéré au premier appairage
+# Password : pré-rempli si MQTT_AGENT_PASSWORD est défini côté serveur.
+# Sera de toute façon (re)écrit par la réponse POST /activate/.
+password         = "{mqtt_password}"
 verify_cert      = true
 ca_file          = "certs/kshield-ca.crt"
 
@@ -361,8 +363,19 @@ class PackageGenerator:
             or self._infer_server_url()
         mqtt_host = getattr(settings, "MQTT_PUBLIC_HOST", None) \
             or getattr(settings, "MQTT_HOST", "shieldmqtt")
-        mqtt_port = int(getattr(settings, "MQTT_PORT", 1883))
+        mqtt_port = int(getattr(settings, "MQTT_PUBLIC_PORT", 0)) \
+            or int(getattr(settings, "MQTT_PORT", 1883))
         mqtt_tls = bool(getattr(settings, "MQTT_TLS", False))
+
+        # Credentials MQTT — Option A : compte partagé pour tous les agents.
+        mqtt_username_shared = (
+            getattr(settings, "MQTT_AGENT_USERNAME", "")
+            or getattr(settings, "MQTT_USERNAME", "")
+        )
+        mqtt_password_shared = (
+            getattr(settings, "MQTT_AGENT_PASSWORD", "")
+            or getattr(settings, "MQTT_PASSWORD", "")
+        )
 
         # En prod, MQTT_HOST=shieldmqtt (nom Docker interne) est inutile pour
         # un client externe. On expose le hostname public ou l'IP publique.
@@ -387,7 +400,9 @@ class PackageGenerator:
             "mqtt_host":         mqtt_host,
             "mqtt_port":         str(mqtt_port),
             "mqtt_use_tls":      "true" if mqtt_tls else "false",
-            "mqtt_username":     f"kshield-edge-{str(agent.id)[:8]}",
+            "mqtt_username":     mqtt_username_shared
+                                    or f"kshield-edge-{str(agent.id)[:8]}",
+            "mqtt_password":     mqtt_password_shared,
             "activation_token":  agent.activation_token or "",
             "activation_ttl":    str(DEFAULT_ACTIVATION_TTL_HOURS),
             "activation_expires": expires_str,

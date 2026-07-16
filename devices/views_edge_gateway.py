@@ -1249,15 +1249,37 @@ class GatewayActivateView(APIView):
         logger.info("Gateway %s activé (label=%s ip=%s)",
                      a.pk, a.label, a.ip_public)
 
-        # ─── Credentials MQTT provisionnés dynamiquement ─────────────────
-        # Le nom d'user MQTT est dérivé du gateway_id (déterministe, unique).
-        # Le password est stocké chiffré dans a.hmac_secret pour l'instant —
-        # une future version dédiera un champ propre mqtt_password crypto.
+        # ─── Credentials MQTT — Option A (compte partagé) ────────────────
+        # On expose le compte MQTT ``MQTT_AGENT_*`` (créé manuellement dans
+        # le dashboard EMQX) à tous les agents. Fallback sur ``MQTT_*``
+        # utilisé par le backend si l'admin n'a défini qu'un seul couple.
+        # Option B (provisioning EMQX dynamique par gateway) restera à
+        # implémenter plus tard via l'API management HTTP d'EMQX.
         from django.conf import settings as _settings
-        mqtt_username = f"kshield-edge-{str(a.pk)[:8]}"
-        # Note : pour la Phase 1, on retourne un password vide + username seul.
-        # Phase 2+ : provisioning EMQX via API management HTTP.
-        mqtt_password = ""
+        mqtt_username = (
+            getattr(_settings, "MQTT_AGENT_USERNAME", "")
+            or getattr(_settings, "MQTT_USERNAME", "")
+            or f"kshield-edge-{str(a.pk)[:8]}"
+        )
+        mqtt_password = (
+            getattr(_settings, "MQTT_AGENT_PASSWORD", "")
+            or getattr(_settings, "MQTT_PASSWORD", "")
+        )
+        mqtt_host = (
+            getattr(_settings, "MQTT_PUBLIC_HOST", "")
+            or _mqtt_public_host(request)
+        )
+        mqtt_port = (
+            int(getattr(_settings, "MQTT_PUBLIC_PORT", 0))
+            or int(getattr(_settings, "MQTT_PORT", 1883))
+        )
+
+        if not mqtt_password:
+            logger.warning(
+                "Gateway %s activée sans password MQTT — définir "
+                "MQTT_AGENT_PASSWORD dans le .env pour rendre le broker "
+                "joignable par l'agent Go.", a.pk,
+            )
 
         return Response({
             # Champs partagés (nouveau + legacy)
@@ -1272,10 +1294,9 @@ class GatewayActivateView(APIView):
             "site_id":       str(a.site_id) if a.site_id else "",
             "activated_at":  now.isoformat(),
             "message":       "Gateway activée avec succès",
-            # MQTT — nouveau (Go)
-            "mqtt_host":     getattr(_settings, "MQTT_PUBLIC_HOST", None)
-                                or _mqtt_public_host(request),
-            "mqtt_port":     int(getattr(_settings, "MQTT_PORT", 1883)),
+            # MQTT — Option A : compte partagé pour tous les agents
+            "mqtt_host":     mqtt_host,
+            "mqtt_port":     mqtt_port,
             "mqtt_use_tls":  bool(getattr(_settings, "MQTT_TLS", False)),
             "mqtt_username": mqtt_username,
             "mqtt_password": mqtt_password,

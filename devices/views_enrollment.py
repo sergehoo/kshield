@@ -29,6 +29,19 @@ from .services.enrollment import EnrollmentError
 logger = logging.getLogger(__name__)
 
 
+def _user_tenant_id(user):
+    """Retourne l'ID du tenant de l'utilisateur (via user.tenant OU
+    user.company.tenant), ou None si aucun.
+
+    Utilisé pour comparer avec ``<obj>.tenant_id`` sur les vues qui
+    protègent l'isolation multi-tenant. On préfère cette version à
+    ``getattr(user, 'tenant_id', None)`` car un user peut n'avoir pas de
+    FK direct vers tenant mais bien un rattachement via ``company``.
+    """
+    t = _resolve_tenant(user)
+    return t.pk if t is not None else None
+
+
 # ═══════════════════════════════════════════════════════════════════
 # Sérialisation minimale (on évite de créer 5 serializers pour Vague 1)
 # ═══════════════════════════════════════════════════════════════════
@@ -472,7 +485,7 @@ class DeviceCommandCreateView(APIView):
         except Device.DoesNotExist:
             return Response({"error": "Équipement introuvable"}, status=404)
 
-        if device.tenant_id != getattr(request.user, "tenant_id", None):
+        if _user_tenant_id(request.user) != device.tenant_id:
             return Response({"error": "Équipement hors tenant"}, status=403)
 
         data = request.data or {}
@@ -504,7 +517,7 @@ class DeviceCommandDetailView(APIView):
         except DeviceCommand.DoesNotExist:
             return Response({"error": "Commande introuvable"}, status=404)
 
-        if cmd.tenant_id != getattr(request.user, "tenant_id", None):
+        if _user_tenant_id(request.user) != cmd.tenant_id:
             return Response({"error": "Commande hors tenant"}, status=403)
 
         return Response(_serialize_command(cmd))
@@ -621,7 +634,7 @@ class LocalAgentDetailView(APIView):
             a = LocalAgent.objects.get(pk=agent_id)
         except LocalAgent.DoesNotExist:
             return Response({"error": "Agent introuvable"}, status=404)
-        if a.tenant_id != getattr(request.user, "tenant_id", None):
+        if _user_tenant_id(request.user) != a.tenant_id:
             return Response({"error": "Agent hors tenant"}, status=403)
         return Response({
             **_serialize_agent(a),
@@ -633,7 +646,7 @@ class LocalAgentDetailView(APIView):
             a = LocalAgent.objects.get(pk=agent_id)
         except LocalAgent.DoesNotExist:
             return Response({"error": "Agent introuvable"}, status=404)
-        if a.tenant_id != getattr(request.user, "tenant_id", None):
+        if _user_tenant_id(request.user) != a.tenant_id:
             return Response({"error": "Agent hors tenant"}, status=403)
         a.delete()
         return Response({"ok": True})
@@ -652,7 +665,7 @@ class LocalAgentRotateTokenView(APIView):
             a = LocalAgent.objects.get(pk=agent_id)
         except LocalAgent.DoesNotExist:
             return Response({"error": "Agent introuvable"}, status=404)
-        if a.tenant_id != getattr(request.user, "tenant_id", None):
+        if _user_tenant_id(request.user) != a.tenant_id:
             return Response({"error": "Agent hors tenant"}, status=403)
 
         a.api_token = secrets.token_urlsafe(32)
@@ -823,7 +836,7 @@ class DeviceTwinView(APIView):
             device = Device.objects.select_related("model").get(pk=pk)
         except Device.DoesNotExist:
             return Response({"error": "Équipement introuvable"}, status=404)
-        if device.tenant_id != getattr(request.user, "tenant_id", None):
+        if _user_tenant_id(request.user) != device.tenant_id:
             return Response({"error": "Équipement hors tenant"}, status=403)
 
         twin = TwinService.get_or_create(device)
@@ -866,7 +879,7 @@ class DeviceTwinRefreshView(APIView):
             device = Device.objects.select_related("model").get(pk=pk)
         except Device.DoesNotExist:
             return Response({"error": "Équipement introuvable"}, status=404)
-        if device.tenant_id != getattr(request.user, "tenant_id", None):
+        if _user_tenant_id(request.user) != device.tenant_id:
             return Response({"error": "Équipement hors tenant"}, status=403)
 
         try:
@@ -1200,7 +1213,7 @@ class MaintenanceTicketDetailView(APIView):
             t = MaintenanceTicket.objects.select_related("device").get(pk=ticket_id)
         except MaintenanceTicket.DoesNotExist:
             return None
-        if t.tenant_id != getattr(request.user, "tenant_id", None):
+        if _user_tenant_id(request.user) != t.tenant_id:
             return None
         return t
 
@@ -1283,7 +1296,7 @@ class DriverTestView(APIView):
         except Device.DoesNotExist:
             return Response({"error": "Équipement introuvable"}, status=404)
 
-        if device.tenant_id != getattr(request.user, "tenant_id", None):
+        if _user_tenant_id(request.user) != device.tenant_id:
             return Response({"error": "Équipement hors tenant"}, status=403)
 
         driver = DriverManager.for_device(device)
@@ -1431,7 +1444,7 @@ class SystemAlertAcknowledgeView(APIView):
             a = SystemAlert.objects.get(pk=alert_id)
         except SystemAlert.DoesNotExist:
             return Response({"error": "Alerte introuvable"}, status=404)
-        if a.tenant_id != getattr(request.user, "tenant_id", None):
+        if _user_tenant_id(request.user) != a.tenant_id:
             return Response({"error": "Alerte hors tenant"}, status=403)
         AlertService.acknowledge(a.pk, request.user)
         a.refresh_from_db()
