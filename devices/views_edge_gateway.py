@@ -46,6 +46,17 @@ logger = logging.getLogger(__name__)
 from .utils import resolve_tenant as _resolve_tenant  # noqa: E402
 
 
+def _get_gateway_for_user(user, gid):
+    """Retourne la gateway si elle appartient au tenant résolu du user."""
+    tenant = _resolve_tenant(user)
+    if tenant is None:
+        return None
+    try:
+        return LocalAgent.objects.get(pk=gid, tenant=tenant)
+    except LocalAgent.DoesNotExist:
+        return None
+
+
 # ═══════════════════════════════════════════════════════════════════
 # Serializers manuels (léger — évite de créer une classe DRF par vue)
 # ═══════════════════════════════════════════════════════════════════
@@ -158,14 +169,9 @@ class PackageInstallCommandView(APIView):
         gateway_id = request.query_params.get("gateway_id")
         activation_token = None
         if gateway_id:
-            try:
-                a = LocalAgent.objects.get(
-                    pk=gateway_id,
-                    tenant_id=getattr(request.user, "tenant_id", None),
-                )
+            a = _get_gateway_for_user(request.user, gateway_id)
+            if a is not None:
                 activation_token = a.activation_token or ""
-            except LocalAgent.DoesNotExist:
-                pass
 
         cmd = _build_install_command(p, request, activation_token)
         return Response({
@@ -354,10 +360,8 @@ class GatewayPairingQrView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, gid):
-        try:
-            a = LocalAgent.objects.get(pk=gid,
-                                         tenant_id=getattr(request.user, "tenant_id", None))
-        except LocalAgent.DoesNotExist:
+        a = _get_gateway_for_user(request.user, gid)
+        if a is None:
             return Response({"error": "Gateway introuvable"}, status=404)
         if not a.activation_token:
             return Response({"error": "Aucun token d'activation actif"}, status=400)
@@ -382,13 +386,7 @@ class GatewayDetailView(APIView):
     permission_classes = [IsAuthenticated]
 
     def _get(self, request, gid):
-        try:
-            a = LocalAgent.objects.get(pk=gid)
-        except LocalAgent.DoesNotExist:
-            return None
-        if a.tenant_id != getattr(request.user, "tenant_id", None):
-            return None
-        return a
+        return _get_gateway_for_user(request.user, gid)
 
     def get(self, request, gid):
         a = self._get(request, gid)
@@ -435,10 +433,8 @@ class GatewayRotateActivationView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, gid):
-        try:
-            a = LocalAgent.objects.get(pk=gid,
-                                         tenant_id=getattr(request.user, "tenant_id", None))
-        except LocalAgent.DoesNotExist:
+        a = _get_gateway_for_user(request.user, gid)
+        if a is None:
             return Response({"error": "Gateway introuvable"}, status=404)
         a.activation_token = secrets.token_urlsafe(24)
         a.activation_expires_at = timezone.now() + timedelta(hours=ACTIVATION_TOKEN_TTL_HOURS)
@@ -454,10 +450,8 @@ class GatewayRevokeView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, gid):
-        try:
-            a = LocalAgent.objects.get(pk=gid,
-                                         tenant_id=getattr(request.user, "tenant_id", None))
-        except LocalAgent.DoesNotExist:
+        a = _get_gateway_for_user(request.user, gid)
+        if a is None:
             return Response({"error": "Gateway introuvable"}, status=404)
         a.revoked_at = timezone.now()
         a.connected = False
@@ -474,10 +468,8 @@ class GatewayReactivateView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, gid):
-        try:
-            a = LocalAgent.objects.get(pk=gid,
-                                         tenant_id=getattr(request.user, "tenant_id", None))
-        except LocalAgent.DoesNotExist:
+        a = _get_gateway_for_user(request.user, gid)
+        if a is None:
             return Response({"error": "Gateway introuvable"}, status=404)
         a.revoked_at = None
         a.activated_at = None
@@ -501,12 +493,7 @@ class GatewayActionView(APIView):
     action_type: str = ""
 
     def _get(self, request, gid):
-        try:
-            a = LocalAgent.objects.get(pk=gid,
-                                         tenant_id=getattr(request.user, "tenant_id", None))
-        except LocalAgent.DoesNotExist:
-            return None
-        return a
+        return _get_gateway_for_user(request.user, gid)
 
     def _push(self, agent, payload):
         """Push l'action sur les 2 canaux temps réel simultanément :
@@ -600,10 +587,8 @@ class GatewayLogsView(APIView):
 
     def get(self, request, gid):
         from django.core.cache import cache
-        try:
-            a = LocalAgent.objects.get(pk=gid,
-                                         tenant_id=getattr(request.user, "tenant_id", None))
-        except LocalAgent.DoesNotExist:
+        a = _get_gateway_for_user(request.user, gid)
+        if a is None:
             return Response({"error": "Gateway introuvable"}, status=404)
 
         # Historique côté serveur (poussés par l'agent via WS)
@@ -620,10 +605,8 @@ class GatewayDevicesView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, gid):
-        try:
-            a = LocalAgent.objects.get(pk=gid,
-                                         tenant_id=getattr(request.user, "tenant_id", None))
-        except LocalAgent.DoesNotExist:
+        a = _get_gateway_for_user(request.user, gid)
+        if a is None:
             return Response({"error": "Gateway introuvable"}, status=404)
         return Response({
             "gateway_id": str(a.pk),

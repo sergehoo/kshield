@@ -1,4 +1,6 @@
 """KAYDAN SHIELD — devices: badges, casques, lecteurs, terminaux IoT."""
+import uuid
+
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
 from django.db import models
@@ -753,7 +755,7 @@ class LocalAgent(UUIDModel, TimeStampedModel):
 # ═══════════════════════════════════════════════════════════════════
 # GatewayTarget (Phase 3 — équipements vendors pilotés par une gateway)
 # ═══════════════════════════════════════════════════════════════════
-class GatewayTarget(UUIDModel, TimeStampedModel):
+class GatewayTarget(models.Model):
     """Équipement vendor géré par un Kaydan Edge Gateway.
 
     Chaque LocalAgent (gateway) peut piloter plusieurs équipements vendors
@@ -775,16 +777,21 @@ class GatewayTarget(UUIDModel, TimeStampedModel):
         ("generic",   "Générique (custom)"),
     ]
 
+    # La migration 0010 a créé cette table avec une clé primaire UUID et
+    # uniquement les deux dates. Ces champs explicites gardent l'ORM aligné
+    # sur le schéma déjà déployé.
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
     gateway = models.ForeignKey(
         LocalAgent, on_delete=models.CASCADE, related_name="targets",
-        help_text="Kaydan Edge Gateway qui pilote cet équipement.",
     )
     label = models.CharField(max_length=120,
         help_text='Nom convivial, ex. "Portail entrée principale".')
     vendor = models.CharField(max_length=24, choices=VENDOR_CHOICES, db_index=True)
     ip = models.GenericIPAddressField()
-    port = models.PositiveIntegerField(default=0,
-        help_text="0 = port par défaut du vendor (ex: 80 pour Hikvision).")
+    port = models.PositiveIntegerField(default=0)
 
     # Credentials chiffrés (identifiants d'accès au device vendor)
     username = models.CharField(max_length=120, blank=True)
@@ -806,14 +813,13 @@ class GatewayTarget(UUIDModel, TimeStampedModel):
     # Extra JSON pour config vendor-spécifique (chemins door_id, etc.)
     extra = models.JSONField(default=dict, blank=True)
 
-    enabled = models.BooleanField(default=True,
-        help_text="False = target désactivé (l'agent ne le connectera pas).")
+    enabled = models.BooleanField(default=True)
 
     class Meta:
         ordering = ["gateway", "vendor", "label"]
         indexes = [
-            models.Index(fields=["gateway", "enabled"]),
-            models.Index(fields=["vendor", "enabled"]),
+            models.Index(fields=["gateway", "enabled"], name="devices_gt_gw_en_idx"),
+            models.Index(fields=["vendor", "enabled"], name="devices_gt_ven_en_idx"),
         ]
         unique_together = [("gateway", "ip", "port")]
 

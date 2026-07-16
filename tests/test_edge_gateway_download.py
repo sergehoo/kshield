@@ -32,6 +32,20 @@ def admin_user(db, kaydan_tenant):
     )
 
 
+@pytest.fixture
+def company_user(db, kaydan_company):
+    from django.contrib.auth import get_user_model
+
+    User = get_user_model()
+    return User.objects.create_user(
+        email="edge-company-user@kaydan.test",
+        password="x",
+        company=kaydan_company,
+        tenant=None,
+        is_staff=True,
+    )
+
+
 def test_gateway_download_package_returns_installable_zip(api_client, admin_user, gateway):
     api_client.force_authenticate(admin_user)
 
@@ -75,3 +89,42 @@ def test_gateway_download_route_accepts_api_returned_integer_id(
 
     assert detail.status_code == 200
     assert detail.json()["id"] == str(gateway.pk)
+
+
+def test_gateway_endpoints_resolve_tenant_from_company(
+    api_client, company_user, gateway
+):
+    api_client.force_authenticate(company_user)
+
+    detail = api_client.get(f"/api/v1/devices/edge-gateway/{gateway.pk}/")
+    logs = api_client.get(f"/api/v1/devices/edge-gateway/{gateway.pk}/logs/")
+    targets = api_client.get(f"/api/v1/devices/edge-gateway/{gateway.pk}/targets/")
+
+    assert detail.status_code == 200
+    assert logs.status_code == 200
+    assert targets.status_code == 200
+    assert targets.json() == {"count": 0, "targets": []}
+
+
+def test_gateway_target_uses_deployed_uuid_schema(api_client, company_user, gateway):
+    api_client.force_authenticate(company_user)
+
+    created = api_client.post(
+        f"/api/v1/devices/edge-gateway/{gateway.pk}/targets/",
+        {
+            "vendor": "hikvision",
+            "ip": "192.0.2.20",
+            "port": 80,
+            "label": "Portail test",
+        },
+        format="json",
+    )
+
+    assert created.status_code == 201
+    target_id = created.json()["id"]
+
+    detail = api_client.get(
+        f"/api/v1/devices/edge-gateway/{gateway.pk}/targets/{target_id}/"
+    )
+    assert detail.status_code == 200
+    assert detail.json()["id"] == target_id

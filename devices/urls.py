@@ -211,8 +211,8 @@ urlpatterns = [
     path("edge-gateway/fleet/targets/",                         FleetTargetsView.as_view(),          name="edge-gateway-fleet-targets"),
     # Targets vendors (équipements pilotés par cette gateway)
     path("edge-gateway/<int:gid>/targets/",                     GatewayTargetsView.as_view(),        name="edge-gateway-targets"),
-    path("edge-gateway/<int:gid>/targets/<int:tid>/",           GatewayTargetDetailView.as_view(),   name="edge-gateway-target-detail"),
-    path("edge-gateway/<int:gid>/targets/<int:tid>/<str:action>/", GatewayTargetActionView.as_view(), name="edge-gateway-target-action"),
+    path("edge-gateway/<int:gid>/targets/<uuid:tid>/",          GatewayTargetDetailView.as_view(),   name="edge-gateway-target-detail"),
+    path("edge-gateway/<int:gid>/targets/<uuid:tid>/<str:action>/", GatewayTargetActionView.as_view(), name="edge-gateway-target-action"),
 
     # ═══ Agent local — Admin (provisioning + gestion) ═══
     path("local-agents/",                            LocalAgentListView.as_view(),        name="local-agent-list"),

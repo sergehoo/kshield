@@ -7,14 +7,18 @@ def resolve_tenant(user):
 
     Ordre :
       1. ``user.tenant`` (relation directe)
-      2. Superuser → premier tenant actif (le SU est global)
-      3. ``core.services.get_kaydan_tenant()`` (fallback historique)
-      4. Premier tenant actif de la base (dernier recours si un seul existe)
-      5. None (aucun tenant du tout — DB vide)
+      2. ``user.company.tenant`` (utilisateur rattaché à une filiale)
+      3. Superuser → premier tenant actif (le SU est global)
+      4. ``core.services.get_kaydan_tenant()`` (fallback historique)
+      5. Premier tenant actif de la base (dernier recours si un seul existe)
+      6. None (aucun tenant du tout — DB vide)
     """
     t = getattr(user, "tenant", None)
     if t is not None:
         return t
+    company = getattr(user, "company", None)
+    if company is not None and company.tenant_id:
+        return company.tenant
     try:
         from core.models import Tenant
         active_qs = Tenant.objects.filter(is_active=True)
