@@ -85,13 +85,32 @@ def _serialize_package(p: EdgeGatewayPackage, request=None) -> dict:
     }
 
 
+# Une gateway est considérée "en ligne" si un heartbeat HTTP OU une WS
+# active a eu lieu il y a moins de 90 secondes. La WS reste préférée
+# (temps réel), mais le heartbeat HTTP suffit — sinon les agents qui ne
+# maintiennent pas de WS (agent Python legacy) apparaissent hors ligne
+# alors qu'ils battent bien.
+GATEWAY_ONLINE_MAX_SECONDS = 90
+
+
+def _is_gateway_online(a: LocalAgent, now=None) -> bool:
+    now = now or timezone.now()
+    if a.connected:
+        return True
+    if not a.last_seen_at:
+        return False
+    return (now - a.last_seen_at).total_seconds() <= GATEWAY_ONLINE_MAX_SECONDS
+
+
 def _serialize_gateway(a: LocalAgent, *, include_secrets: bool = False) -> dict:
     now = timezone.now()
+    online = _is_gateway_online(a, now=now)
     d = {
         "id": str(a.pk),
         "label": a.label,
         "site_id": a.site_id,
-        "connected": a.connected,
+        "connected": online,
+        "connected_via_ws": a.connected,
         "last_seen_at": a.last_seen_at.isoformat() if a.last_seen_at else None,
         "activated_at": a.activated_at.isoformat() if a.activated_at else None,
         "revoked_at": a.revoked_at.isoformat() if a.revoked_at else None,
@@ -110,13 +129,13 @@ def _serialize_gateway(a: LocalAgent, *, include_secrets: bool = False) -> dict:
         "cloud_status": a.cloud_status,
         "created_at": a.created_at.isoformat() if a.created_at else None,
     }
-    # Compute status global : activated ? revoked ? connected ?
+    # Compute status global : activated ? revoked ? online (WS ou heartbeat) ?
     if a.revoked_at:
         d["status"] = "revoked"
     elif not a.activated_at:
         expired = (a.activation_expires_at and a.activation_expires_at < now)
         d["status"] = "activation_expired" if expired else "pending_activation"
-    elif a.connected:
+    elif online:
         d["status"] = "connected"
     else:
         d["status"] = "disconnected"
