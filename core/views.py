@@ -5,6 +5,7 @@ from rest_framework import permissions, viewsets
 
 from .models import Address, Company, FeatureFlag, Tenant
 from .serializers import AddressSerializer, CompanySerializer, FeatureFlagSerializer, TenantSerializer
+from .tenancy import resolve_request_tenant
 
 
 @csrf_exempt
@@ -58,6 +59,16 @@ class CompanyViewSet(viewsets.ModelViewSet):
     serializer_class = CompanySerializer
     search_fields = ("name", "code", "legal_name")
     filterset_fields = ("tenant", "sector", "is_active")
+
+    def perform_create(self, serializer):
+        serializer.save(
+            tenant=resolve_request_tenant(self.request),
+            created_by=self.request.user,
+            updated_by=self.request.user,
+        )
+
+    def perform_update(self, serializer):
+        serializer.save(updated_by=self.request.user)
 
 
 class AddressViewSet(viewsets.ModelViewSet):

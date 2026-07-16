@@ -1,6 +1,7 @@
 from rest_framework import serializers
 
 from .models import Address, Company, FeatureFlag, Tenant
+from .tenancy import CurrentTenantDefault
 
 
 class TenantSerializer(serializers.ModelSerializer):
@@ -11,6 +12,10 @@ class TenantSerializer(serializers.ModelSerializer):
 
 
 class CompanySerializer(serializers.ModelSerializer):
+    tenant = serializers.PrimaryKeyRelatedField(
+        read_only=True,
+        default=CurrentTenantDefault(),
+    )
     tenant_code = serializers.CharField(source="tenant.code", read_only=True)
 
     class Meta:
@@ -19,7 +24,7 @@ class CompanySerializer(serializers.ModelSerializer):
             "id", "uuid", "tenant", "tenant_code", "name", "code", "legal_name",
             "tax_id", "sector", "contact_name", "contact_email", "contact_phone", "is_active",
         )
-        read_only_fields = ("id", "uuid", "tenant_code")
+        read_only_fields = ("id", "uuid", "tenant", "tenant_code")
 
 
 class AddressSerializer(serializers.ModelSerializer):

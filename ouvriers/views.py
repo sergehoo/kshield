@@ -2,10 +2,12 @@ from django.db import models
 from drf_spectacular.utils import extend_schema, extend_schema_view
 from rest_framework import viewsets
 
+from core.tenancy import resolve_request_tenant
+
 from .models import Crew, Subcontractor, Trade, Worker, WorkerAssignment, WorkerCertification
 from .serializers import (
     CrewSerializer, SubcontractorSerializer, TradeSerializer, WorkerAssignmentSerializer,
-    WorkerCertificationSerializer, WorkerSerializer, resolve_request_tenant,
+    WorkerCertificationSerializer, WorkerSerializer,
 )
 
 

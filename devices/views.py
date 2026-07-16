@@ -14,6 +14,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from accounts.hmac_auth import HMACAPIKeyAuthentication
 from accounts.permissions import IsAuthenticatedOrAPIKey
 from accounts.rbac import HasKshieldPermission
+from core.tenancy import resolve_request_tenant
 
 logger = logging.getLogger(__name__)
 
@@ -121,6 +122,16 @@ class BadgeViewSet(viewsets.ModelViewSet):
     permission_classes = [HasKshieldPermission]
     kshield_perms = {"read": "badges.view", "write": "badges.issue",
                       "revoke": "badges.issue"}
+
+    def perform_create(self, serializer):
+        serializer.save(
+            tenant=resolve_request_tenant(self.request),
+            created_by=self.request.user,
+            updated_by=self.request.user,
+        )
+
+    def perform_update(self, serializer):
+        serializer.save(updated_by=self.request.user)
 
     @action(detail=True, methods=["post"])
     def revoke(self, request, pk=None):

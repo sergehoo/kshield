@@ -1,5 +1,7 @@
 from rest_framework import serializers
 
+from core.tenancy import CurrentTenantDefault
+
 from .models import (
     Badge, BadgeHelmetPairing, Camera, Device, DeviceHeartbeat,
     DeviceMaintenance, DeviceModel, FirmwareVersion, Helmet, OTAUpdate,
@@ -47,7 +49,22 @@ class DeviceSerializer(serializers.ModelSerializer):
 
 
 class BadgeSerializer(serializers.ModelSerializer):
-    class Meta: model = Badge; fields = "__all__"
+    tenant = serializers.PrimaryKeyRelatedField(
+        read_only=True,
+        default=CurrentTenantDefault(),
+    )
+    tech = serializers.ChoiceField(
+        source="type",
+        choices=Badge.TYPE_CHOICES,
+        required=False,
+    )
+
+    class Meta:
+        model = Badge
+        fields = "__all__"
+        read_only_fields = (
+            "tenant", "created_by", "updated_by", "created_at", "updated_at",
+        )
 
 
 class HelmetSerializer(serializers.ModelSerializer):
