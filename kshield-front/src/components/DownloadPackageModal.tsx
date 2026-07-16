@@ -13,7 +13,7 @@
 import { useState } from "react";
 import toast from "react-hot-toast";
 import {
-  Download, Monitor, HardDrive, Container, Cpu, Apple, Package2, X,
+  Download, Monitor, HardDrive, Container, Cpu, Apple, Package2, X, Zap,
 } from "lucide-react";
 
 import { Modal } from "@/components/ui/Modal";
@@ -35,23 +35,60 @@ interface PlatformDef {
   icon: React.ReactNode;
   recommended?: boolean;
   size?: string;
+  /** Binaire natif Go (plus léger, pas de venv Python à maintenir). */
+  native?: boolean;
 }
 
 const PLATFORMS: PlatformDef[] = [
+  // ─── Agent Go natif (recommandé — binaire compilé, aucune dépendance) ───
+  {
+    id: "darwin_arm64_go",
+    label: "macOS Apple Silicon (Go)",
+    description: "Binaire natif M1/M2/M3/M4. Aucune dépendance Python. LaunchAgent auto.",
+    icon: <Apple className="w-5 h-5" />,
+    recommended: true, native: true, size: "~15 MB",
+  },
+  {
+    id: "darwin_amd64_go",
+    label: "macOS Intel (Go)",
+    description: "Binaire natif Intel x86_64. LaunchAgent auto.",
+    icon: <Apple className="w-5 h-5" />,
+    native: true, size: "~15 MB",
+  },
+  {
+    id: "linux_amd64_go",
+    label: "Linux amd64 (Go)",
+    description: "Binaire statique — toute distribution avec systemd. Debian/Ubuntu/RHEL.",
+    icon: <Zap className="w-5 h-5" />,
+    recommended: true, native: true, size: "~15 MB",
+  },
+  {
+    id: "linux_arm64_go",
+    label: "Linux ARM64 — RPi 4/5 (Go)",
+    description: "Raspberry Pi 4/5 64-bit + serveurs ARM. Faible empreinte.",
+    icon: <Cpu className="w-5 h-5" />,
+    native: true, size: "~15 MB",
+  },
+  {
+    id: "windows_amd64_go",
+    label: "Windows amd64 (Go)",
+    description: "Binaire .exe natif — Windows 10/11 + Server. Service auto.",
+    icon: <Monitor className="w-5 h-5" />,
+    native: true, size: "~15 MB",
+  },
+  // ─── Agent Python legacy (rétrocompat) ───────────────────────────
   {
     id: "windows_exe",
-    label: "Windows",
-    description: "Installateur .exe — Windows 10/11 + Server. Service auto-start.",
+    label: "Windows (Python legacy)",
+    description: "Installateur .exe basé Python — Windows 10/11 + Server.",
     icon: <Monitor className="w-5 h-5" />,
-    recommended: true,
     size: "~4 MB",
   },
   {
     id: "linux_deb",
-    label: "Linux (Ubuntu/Debian)",
-    description: "Package .deb avec service systemd. Compatible Ubuntu 20.04+.",
+    label: "Linux (.deb, Python legacy)",
+    description: "Package .deb Python avec service systemd. Ubuntu 20.04+.",
     icon: <HardDrive className="w-5 h-5" />,
-    recommended: true,
     size: "~4 MB",
   },
   {
@@ -63,15 +100,15 @@ const PLATFORMS: PlatformDef[] = [
   },
   {
     id: "linux_sh",
-    label: "Linux (Script universel)",
-    description: "Script bash — fonctionne sur toute distribution avec systemd.",
+    label: "Linux (Script universel, Python legacy)",
+    description: "Script bash Python — fonctionne sur toute distribution avec systemd.",
     icon: <HardDrive className="w-5 h-5" />,
     size: "~4 MB",
   },
   {
     id: "macos_pkg",
-    label: "macOS",
-    description: "Bundle avec launchd — Intel + Apple Silicon.",
+    label: "macOS (Python legacy)",
+    description: "Bundle Python avec launchd — Intel + Apple Silicon.",
     icon: <Apple className="w-5 h-5" />,
     size: "~4 MB",
   },
@@ -154,10 +191,15 @@ export function DownloadPackageModal({ gatewayId, gatewayLabel, open, onClose }:
               >
                 <div className="text-brand-500 shrink-0">{p.icon}</div>
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-medium">{p.label}</span>
+                    {p.native && (
+                      <span className="text-[10px] px-1.5 py-0.5 bg-brand-500/15 text-brand-600 rounded font-semibold">
+                        NATIF
+                      </span>
+                    )}
                     {p.recommended && (
-                      <span className="text-[10px] px-1.5 py-0.5 bg-success/20 text-success rounded">
+                      <span className="text-[10px] px-1.5 py-0.5 bg-ok/20 text-ok rounded">
                         RECOMMANDÉ
                       </span>
                     )}

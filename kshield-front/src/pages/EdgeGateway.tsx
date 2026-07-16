@@ -39,13 +39,22 @@ import { fmtRelative } from "@/lib/format";
 type Tab = "gateways" | "downloads" | "wizard";
 
 const PLATFORM_META: Record<string, { label: string; icon: any; color: string }> = {
+  // Agent Python legacy
   windows:      { label: "Windows",       icon: "🪟", color: "text-info" },
+  windows_exe:  { label: "Windows (.exe)", icon: "🪟", color: "text-info" },
   linux_deb:    { label: "Debian/Ubuntu", icon: "🐧", color: "text-warning" },
   linux_rpm:    { label: "Fedora/RHEL",   icon: "🎩", color: "text-warning" },
   linux_sh:     { label: "Linux script",  icon: "📜", color: "text-warning" },
+  macos_pkg:    { label: "macOS (.pkg)",  icon: "🍎", color: "text-ink" },
   docker:       { label: "Docker",        icon: "🐳", color: "text-info" },
   raspberry_pi: { label: "Raspberry Pi",  icon: "🥧", color: "text-danger" },
   mini_pc:      { label: "Mini PC",       icon: "🖥️", color: "text-brand-500" },
+  // Agent Go natif (recommandé)
+  darwin_arm64_go:  { label: "macOS Apple Silicon (Go)", icon: "🍎", color: "text-brand-500" },
+  darwin_amd64_go:  { label: "macOS Intel (Go)",         icon: "🍎", color: "text-brand-500" },
+  linux_amd64_go:   { label: "Linux amd64 (Go)",         icon: "⚡", color: "text-brand-500" },
+  linux_arm64_go:   { label: "Linux ARM64 / RPi (Go)",   icon: "🥧", color: "text-brand-500" },
+  windows_amd64_go: { label: "Windows amd64 (Go)",       icon: "🪟", color: "text-brand-500" },
 };
 
 export function EdgeGatewayPage() {
