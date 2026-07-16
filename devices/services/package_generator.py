@@ -263,6 +263,39 @@ INSTALL_INSTRUCTIONS = {
         "  1. Clic droit sur install-edge.ps1 → Exécuter avec PowerShell\n"
         "  2. Suivre l'assistant."
     ),
+    # ─── Agent Go natif ─────────────────────────────────────────
+    "darwin_arm64_go": (
+        "  1. Ouvrir un terminal dans ce dossier\n"
+        "  2. Lancer : sudo bash install-edge-go.sh\n"
+        "  3. Le binaire natif est téléchargé depuis GitHub Releases,\n"
+        "     installé dans /usr/local/bin/, activé, et lancé via LaunchAgent.\n"
+        "  4. Logs : tail -f /tmp/kshield-edge.log"
+    ),
+    "darwin_amd64_go": (
+        "  1. Ouvrir un terminal dans ce dossier\n"
+        "  2. Lancer : sudo bash install-edge-go.sh\n"
+        "  3. Le binaire natif Intel est téléchargé, installé, activé.\n"
+        "  4. Logs : tail -f /tmp/kshield-edge.log"
+    ),
+    "linux_amd64_go": (
+        "  1. Ouvrir un terminal dans ce dossier\n"
+        "  2. Lancer : sudo bash install-edge-go.sh\n"
+        "  3. Service systemd 'kshield-edge' actif au reboot.\n"
+        "  4. Logs : journalctl -u kshield-edge -f"
+    ),
+    "linux_arm64_go": (
+        "  1. Ouvrir un terminal dans ce dossier (Raspberry Pi 4/5, ARM64)\n"
+        "  2. Lancer : sudo bash install-edge-go.sh\n"
+        "  3. Service systemd 'kshield-edge' actif au reboot.\n"
+        "  4. Logs : journalctl -u kshield-edge -f"
+    ),
+    "windows_amd64_go": (
+        "  1. Ouvrir PowerShell (admin) dans ce dossier\n"
+        "  2. Télécharger le binaire :\n"
+        "     Invoke-WebRequest \"https://github.com/sergehoo/kshield/releases/download/agent-v1.0.0/kshield-agent-windows-amd64.exe\" \\\n"
+        "         -OutFile C:\\Program Files\\KaydanEdge\\kshield-agent.exe\n"
+        "  3. .\\kshield-agent.exe activate --config .\\kshield-agent.toml"
+    ),
 }
 
 
@@ -512,8 +545,24 @@ class PackageGenerator:
                     lines.append(f'{k} = "{_toml_escape(str(v))}"')
         return "\n".join(lines) + "\n"
 
+    # ─── Plateformes Go (binaire natif, pas de venv Python) ─────
+    GO_PLATFORMS = {
+        "darwin_arm64_go",
+        "darwin_amd64_go",
+        "linux_amd64_go",
+        "linux_arm64_go",
+        "windows_amd64_go",
+    }
+
     def _get_install_script(self, ctx: Dict[str, str]) -> tuple[Optional[str], str]:
         """Retourne (contenu_script, nom_fichier) selon la plateforme."""
+        # Agent Go natif → script léger qui télécharge le binaire depuis
+        # GitHub releases puis appelle activate. Pas de venv.
+        if self.platform in self.GO_PLATFORMS:
+            return (self._load_script_asset(
+                "install-edge-go.sh", subdir="agent-go/scripts",
+            ), "install-edge-go.sh")
+
         # Windows → PowerShell
         if self.platform in ("windows", "windows_exe", "windows_portable"):
             return self._load_script_asset("install-edge.ps1"), "install-edge.ps1"
@@ -522,21 +571,20 @@ class PackageGenerator:
         if self.platform == "docker":
             return None, ""
 
-        # Linux/macOS/RPI → bash
+        # Linux/macOS/RPI (agent Python legacy) → bash
         return self._load_script_asset("install-edge.sh"), "install-edge.sh"
 
-    def _load_script_asset(self, filename: str) -> str:
-        """Lit un asset du dossier agent/ et l'injecte tel quel dans le ZIP.
+    def _load_script_asset(self, filename: str, *, subdir: str = "agent") -> str:
+        """Lit un asset du dossier ``<repo>/<subdir>/`` et l'injecte dans le ZIP.
 
         Les scripts prennent leur config depuis les variables d'env passées
         au run (KSHIELD_SERVER_URL, KSHIELD_ACTIVATION_TOKEN). Ils lisent
         aussi config/kshield-agent.toml qu'on vient d'écrire dans le ZIP.
         """
         import os
-        agent_dir = os.path.join(settings.BASE_DIR, "agent")
-        script_path = os.path.join(agent_dir, filename)
+        script_path = os.path.join(settings.BASE_DIR, subdir, filename)
         if not os.path.exists(script_path):
-            logger.warning("Script %s introuvable dans %s", filename, agent_dir)
+            logger.warning("Script %s introuvable dans %s", filename, subdir)
             return (f"#!/bin/sh\n"
                     f"echo 'Script {filename} manquant — contactez le support.'\n"
                     f"exit 1\n")

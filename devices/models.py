@@ -865,6 +865,12 @@ class EdgeGatewayPackage(TimeStampedModel):
         # Embedded / IoT
         ("raspberry_pi",      "Raspberry Pi"),
         ("mini_pc",           "Mini PC industriel"),
+        # ─── Agent Go natif (binaire compilé, sans venv Python) ────
+        ("darwin_arm64_go",   "macOS Apple Silicon (Go)"),
+        ("darwin_amd64_go",   "macOS Intel (Go)"),
+        ("linux_amd64_go",    "Linux amd64 (Go)"),
+        ("linux_arm64_go",    "Linux arm64 / RPi 4-5 (Go)"),
+        ("windows_amd64_go",  "Windows amd64 (Go)"),
         # Legacy fallback (rétrocompat : ancien "windows" tout court)
         ("windows",           "Windows (legacy)"),
     ]
