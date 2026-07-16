@@ -48,7 +48,7 @@ appindicator). Sur Windows/macOS c'est natif.`,
 		controller := tray.NewController(title, adminURL)
 
 		// Signal handling — SIGTERM ferme proprement le tray
-		ctx, cancel := context.WithCancel(context.Background())
+		_, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
 		sig := make(chan os.Signal, 1)

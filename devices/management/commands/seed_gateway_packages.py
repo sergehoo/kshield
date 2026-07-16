@@ -16,8 +16,8 @@ from django.utils import timezone
 
 CATALOG = [
     {
-        "platform": "windows",
-        "name_template": "kshield-edge-{version}-windows-x64.msi",
+        "platform": "windows_exe",
+        "name_template": "kshield-edge-{version}-windows-x64.exe",
         "min_os_version": "Windows 10 20H2 / Server 2019",
         "docker_image": "",
     },

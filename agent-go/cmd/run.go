@@ -82,6 +82,10 @@ func runAgent(cmd *cobra.Command, args []string) error {
 	cloudClient := api.New(cfg.Cloud.ServerURL, cfg.Cloud.APIToken, cfg.Cloud.HMACSecret)
 	_ = notifier // évite unused warning — on l'utilise plus bas
 
+	// ─── Signal handling ────────────────────────────────────────
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	// ─── Dispatcher d'actions ───────────────────────────────────
 	dispatcher := actions.New()
 	dispatcher.OnResult = func(res actions.Result) {
@@ -190,10 +194,6 @@ func runAgent(cmd *cobra.Command, args []string) error {
 			},
 		}
 	})
-
-	// ─── Signal handling ────────────────────────────────────────
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)

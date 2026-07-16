@@ -24,17 +24,42 @@
 # ═══════════════════════════════════════════════════════════════════
 set -euo pipefail
 
-# ─── Vérif variables env ────────────────────────────────────────
-: "${KSHIELD_SERVER_URL:?Variable KSHIELD_SERVER_URL requise}"
-: "${KSHIELD_ACTIVATION_TOKEN:?Variable KSHIELD_ACTIVATION_TOKEN requise}"
-
 INSTALL_DIR="${INSTALL_DIR:-/opt/kshield-edge}"
 REPO_URL="${REPO_URL:-https://github.com/sergehoo/kshield.git}"
 BRANCH="${BRANCH:-main}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BUNDLED_CONFIG="${SCRIPT_DIR}/config/kshield-agent.toml"
 
 log()  { printf "\033[1;34m[install]\033[0m %s\n" "$*"; }
 warn() { printf "\033[1;33m[warn]\033[0m %s\n" "$*"; }
 err()  { printf "\033[1;31m[FAIL]\033[0m %s\n" "$*" >&2; exit 1; }
+
+read_toml_value() {
+    local key="$1"
+    local file="$2"
+    awk -F'=' -v wanted="$key" '
+        $1 ~ "^[[:space:]]*" wanted "[[:space:]]*$" {
+            value=$2
+            sub(/^[[:space:]]+/, "", value)
+            sub(/[[:space:]]+$/, "", value)
+            gsub(/^"/, "", value)
+            gsub(/"$/, "", value)
+            print value
+            exit
+        }
+    ' "$file"
+}
+
+# ─── Config depuis env ou ZIP personnalisé ───────────────────────
+if [ -z "${KSHIELD_SERVER_URL:-}" ] && [ -f "$BUNDLED_CONFIG" ]; then
+    KSHIELD_SERVER_URL="$(read_toml_value "server_url" "$BUNDLED_CONFIG")"
+fi
+if [ -z "${KSHIELD_ACTIVATION_TOKEN:-}" ] && [ -f "$BUNDLED_CONFIG" ]; then
+    KSHIELD_ACTIVATION_TOKEN="$(read_toml_value "activation_token" "$BUNDLED_CONFIG")"
+fi
+
+: "${KSHIELD_SERVER_URL:?Variable KSHIELD_SERVER_URL requise ou config/kshield-agent.toml manquant}"
+: "${KSHIELD_ACTIVATION_TOKEN:?Variable KSHIELD_ACTIVATION_TOKEN requise ou config/kshield-agent.toml manquant}"
 
 # ─── Détection OS ───────────────────────────────────────────────
 OS="$(uname -s)"

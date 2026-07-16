@@ -7,7 +7,7 @@ import (
 
 func TestNotifier_ThrottleSameKey(t *testing.T) {
 	n := New("Test")
-	n.MinInterval = 100 * time.Millisecond
+	n.MinInterval = 10 * time.Second
 
 	// Deux notifs successives avec la même clé → la seconde doit être throttled
 	// Le call n'est pas observable directement (beeep échoue silencieusement

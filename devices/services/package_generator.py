@@ -70,7 +70,7 @@ site_id          = "{site_id}"
 # URL du backend Kaydan Shield (HTTP + WebSocket)
 server_url       = "{server_url}"
 # Token d'activation à usage unique — échangé contre api_token permanent
-# au premier boot via POST /api/v1/agents/<id>/activate/
+# au premier boot via POST /api/v1/devices/edge-gateway/activate/
 activation_token = "{activation_token}"
 activation_ttl_hours = {activation_ttl}
 
@@ -272,7 +272,7 @@ VERSION_MANIFEST_TEMPLATE = """\
     "gateway_label": "{label}",
     "server_url": "{server_url}",
     "platform": "{platform}",
-    "update_check_url": "{server_url}/api/v1/edge-gateway/updates/check/",
+    "update_check_url": "{server_url}/api/v1/devices/edge-gateway/updates/check/",
     "min_python_version": "3.10"
 }}
 """

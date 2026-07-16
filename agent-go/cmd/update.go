@@ -25,7 +25,7 @@ var updateCmd = &cobra.Command{
 	Long: `Force une vérification manuelle d'update indépendamment de l'auto-check.
 
 Flow :
-  1. GET /api/v1/edge-gateway/updates/check/
+  1. GET /api/v1/devices/edge-gateway/updates/check/
   2. Si has_update:
      - Télécharge le nouveau binaire
      - Vérifie le SHA256

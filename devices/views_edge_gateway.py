@@ -1059,7 +1059,7 @@ class GatewayDownloadPackageView(APIView):
 # Update check + Action result (Phase 2.3)
 # ═══════════════════════════════════════════════════════════════════
 class UpdateCheckView(APIView):
-    """GET /api/v1/edge-gateway/updates/check/?version=<sem>&platform=<p>
+    """GET /api/v1/devices/edge-gateway/updates/check/?version=<sem>&platform=<p>
 
     Retourne les infos de mise à jour disponible.
     Auth : HMAC agent (Bearer api_token).
@@ -1120,7 +1120,7 @@ class UpdateCheckView(APIView):
 
 
 class ActionResultView(APIView):
-    """POST /api/v1/edge-gateway/action-result/
+    """POST /api/v1/devices/edge-gateway/action-result/
 
     L'agent renvoie le résultat d'une action exécutée (restart/sync/scan/update).
     Utilisé par le dispatcher pour tracer les commandes.

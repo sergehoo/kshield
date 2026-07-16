@@ -5,7 +5,7 @@
 //	POST /api/v1/devices/edge-gateway/activate/     (première activation)
 //	POST /api/v1/devices/edge-gateway/heartbeat/    (heartbeat régulier)
 //	POST /api/v1/agent/events/                       (push d'events)
-//	GET  /api/v1/edge-gateway/updates/check/         (auto-update)
+//	GET  /api/v1/devices/edge-gateway/updates/check/ (auto-update)
 //
 // Le HMAC est calculé sur les requêtes après activation.
 package api
@@ -310,7 +310,7 @@ type UpdateCheckResponse struct {
 }
 
 func (c *Client) CheckUpdate(ctx context.Context, currentVersion, platform string) (*UpdateCheckResponse, error) {
-	url := fmt.Sprintf("%s/api/v1/edge-gateway/updates/check/?version=%s&platform=%s",
+	url := fmt.Sprintf("%s/api/v1/devices/edge-gateway/updates/check/?version=%s&platform=%s",
 		c.baseURL, currentVersion, platform)
 
 	httpReq, err := http.NewRequestWithContext(ctx, "GET", url, nil)

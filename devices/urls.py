@@ -191,28 +191,28 @@ urlpatterns = [
     path("edge-gateway/action-result/",                         ActionResultView.as_view(),          name="edge-gateway-action-result"),
     # Provisioning + supervision
     path("edge-gateway/",                                       GatewayListCreateView.as_view(),     name="edge-gateway-list"),
-    path("edge-gateway/<uuid:gid>/",                            GatewayDetailView.as_view(),         name="edge-gateway-detail"),
-    path("edge-gateway/<uuid:gid>/rotate-activation/",          GatewayRotateActivationView.as_view(), name="edge-gateway-rotate-activation"),
-    path("edge-gateway/<uuid:gid>/pairing-qr.png",              GatewayPairingQrView.as_view(),      name="edge-gateway-qr"),
-    path("edge-gateway/<uuid:gid>/revoke/",                     GatewayRevokeView.as_view(),         name="edge-gateway-revoke"),
-    path("edge-gateway/<uuid:gid>/reactivate/",                 GatewayReactivateView.as_view(),     name="edge-gateway-reactivate"),
+    path("edge-gateway/<int:gid>/",                             GatewayDetailView.as_view(),         name="edge-gateway-detail"),
+    path("edge-gateway/<int:gid>/rotate-activation/",           GatewayRotateActivationView.as_view(), name="edge-gateway-rotate-activation"),
+    path("edge-gateway/<int:gid>/pairing-qr.png",               GatewayPairingQrView.as_view(),      name="edge-gateway-qr"),
+    path("edge-gateway/<int:gid>/revoke/",                      GatewayRevokeView.as_view(),         name="edge-gateway-revoke"),
+    path("edge-gateway/<int:gid>/reactivate/",                  GatewayReactivateView.as_view(),     name="edge-gateway-reactivate"),
     # Actions
-    path("edge-gateway/<uuid:gid>/restart/",                    GatewayRestartView.as_view(),        name="edge-gateway-restart"),
-    path("edge-gateway/<uuid:gid>/force-sync/",                 GatewayForceSyncView.as_view(),      name="edge-gateway-force-sync"),
-    path("edge-gateway/<uuid:gid>/scan-network/",               GatewayScanNetworkView.as_view(),    name="edge-gateway-scan"),
-    path("edge-gateway/<uuid:gid>/update/",                     GatewayUpdateView.as_view(),         name="edge-gateway-update"),
-    path("edge-gateway/<uuid:gid>/logs/",                       GatewayLogsView.as_view(),           name="edge-gateway-logs"),
-    path("edge-gateway/<uuid:gid>/devices/",                    GatewayDevicesView.as_view(),        name="edge-gateway-devices"),
+    path("edge-gateway/<int:gid>/restart/",                     GatewayRestartView.as_view(),        name="edge-gateway-restart"),
+    path("edge-gateway/<int:gid>/force-sync/",                  GatewayForceSyncView.as_view(),      name="edge-gateway-force-sync"),
+    path("edge-gateway/<int:gid>/scan-network/",                GatewayScanNetworkView.as_view(),    name="edge-gateway-scan"),
+    path("edge-gateway/<int:gid>/update/",                      GatewayUpdateView.as_view(),         name="edge-gateway-update"),
+    path("edge-gateway/<int:gid>/logs/",                        GatewayLogsView.as_view(),           name="edge-gateway-logs"),
+    path("edge-gateway/<int:gid>/devices/",                     GatewayDevicesView.as_view(),        name="edge-gateway-devices"),
     # Download dynamique — génère un ZIP personnalisé par gateway/plateforme
-    path("edge-gateway/<uuid:gid>/download/",                   GatewayDownloadPackageView.as_view(), name="edge-gateway-download"),
+    path("edge-gateway/<int:gid>/download/",                    GatewayDownloadPackageView.as_view(), name="edge-gateway-download"),
     # Résultats scan réseau depuis l'agent (auth HMAC)
-    path("edge-gateway/<uuid:gid>/scan-results/",               GatewayScanResultsView.as_view(),    name="edge-gateway-scan-results"),
+    path("edge-gateway/<int:gid>/scan-results/",                GatewayScanResultsView.as_view(),    name="edge-gateway-scan-results"),
     # Fleet — vue agrégée de tous les targets du tenant
     path("edge-gateway/fleet/targets/",                         FleetTargetsView.as_view(),          name="edge-gateway-fleet-targets"),
     # Targets vendors (équipements pilotés par cette gateway)
-    path("edge-gateway/<uuid:gid>/targets/",                    GatewayTargetsView.as_view(),        name="edge-gateway-targets"),
-    path("edge-gateway/<uuid:gid>/targets/<uuid:tid>/",         GatewayTargetDetailView.as_view(),   name="edge-gateway-target-detail"),
-    path("edge-gateway/<uuid:gid>/targets/<uuid:tid>/<str:action>/", GatewayTargetActionView.as_view(), name="edge-gateway-target-action"),
+    path("edge-gateway/<int:gid>/targets/",                     GatewayTargetsView.as_view(),        name="edge-gateway-targets"),
+    path("edge-gateway/<int:gid>/targets/<int:tid>/",           GatewayTargetDetailView.as_view(),   name="edge-gateway-target-detail"),
+    path("edge-gateway/<int:gid>/targets/<int:tid>/<str:action>/", GatewayTargetActionView.as_view(), name="edge-gateway-target-action"),
 
     # ═══ Agent local — Admin (provisioning + gestion) ═══
     path("local-agents/",                            LocalAgentListView.as_view(),        name="local-agent-list"),

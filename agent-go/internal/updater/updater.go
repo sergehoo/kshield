@@ -1,7 +1,7 @@
 // Package updater — Auto-update du binaire de l'agent.
 //
 // Flow :
-//   1. CheckUpdate → GET /api/v1/edge-gateway/updates/check/
+//   1. CheckUpdate → GET /api/v1/devices/edge-gateway/updates/check/
 //   2. Si has_update=true : Download + SHA256 verify
 //   3. Sauvegarde binaire courant en <path>.old (rollback)
 //   4. Swap atomique du nouveau binaire (rename)
