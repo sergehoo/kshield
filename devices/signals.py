@@ -58,7 +58,10 @@ def auto_issue_visitor_badge(sender, instance, created, **kwargs):
     from .models import Badge, BadgeAssignment
 
     if BadgeAssignment.objects.filter(
-        visit_request=instance, released_at__isnull=True,
+        holder_kind="visitor",
+        holder_object_id=instance.visitor_id,
+        reason=f"Visite {instance.uuid}",
+        closed_at__isnull=True,
     ).exists():
         return
 

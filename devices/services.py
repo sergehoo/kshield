@@ -1048,10 +1048,11 @@ class BadgeWorkflowService:
 
         BadgeAssignment.objects.create(
             badge=badge,
+            tenant=badge.tenant,
             holder_kind="visitor",
             holder_object_id=visit_request.visitor_id,
             holder_label=holder_label or f"Visite {visit_request.uuid}",
-            visit_request=visit_request,
+            reason=f"Visite {visit_request.uuid}",
         )
         BadgePDFService.generate_and_save(badge)
         return badge
@@ -1061,15 +1062,15 @@ class BadgeWorkflowService:
         """Libère un badge (fin de visite, restitution employé/ouvrier)."""
         from .models import BadgeAssignment
         active_assignment = BadgeAssignment.objects.filter(
-            badge=badge, released_at__isnull=True,
+            badge=badge, closed_at__isnull=True,
         ).first()
         if active_assignment:
-            active_assignment.released_at = timezone.now()
+            active_assignment.closed_at = timezone.now()
             if by_user is not None:
-                active_assignment.released_by = by_user
-                active_assignment.save(update_fields=["released_at", "released_by"])
+                active_assignment.closed_by = by_user
+                active_assignment.save(update_fields=["closed_at", "closed_by"])
             else:
-                active_assignment.save(update_fields=["released_at"])
+                active_assignment.save(update_fields=["closed_at"])
 
         if badge.category == "visitor_qr":
             badge.status = "available"
@@ -1125,15 +1126,15 @@ class BadgeWorkflowService:
         if badge.status == "revoked":
             return badge
         active_assignment = BadgeAssignment.objects.filter(
-            badge=badge, released_at__isnull=True,
+            badge=badge, closed_at__isnull=True,
         ).first()
         if active_assignment:
-            active_assignment.released_at = timezone.now()
+            active_assignment.closed_at = timezone.now()
             if by_user is not None:
-                active_assignment.released_by = by_user
-                active_assignment.save(update_fields=["released_at", "released_by"])
+                active_assignment.closed_by = by_user
+                active_assignment.save(update_fields=["closed_at", "closed_by"])
             else:
-                active_assignment.save(update_fields=["released_at"])
+                active_assignment.save(update_fields=["closed_at"])
 
         badge.status = "revoked"
         badge.revoked_at = timezone.now()
@@ -1147,15 +1148,15 @@ class BadgeWorkflowService:
     def mark_lost(cls, badge, reason: str = "", by_user=None):
         from .models import BadgeAssignment
         active_assignment = BadgeAssignment.objects.filter(
-            badge=badge, released_at__isnull=True,
+            badge=badge, closed_at__isnull=True,
         ).first()
         if active_assignment:
-            active_assignment.released_at = timezone.now()
+            active_assignment.closed_at = timezone.now()
             if by_user is not None:
-                active_assignment.released_by = by_user
-                active_assignment.save(update_fields=["released_at", "released_by"])
+                active_assignment.closed_by = by_user
+                active_assignment.save(update_fields=["closed_at", "closed_by"])
             else:
-                active_assignment.save(update_fields=["released_at"])
+                active_assignment.save(update_fields=["closed_at"])
 
         badge.status = "lost"
         badge.suspended_reason = (reason or "Déclaré perdu")[:240]
@@ -1208,6 +1209,7 @@ class BadgeWorkflowService:
 
         BadgeAssignment.objects.create(
             badge=badge,
+            tenant=badge.tenant,
             holder_kind="employee",
             holder_object_id=employee.id,
             holder_label=f"{employee.first_name} {employee.last_name} ({employee.matricule})",
@@ -1273,6 +1275,7 @@ class BadgeWorkflowService:
 
         BadgeAssignment.objects.create(
             badge=badge,
+            tenant=badge.tenant,
             holder_kind=holder_kind,
             holder_object_id=holder.id,
             holder_label=f"{holder.first_name} {holder.last_name} ({holder.matricule})",
@@ -1331,6 +1334,7 @@ class BadgeWorkflowService:
 
         BadgeAssignment.objects.create(
             badge=badge,
+            tenant=badge.tenant,
             holder_kind="worker",
             holder_object_id=worker.id,
             holder_label=f"{worker.first_name} {worker.last_name} ({worker.matricule})",

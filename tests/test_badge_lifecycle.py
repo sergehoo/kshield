@@ -113,7 +113,7 @@ def test_mark_lost_closes_assignment(db, kaydan_tenant, employee_office):
     BadgeWorkflowService.mark_lost(badge, reason="oublié")
     assert badge.status == "lost"
     a = BadgeAssignment.objects.filter(badge=badge).order_by("-assigned_at").first()
-    assert a.released_at is not None
+    assert a.closed_at is not None
 
 
 @pytest.mark.integration

@@ -214,6 +214,11 @@ class BadgeAssignment(models.Model):
     def is_active(self) -> bool:
         return self.closed_at is None
 
+    @property
+    def released_at(self):
+        """Compatibilité avec l'ancien modèle BadgeAssignment."""
+        return self.closed_at
+
     def allowed_weekday_list(self) -> list[int]:
         """Parse allowed_weekdays en liste d'entiers 0-6."""
         if not self.allowed_weekdays:

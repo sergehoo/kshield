@@ -206,66 +206,6 @@ class Badge(UUIDModel, TimeStampedModel):
         return self.status == "active" and self.is_currently_valid
 
 
-class BadgeAssignment(TimeStampedModel):
-    """Historique des attributions d'un badge à des porteurs successifs.
-
-    Particulièrement utile pour les badges visiteurs QR qui sont réutilisés
-    pour plusieurs visites — chaque attribution garde sa trace pour
-    l'audit et la conformité RGPD.
-    """
-
-    HOLDER_KIND_CHOICES = Badge.HOLDER_KIND_CHOICES
-
-    badge = models.ForeignKey(Badge, on_delete=models.CASCADE, related_name="assignments")
-    holder_kind = models.CharField(max_length=12, choices=HOLDER_KIND_CHOICES)
-    holder_object_id = models.PositiveBigIntegerField()
-    holder_label = models.CharField(
-        max_length=240,
-        help_text="Snapshot du nom du porteur (au cas où l'objet est supprimé).",
-    )
-
-    visit_request = models.ForeignKey(
-        "visitors.VisitRequest", null=True, blank=True,
-        on_delete=models.SET_NULL, related_name="badge_assignments",
-    )
-    assigned_at = models.DateTimeField(auto_now_add=True)
-    released_at = models.DateTimeField(
-        null=True, blank=True,
-        help_text="Date à laquelle le badge a été rendu / désassigné.",
-    )
-    assigned_by = models.ForeignKey(
-        "accounts.User", null=True, blank=True,
-        on_delete=models.SET_NULL, related_name="badge_assignments_made",
-        help_text="Agent ayant effectué l'attribution.",
-    )
-    released_by = models.ForeignKey(
-        "accounts.User", null=True, blank=True,
-        on_delete=models.SET_NULL, related_name="badge_assignments_released",
-    )
-    notes = models.TextField(blank=True)
-
-    class Meta:
-        ordering = ["-assigned_at"]
-        indexes = [
-            models.Index(fields=["badge", "-assigned_at"]),
-            models.Index(fields=["holder_kind", "holder_object_id"]),
-        ]
-
-    def __str__(self):
-        return f"{self.badge.uid} → {self.holder_label} ({self.assigned_at:%d/%m/%y})"
-
-    @property
-    def is_active(self):
-        return self.released_at is None
-
-    @property
-    def duration(self):
-        """Durée d'utilisation (released_at - assigned_at) ou en cours."""
-        from django.utils import timezone
-        end = self.released_at or timezone.now()
-        return end - self.assigned_at
-
-
 class BadgeScanEvent(models.Model):
     """Trace de chaque scan d'un badge — alimenté par signal sur AccessEvent.
 
