@@ -18,6 +18,7 @@ import { toApiError } from "@/lib/api";
 import { parseApiErrors, omitEmpty, FieldErrors } from "@/lib/formErrors";
 import { FormErrorBanner } from "@/components/FormErrorBanner";
 import { RFIDEnrollmentModal } from "@/components/RFIDEnrollmentModal";
+import { BadgeEnrollmentWizard } from "@/components/badges/BadgeEnrollmentWizard";
 import { fmtDate, fmtRelative, initials } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import {
@@ -44,6 +45,7 @@ export function BadgesPage() {
   const [enrollOpen, setEnrollOpen] = useState(false);
   const [bulkOpen, setBulkOpen] = useState(false);
   const [liveEnrollOpen, setLiveEnrollOpen] = useState(false);
+  const [wizardOpen, setWizardOpen] = useState(false);
   const [editBadge, setEditBadge] = useState<any | null>(null);
   const [assocBadge, setAssocBadge] = useState<any | null>(null);
   const qc = useQueryClient();
@@ -225,6 +227,10 @@ export function BadgesPage() {
                     onClick={() => setLiveEnrollOpen(true)}>
               Enrôlement temps réel
             </Button>
+            <Button variant="dark" leftIcon={<ShieldCheck className="w-4 h-4" />}
+                    onClick={() => setWizardOpen(true)}>
+              Assistant enrôlement
+            </Button>
             <Button leftIcon={<Plus className="w-4 h-4" />} onClick={() => setEnrollOpen(true)}>
               Nouveau badge
             </Button>
@@ -340,6 +346,11 @@ export function BadgesPage() {
       />
       <BadgeEditModal badge={editBadge} onClose={() => setEditBadge(null)} />
       <BadgeAssocModal badge={assocBadge} onClose={() => setAssocBadge(null)} />
+      <BadgeEnrollmentWizard
+        open={wizardOpen}
+        onClose={() => setWizardOpen(false)}
+        onDone={() => qc.invalidateQueries({ queryKey: ["badges"] })}
+      />
     </div>
   );
 }

@@ -91,20 +91,31 @@ class Badge(UUIDModel, TimeStampedModel):
         ("employee_rfid",  "Badge employé RFID"),
         ("worker_rfid",    "Badge ouvrier RFID (avec casque)"),
     ]
+    # Cycle de vie complet (12 états — cahier des charges §3.5)
     STATUS_CHOICES = [
         ("available",  "Disponible (en pool)"),
-        ("assigned",   "Attribué"),
+        ("enrolling",  "En cours d'enrôlement"),
+        ("assigned",   "Attribué (pas encore utilisé)"),
         ("active",     "Actif"),
         ("suspended",  "Suspendu"),
         ("expired",    "Expiré"),
         ("lost",       "Perdu"),
-        ("revoked",    "Révoqué"),
+        ("stolen",     "Volé"),
         ("disabled",   "Désactivé"),
+        ("revoked",    "Révoqué (interdit d'usage)"),
+        ("destroyed",  "Détruit physiquement"),
+        ("archived",   "Archivé (RGPD, conservé pour audit)"),
     ]
+    # 7 types de titulaires possibles (cahier des charges §3.4)
     HOLDER_KIND_CHOICES = [
-        ("employee", "Employé"),
-        ("worker", "Ouvrier"),
-        ("visitor", "Visiteur"),
+        ("employee",    "Employé"),
+        ("worker",      "Ouvrier"),
+        ("visitor",     "Visiteur"),
+        ("agent",       "Agent sécurité"),
+        ("contractor",  "Prestataire externe"),
+        ("vehicle",     "Véhicule"),
+        ("equipment",   "Équipement / matériel"),
+        ("resource",    "Ressource temporaire"),
     ]
 
     tenant = models.ForeignKey("core.Tenant", on_delete=models.CASCADE, related_name="badges")
@@ -1156,3 +1167,51 @@ class MaintenanceTicket(UUIDModel, TimeStampedModel):
 
     def __str__(self):
         return f"[{self.severity}] {self.title}"
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Ré-export des modèles d'événements (Phase 1 — cahier des charges)
+# ═══════════════════════════════════════════════════════════════════
+# Ces modèles vivent dans models_events.py pour ne pas alourdir ce fichier
+# déjà volumineux, mais sont exposés ici pour permettre les imports
+# standards :
+#     from devices.models import EventType, DeviceEvent
+from .models_events import (  # noqa: E402, F401
+    EventType,
+    DeviceEvent,
+    EventAcknowledgement,
+    EventCategory,
+    EventSeverity,
+    EventResult,
+    TransmissionMode,
+)
+from .models_badges import (  # noqa: E402, F401
+    BadgeAssignment,
+    BadgeLifecycleEvent,
+)
+from .models_sync import (  # noqa: E402, F401
+    EdgeSyncBatch,
+    EdgeSyncItem,
+    EdgeSyncConflict,
+    SyncDirection,
+    SyncStatus,
+    SyncPriority,
+    SyncEntityType,
+    ConflictResolution,
+)
+from .models_discovery import (  # noqa: E402, F401
+    DeviceDiscovery,
+    DeviceDiscoveryScan,
+    DiscoveryStatus,
+    DeviceState,
+    DiscoveryProtocol,
+    DeviceCompatibility,
+)
+from .models_agents import (  # noqa: E402, F401
+    LocalAgentType,
+    LocalAgentHeartbeat,
+    LocalAgentConfiguration,
+    LocalAgentLog,
+    AgentState,
+    LogLevel,
+)

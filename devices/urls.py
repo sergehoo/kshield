@@ -13,6 +13,30 @@ from .views_edge_gateway import (
     GatewayTargetsView, GatewayTargetDetailView, GatewayTargetActionView,
     GatewayScanResultsView, FleetTargetsView,
 )
+from .views_events import (
+    DeviceEventListView, DeviceEventLiveView, DeviceEventDetailView,
+    DeviceEventActionView, EventTypeCatalogView, DeviceEventExportView,
+)
+from .views_badges import (
+    BadgeAssignView, BadgeLifecycleActionView,
+    BadgeHistoryView, BadgeCurrentAssignmentView,
+)
+from .views_sync import (
+    AgentSyncStartView, AgentSyncItemsView, AgentSyncCompleteView,
+    AgentSyncCancelView, AgentSyncStatusView,
+    SyncBatchesListView, SyncConflictsListView, SyncConflictResolveView,
+)
+from .views_discovery import (
+    AgentDiscoveryRegisterView, AgentScanCompleteView,
+    DiscoveryListView, DiscoveryDetailView, DiscoveryActionView,
+    DiscoveryScansListView,
+)
+from .views_agents import (
+    AgentHeartbeatView, AgentLogsIngestView, AgentConfigPullView,
+    AgentListView, AgentDetailView, AgentHeartbeatsListView,
+    AgentLogsListView, AgentConfigsView, AgentConfigApplyView,
+    AgentCommandView, AgentTypesListView,
+)
 from .views_enrollment import (
     EnrollmentStartView, EnrollmentStopView, EnrollmentConfirmView,
     EnrollmentSessionDetailView, EnrollmentIngestScanView,
@@ -205,4 +229,63 @@ urlpatterns = [
     path("<int:pk>/iclock-debug/",                   DeviceIclockDebugView.as_view(),    name="device-iclock-debug"),
     # Debug global — dernières requêtes POST /pub/api (firmwares whitebox inconnus)
     path("pubapi-debug/",                            PubApiDebugView.as_view(),          name="pubapi-debug"),
+
+    # ═══ Événements techniques (Phase 1 refonte — cahier des charges §1) ═══
+    # Liste + filtres complets + pagination
+    path("events/",                                    DeviceEventListView.as_view(),      name="events-list"),
+    # Live view (avec URL WebSocket + stats 24h + limit initial)
+    path("events/live/",                               DeviceEventLiveView.as_view(),      name="events-live"),
+    # Nomenclature paramétrable
+    path("events/types/",                              EventTypeCatalogView.as_view(),     name="events-types"),
+    # Export CSV filtré (streamé)
+    path("events/export.csv",                          DeviceEventExportView.as_view(),    name="events-export-csv"),
+    # Détail événement + actions (acknowledge / resolve / comment)
+    path("events/<uuid:event_id>/",                    DeviceEventDetailView.as_view(),    name="events-detail"),
+    path("events/<uuid:event_id>/<str:action>/",       DeviceEventActionView.as_view(),    name="events-action"),
+
+    # ═══ Cycle de vie badges (Phase 3 refonte — cahier §3.5) ═══
+    path("badges/<uuid:badge_id>/assign/",             BadgeAssignView.as_view(),          name="badge-assign"),
+    path("badges/<uuid:badge_id>/history/",            BadgeHistoryView.as_view(),         name="badge-history"),
+    path("badges/<uuid:badge_id>/assignment/",         BadgeCurrentAssignmentView.as_view(), name="badge-current-assignment"),
+    # Actions unitaires : unassign / suspend / resume / expire / report-lost /
+    # report-stolen / disable / enable / revoke / destroy / archive
+    path("badges/<uuid:badge_id>/<str:action>/",       BadgeLifecycleActionView.as_view(), name="badge-lifecycle-action"),
+
+    # ═══ Edge Sync bidirectionnel (Phase 4 refonte — cahier §4.5) ═══
+    # Agent (HMAC auth)
+    path("edge/sync/batch/start/",                     AgentSyncStartView.as_view(),       name="edge-sync-start"),
+    path("edge/sync/batch/<str:bid>/items/",           AgentSyncItemsView.as_view(),       name="edge-sync-items"),
+    path("edge/sync/batch/<str:bid>/complete/",        AgentSyncCompleteView.as_view(),    name="edge-sync-complete"),
+    path("edge/sync/batch/<str:bid>/cancel/",          AgentSyncCancelView.as_view(),      name="edge-sync-cancel"),
+    path("edge/sync/batch/<str:bid>/status/",          AgentSyncStatusView.as_view(),      name="edge-sync-status"),
+    # Admin (JWT auth)
+    path("edge/gateways/<uuid:gid>/sync/batches/",     SyncBatchesListView.as_view(),      name="edge-sync-list-batches"),
+    path("edge/sync/conflicts/",                       SyncConflictsListView.as_view(),    name="edge-sync-conflicts"),
+    path("edge/sync/conflicts/<uuid:cid>/resolve/",    SyncConflictResolveView.as_view(),  name="edge-sync-resolve"),
+
+    # ═══ Discovery équipements (Phase 5 refonte — cahier §2) ═══
+    # Agent (HMAC)
+    path("discovery/register/",                        AgentDiscoveryRegisterView.as_view(), name="discovery-register"),
+    path("discovery/scan/<uuid:scan_id>/complete/",    AgentScanCompleteView.as_view(),      name="discovery-scan-complete"),
+    # Admin (JWT)
+    path("discovery/",                                 DiscoveryListView.as_view(),          name="discovery-list"),
+    path("discovery/scans/",                           DiscoveryScansListView.as_view(),     name="discovery-scans-list"),
+    path("discovery/<uuid:pk>/",                       DiscoveryDetailView.as_view(),        name="discovery-detail"),
+    path("discovery/<uuid:pk>/<str:action>/",          DiscoveryActionView.as_view(),        name="discovery-action"),
+
+    # ═══ Agents locaux (Phase 6 refonte — cahier §5) ═══
+    # Agent (HMAC) — canal privilégié
+    path("agents/heartbeat/",                          AgentHeartbeatView.as_view(),         name="agents-heartbeat"),
+    path("agents/logs/",                               AgentLogsIngestView.as_view(),        name="agents-logs-ingest"),
+    path("agents/config/",                             AgentConfigPullView.as_view(),        name="agents-config-pull"),
+    # Admin (JWT)
+    path("agents/types/",                              AgentTypesListView.as_view(),         name="agents-types"),
+    path("agents/",                                    AgentListView.as_view(),              name="agents-list"),
+    path("agents/<uuid:agent_id>/",                    AgentDetailView.as_view(),            name="agents-detail"),
+    path("agents/<uuid:agent_id>/heartbeats/",         AgentHeartbeatsListView.as_view(),    name="agents-heartbeats"),
+    path("agents/<uuid:agent_id>/logs/",               AgentLogsListView.as_view(),          name="agents-logs-list"),
+    path("agents/<uuid:agent_id>/configs/",            AgentConfigsView.as_view(),           name="agents-configs"),
+    path("agents/<uuid:agent_id>/configs/<int:version>/apply/",
+                                                        AgentConfigApplyView.as_view(),      name="agents-configs-apply"),
+    path("agents/<uuid:agent_id>/commands/<str:cmd>/", AgentCommandView.as_view(),           name="agents-command"),
 ] + router.urls

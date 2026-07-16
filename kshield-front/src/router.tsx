@@ -57,6 +57,12 @@ import { EdgeGatewayPage } from "@/pages/EdgeGateway";
 import FleetPage from "@/pages/Fleet";
 import { AuditLogPage } from "@/pages/AuditLog";
 
+// Refonte cahier des charges — fronts phases 4, 5, 6
+import { AgentsSupervisionPage } from "@/pages/AgentsSupervision";
+import { AgentDetailPage } from "@/pages/AgentDetail";
+import { DevicesDiscoveryPage } from "@/pages/DevicesDiscovery";
+import { SyncConflictsPage } from "@/pages/SyncConflicts";
+
 // Compte
 import { NotificationsPage } from "@/pages/Notifications";
 import { AIPage } from "@/pages/AI";
@@ -181,6 +187,10 @@ export const router = createBrowserRouter([
       { path: "users", element: <UsersPage /> },
       { path: "roles", element: <RolesPage /> },
       { path: "local-agents", element: <LocalAgentsPage /> },
+      { path: "agents", element: <AgentsSupervisionPage /> },
+      { path: "agents/:id", element: <AgentDetailPage /> },
+      { path: "devices/discovery", element: <DevicesDiscoveryPage /> },
+      { path: "sync/conflicts", element: <SyncConflictsPage /> },
       { path: "alerts", element: <AlertsPage /> },
       { path: "drivers", element: <DriversPage /> },
       { path: "discovery", element: <DiscoveryPage /> },
