@@ -23,6 +23,7 @@ export interface EnrollmentSession {
   timeout_seconds: number;
   started_at: string | null;
   ended_at: string | null;
+  error_message?: string;
   channel_group: string;
   events?: EnrollmentEvent[];
 }

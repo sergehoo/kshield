@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 
+from django.db import DatabaseError
 from django.db.models import Q as models_Q
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
@@ -63,6 +64,7 @@ def _serialize_session(s: RFIDEnrollmentSession) -> dict:
         "timeout_seconds": s.timeout_seconds,
         "started_at": s.started_at.isoformat() if s.started_at else None,
         "ended_at": s.ended_at.isoformat() if s.ended_at else None,
+        "error_message": s.error_message,
         "channel_group": s.channel_group,
     }
 
@@ -168,6 +170,29 @@ class EnrollmentStartView(APIView):
             return Response({"error": exc.message, "code": exc.code}, status=400)
         except Device.DoesNotExist:
             return Response({"error": "Lecteur introuvable"}, status=404)
+        except (TypeError, ValueError):
+            return Response(
+                {"error": "Paramètres d'enrôlement invalides", "code": "invalid_parameters"},
+                status=400,
+            )
+        except DatabaseError:
+            logger.exception("Schéma SQL incompatible avec l'enrôlement RFID")
+            return Response(
+                {
+                    "error": "Base de données non synchronisée pour l'enrôlement RFID",
+                    "code": "enrollment_schema_error",
+                },
+                status=503,
+            )
+        except Exception:
+            logger.exception("Impossible de démarrer la session RFID")
+            return Response(
+                {
+                    "error": "Impossible de démarrer la session RFID",
+                    "code": "enrollment_start_failed",
+                },
+                status=500,
+            )
 
         return Response(_serialize_session(session), status=201)
 

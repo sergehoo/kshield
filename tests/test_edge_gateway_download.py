@@ -128,3 +128,75 @@ def test_gateway_target_uses_deployed_uuid_schema(api_client, company_user, gate
     )
     assert detail.status_code == 200
     assert detail.json()["id"] == target_id
+
+
+def test_activate_returns_mqtt_credentials(api_client, kaydan_tenant, settings):
+    """Contract test — /activate/ doit renvoyer les credentials MQTT
+    Option A (username + password) pour que l'agent Go puisse se connecter
+    à EMQX. Sans ce contrat, l'agent reconnecte en boucle sur 'auth failed'.
+    """
+    from devices.models import LocalAgent
+
+    settings.MQTT_AGENT_USERNAME = "kshield-edge-master"
+    settings.MQTT_AGENT_PASSWORD = "super-secret-broker-pw"
+    settings.MQTT_PUBLIC_HOST = "mqtt.example.com"
+    settings.MQTT_PUBLIC_PORT = 8883
+    settings.MQTT_TLS = True
+
+    gw = LocalAgent.objects.create(
+        tenant=kaydan_tenant,
+        label="Gateway Activate Test",
+        activation_token="tok-activate-test",
+    )
+
+    resp = api_client.post(
+        "/api/v1/devices/edge-gateway/activate/",
+        {
+            "activation_token": "tok-activate-test",
+            "system_info": {"os": "linux", "arch": "amd64",
+                            "hostname": "gw-01", "agent_version": "1.2.0"},
+        },
+        format="json",
+    )
+
+    assert resp.status_code == 200, resp.content
+    body = resp.json()
+    # Contrat critique — sans ces champs, l'agent Go crash au boot.
+    assert body["success"] is True
+    assert body["api_token"]
+    assert body["hmac_secret"]
+    assert body["mqtt_host"] == "mqtt.example.com"
+    assert body["mqtt_port"] == 8883
+    assert body["mqtt_use_tls"] is True
+    assert body["mqtt_username"] == "kshield-edge-master"
+    assert body["mqtt_password"] == "super-secret-broker-pw"
+
+    gw.refresh_from_db()
+    assert gw.activated_at is not None
+    assert gw.activation_token in (None, "")
+
+
+def test_activate_falls_back_to_backend_credentials(api_client, kaydan_tenant, settings):
+    """Si MQTT_AGENT_* est vide, l'endpoint tombe sur MQTT_USERNAME/PASSWORD
+    (compte partagé avec le backend) au lieu de renvoyer un password vide.
+    """
+    from devices.models import LocalAgent
+
+    settings.MQTT_AGENT_USERNAME = ""
+    settings.MQTT_AGENT_PASSWORD = ""
+    settings.MQTT_USERNAME = "kshield-backend"
+    settings.MQTT_PASSWORD = "backend-pw"
+
+    gw = LocalAgent.objects.create(
+        tenant=kaydan_tenant, label="Fallback", activation_token="tok-fallback",
+    )
+
+    resp = api_client.post(
+        "/api/v1/devices/edge-gateway/activate/",
+        {"activation_token": "tok-fallback"},
+        format="json",
+    )
+    assert resp.status_code == 200, resp.content
+    body = resp.json()
+    assert body["mqtt_username"] == "kshield-backend"
+    assert body["mqtt_password"] == "backend-pw"

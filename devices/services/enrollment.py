@@ -88,15 +88,33 @@ class RFIDEnrollmentService:
         # Push commande START_RFID_ENROLLMENT
         # Si reader précis → une commande. Sinon → broadcast à tous les lecteurs RFID.
         readers_qs = _resolve_readers(tenant, reader)
+        delivery_failures = []
         for r in readers_qs:
-            DeviceCommandQueue.enqueue(
-                device=r, kind="START_RFID_ENROLLMENT",
-                payload={"session_id": str(session.uuid),
-                         "timeout_seconds": timeout_seconds,
-                         "mode": mode},
-                issued_by=user, session=session,
-                timeout_seconds=timeout_seconds,
-            )
+            try:
+                # Une commande indisponible ne doit pas annuler la session :
+                # les terminaux ADMS et les agents peuvent pousser passivement.
+                with transaction.atomic():
+                    DeviceCommandQueue.enqueue(
+                        device=r, kind="START_RFID_ENROLLMENT",
+                        payload={"session_id": str(session.uuid),
+                                 "timeout_seconds": timeout_seconds,
+                                 "mode": mode},
+                        issued_by=user, session=session,
+                        timeout_seconds=timeout_seconds,
+                    )
+            except Exception as exc:
+                delivery_failures.append(r.serial_number)
+                logger.exception(
+                    "Session %s ouverte mais commande START non distribuée à %s: %s",
+                    session.uuid, r.serial_number, exc,
+                )
+
+        if delivery_failures:
+            session.error_message = (
+                "Écoute passive active; commande non distribuée à: "
+                + ", ".join(delivery_failures)
+            )[:500]
+            session.save(update_fields=["error_message", "updated_at"])
 
         _emit_session(session, "listening",
                        message="Session ouverte, en attente des scans")
@@ -117,17 +135,31 @@ class RFIDEnrollmentService:
             return session
 
         readers_qs = _resolve_readers(session.tenant, session.reader)
+        delivery_failures = []
         for r in readers_qs:
-            DeviceCommandQueue.enqueue(
-                device=r, kind="STOP_RFID_ENROLLMENT",
-                payload={"session_id": str(session.uuid)},
-                issued_by=user, session=session,
-                timeout_seconds=10,
-            )
+            try:
+                with transaction.atomic():
+                    DeviceCommandQueue.enqueue(
+                        device=r, kind="STOP_RFID_ENROLLMENT",
+                        payload={"session_id": str(session.uuid)},
+                        issued_by=user, session=session,
+                        timeout_seconds=10,
+                    )
+            except Exception as exc:
+                delivery_failures.append(r.serial_number)
+                logger.exception(
+                    "Session %s fermée mais commande STOP non distribuée à %s: %s",
+                    session.uuid, r.serial_number, exc,
+                )
 
         session.status = "cancelled" if reason == "cancel" else "completed"
         session.ended_at = timezone.now()
-        session.save(update_fields=["status", "ended_at"])
+        if delivery_failures:
+            session.error_message = (
+                "Session fermée; commande non distribuée à: "
+                + ", ".join(delivery_failures)
+            )[:500]
+        session.save(update_fields=["status", "ended_at", "error_message", "updated_at"])
         _emit_session(session, session.status,
                        message=reason or "Session fermée")
         try:

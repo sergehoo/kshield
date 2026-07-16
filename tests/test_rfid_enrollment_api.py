@@ -114,3 +114,37 @@ def test_scan_inbox_forwards_scan_to_active_enrollment_session(
     assert event.uid == "LIVE-SCAN-001"
     assert event.device_id == device.pk
     assert event.rssi == -42
+
+
+@pytest.mark.django_db
+def test_enrollment_session_survives_reader_command_failure(
+    api_client, enrollment_company_user, device, monkeypatch
+):
+    from devices.services.command_queue import DeviceCommandQueue
+
+    device.model.type = "reader_nfc_fixed"
+    device.model.save(update_fields=["type"])
+
+    def fail_delivery(**kwargs):
+        raise RuntimeError("command transport unavailable")
+
+    monkeypatch.setattr(DeviceCommandQueue, "enqueue", fail_delivery)
+    api_client.force_authenticate(enrollment_company_user)
+
+    started = api_client.post(
+        "/api/v1/rfid/enrollment/start/",
+        {"mode": "single", "timeout_seconds": 180},
+        format="json",
+    )
+
+    assert started.status_code == 201
+    assert started.json()["status"] == "listening"
+    assert "Écoute passive active" in started.json()["error_message"]
+
+    stopped = api_client.post(
+        f"/api/v1/rfid/enrollment/{started.json()['id']}/stop/",
+        {"reason": "test"},
+        format="json",
+    )
+    assert stopped.status_code == 200
+    assert stopped.json()["status"] == "completed"
