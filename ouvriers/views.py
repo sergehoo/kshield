@@ -5,7 +5,7 @@ from rest_framework import viewsets
 from .models import Crew, Subcontractor, Trade, Worker, WorkerAssignment, WorkerCertification
 from .serializers import (
     CrewSerializer, SubcontractorSerializer, TradeSerializer, WorkerAssignmentSerializer,
-    WorkerCertificationSerializer, WorkerSerializer,
+    WorkerCertificationSerializer, WorkerSerializer, resolve_request_tenant,
 )
 
 
@@ -49,6 +49,17 @@ class WorkerViewSet(viewsets.ModelViewSet):
     serializer_class = WorkerSerializer
     search_fields = ("matricule", "first_name", "last_name", "phone", "id_document_number")
     filterset_fields = ("tenant", "trade", "subcontractor", "status")
+
+    def perform_create(self, serializer):
+        tenant = resolve_request_tenant(self.request)
+        serializer.save(
+            tenant=tenant,
+            created_by=self.request.user,
+            updated_by=self.request.user,
+        )
+
+    def perform_update(self, serializer):
+        serializer.save(updated_by=self.request.user)
 
     def get_queryset(self):
         # Worker n'a pas de FK direct vers Company. On le rattache via
