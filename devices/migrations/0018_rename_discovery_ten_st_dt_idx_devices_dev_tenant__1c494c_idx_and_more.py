@@ -5,6 +5,95 @@ from django.conf import settings
 from django.db import migrations, models
 
 
+def _table_constraints(connection, table_name):
+    with connection.cursor() as cursor:
+        return connection.introspection.get_constraints(cursor, table_name)
+
+
+class AddIndexIfMissing(migrations.AddIndex):
+    def database_forwards(self, app_label, schema_editor, from_state, to_state):
+        model = to_state.apps.get_model(app_label, self.model_name)
+        constraints = _table_constraints(schema_editor.connection, model._meta.db_table)
+        if self.index.name in constraints:
+            return
+        super().database_forwards(app_label, schema_editor, from_state, to_state)
+
+    def database_backwards(self, app_label, schema_editor, from_state, to_state):
+        # Cet index peut être antérieur à la migration dans une base réparée.
+        pass
+
+
+class AddFieldIndexIfMissing(migrations.AlterField):
+    def database_forwards(self, app_label, schema_editor, from_state, to_state):
+        model = to_state.apps.get_model(app_label, self.model_name)
+        field = model._meta.get_field(self.name)
+        constraints = _table_constraints(schema_editor.connection, model._meta.db_table)
+        if any(
+            details.get('index') and details.get('columns') == [field.column]
+            for details in constraints.values()
+        ):
+            return
+        super().database_forwards(app_label, schema_editor, from_state, to_state)
+
+    def database_backwards(self, app_label, schema_editor, from_state, to_state):
+        # Ne pas supprimer un index qui pouvait exister avant cette migration.
+        pass
+
+
+def _rename_available_indexes(apps, schema_editor, renames):
+    connection = schema_editor.connection
+    indexes_by_table = {}
+
+    for model_name, source_name, target_name in renames:
+        model = apps.get_model('devices', model_name)
+        table_name = model._meta.db_table
+
+        if table_name not in indexes_by_table:
+            constraints = _table_constraints(connection, table_name)
+            indexes_by_table[table_name] = {
+                name for name, details in constraints.items() if details.get('index')
+            }
+
+        existing_indexes = indexes_by_table[table_name]
+        if target_name in existing_indexes or source_name not in existing_indexes:
+            continue
+
+        template = next(
+            (
+                index
+                for index in model._meta.indexes
+                if index.name in (source_name, target_name)
+            ),
+            None,
+        )
+        if template is None:
+            continue
+
+        source_index = template.clone()
+        source_index.name = source_name
+        target_index = template.clone()
+        target_index.name = target_name
+        schema_editor.rename_index(model, source_index, target_index)
+        existing_indexes.remove(source_name)
+        existing_indexes.add(target_name)
+
+
+def rename_existing_indexes(apps, schema_editor):
+    renames = (
+        (operation.model_name, operation.old_name, operation.new_name)
+        for operation in Migration.index_state_operations
+    )
+    _rename_available_indexes(apps, schema_editor, renames)
+
+
+def restore_existing_indexes(apps, schema_editor):
+    renames = (
+        (operation.model_name, operation.new_name, operation.old_name)
+        for operation in reversed(Migration.index_state_operations)
+    )
+    _rename_available_indexes(apps, schema_editor, renames)
+
+
 class Migration(migrations.Migration):
 
     dependencies = [
@@ -15,7 +104,7 @@ class Migration(migrations.Migration):
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
-    operations = [
+    index_state_operations = [
         migrations.RenameIndex(
             model_name='devicediscovery',
             new_name='devices_dev_tenant__1c494c_idx',
@@ -201,6 +290,14 @@ class Migration(migrations.Migration):
             new_name='devices_loc_level_ac0309_idx',
             old_name='agent_log_lv_ts_idx',
         ),
+    ]
+
+    operations = [
+        migrations.RunPython(rename_existing_indexes, restore_existing_indexes),
+        migrations.SeparateDatabaseAndState(
+            state_operations=index_state_operations,
+            database_operations=[],
+        ),
         migrations.AlterField(
             model_name='devicediscovery',
             name='adopted_by',
@@ -216,7 +313,7 @@ class Migration(migrations.Migration):
             name='compatibility',
             field=models.CharField(choices=[('compatible', 'Compatible officiel'), ('experimental', 'Compatible (expérimental)'), ('unsupported', 'Non supporté (générique)'), ('incompatible', 'Incompatible (protocole inconnu)'), ('unknown', 'Inconnu (test requis)')], default='unknown', max_length=16),
         ),
-        migrations.AlterField(
+        AddFieldIndexIfMissing(
             model_name='devicediscovery',
             name='created_at',
             field=models.DateTimeField(auto_now_add=True, db_index=True),
@@ -296,7 +393,7 @@ class Migration(migrations.Migration):
             name='vendor',
             field=models.CharField(blank=True, db_index=True, help_text='Ex: Hikvision, ZKTeco, Axis. Déduit du OUI MAC ou du protocole.', max_length=64),
         ),
-        migrations.AlterField(
+        AddFieldIndexIfMissing(
             model_name='devicediscoveryscan',
             name='created_at',
             field=models.DateTimeField(auto_now_add=True, db_index=True),
@@ -406,7 +503,7 @@ class Migration(migrations.Migration):
             name='compression',
             field=models.CharField(blank=True, choices=[('', 'Aucune'), ('gzip', 'gzip'), ('zstd', 'zstd')], max_length=16),
         ),
-        migrations.AlterField(
+        AddFieldIndexIfMissing(
             model_name='edgesyncbatch',
             name='created_at',
             field=models.DateTimeField(auto_now_add=True, db_index=True),
@@ -431,7 +528,7 @@ class Migration(migrations.Migration):
             name='resume_from_offset',
             field=models.PositiveIntegerField(default=0, help_text='Offset (en items) où reprendre après crash. 0 = début.'),
         ),
-        migrations.AlterField(
+        AddFieldIndexIfMissing(
             model_name='edgesyncconflict',
             name='created_at',
             field=models.DateTimeField(auto_now_add=True, db_index=True),
@@ -476,7 +573,7 @@ class Migration(migrations.Migration):
             name='color',
             field=models.CharField(blank=True, help_text='Classe Tailwind ou hex — ex: "text-danger", "#f97316".', max_length=20),
         ),
-        migrations.AlterField(
+        AddFieldIndexIfMissing(
             model_name='eventtype',
             name='created_at',
             field=models.DateTimeField(auto_now_add=True, db_index=True),
@@ -531,7 +628,7 @@ class Migration(migrations.Migration):
             name='checksum',
             field=models.CharField(blank=True, help_text='SHA256 du payload pour dédup + intégrité.', max_length=64),
         ),
-        migrations.AlterField(
+        AddFieldIndexIfMissing(
             model_name='localagentconfiguration',
             name='created_at',
             field=models.DateTimeField(auto_now_add=True, db_index=True),
@@ -591,7 +688,7 @@ class Migration(migrations.Migration):
             name='config_schema',
             field=models.JSONField(blank=True, default=dict, help_text="JSON Schema pour valider config à l'attribution."),
         ),
-        migrations.AlterField(
+        AddFieldIndexIfMissing(
             model_name='localagenttype',
             name='created_at',
             field=models.DateTimeField(auto_now_add=True, db_index=True),
@@ -606,7 +703,7 @@ class Migration(migrations.Migration):
             name='module_name',
             field=models.CharField(help_text='Ex: "kshield_agent.agents.rfid" (Python) ou "internal/agents/rfid" (Go).', max_length=120),
         ),
-        migrations.AddIndex(
+        AddIndexIfMissing(
             model_name='devicediscovery',
             index=models.Index(fields=['mac_address'], name='devices_dev_mac_add_cfddd0_idx'),
         ),
