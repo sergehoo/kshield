@@ -4,6 +4,7 @@ Chaque téléchargement produit un ZIP unique contenant :
   - config/kshield-agent.toml     : config personnalisée (gateway_id, token, urls)
   - certs/kshield-ca.crt           : CA cloud (facultatif, injecté si présent)
   - install-edge.sh / install-edge.ps1 / docker-compose.yml selon plateforme
+  - bin/kshield-agent-*          : binaire natif pour les plateformes Go
   - README.txt                     : instructions plateforme
   - VERSION                        : metadata pour l'auto-update
 
@@ -73,6 +74,9 @@ server_url       = "{server_url}"
 # au premier boot via POST /api/v1/devices/edge-gateway/activate/
 activation_token = "{activation_token}"
 activation_ttl_hours = {activation_ttl}
+# Présents uniquement lors du retéléchargement d'une gateway déjà activée.
+api_token         = "{api_token}"
+hmac_secret       = "{hmac_secret}"
 
 [mqtt]
 host             = "{mqtt_host}"
@@ -83,7 +87,7 @@ username         = "{mqtt_username}"
 # Sera de toute façon (re)écrit par la réponse POST /activate/.
 password         = "{mqtt_password}"
 verify_cert      = true
-ca_file          = "certs/kshield-ca.crt"
+ca_file          = "{mqtt_ca_file}"
 
 [agent]
 version          = "{version}"
@@ -267,14 +271,14 @@ INSTALL_INSTRUCTIONS = {
     "darwin_arm64_go": (
         "  1. Ouvrir un terminal dans ce dossier\n"
         "  2. Lancer : sudo bash install-edge-go.sh\n"
-        "  3. Le binaire natif est téléchargé depuis GitHub Releases,\n"
-        "     installé dans /usr/local/bin/, activé, et lancé via LaunchAgent.\n"
+        "  3. Le binaire natif embarqué est vérifié, installé dans\n"
+        "     /usr/local/bin/, activé, et lancé via LaunchAgent.\n"
         "  4. Logs : tail -f /tmp/kshield-edge.log"
     ),
     "darwin_amd64_go": (
         "  1. Ouvrir un terminal dans ce dossier\n"
         "  2. Lancer : sudo bash install-edge-go.sh\n"
-        "  3. Le binaire natif Intel est téléchargé, installé, activé.\n"
+        "  3. Le binaire natif Intel embarqué est vérifié et installé.\n"
         "  4. Logs : tail -f /tmp/kshield-edge.log"
     ),
     "linux_amd64_go": (
@@ -291,10 +295,8 @@ INSTALL_INSTRUCTIONS = {
     ),
     "windows_amd64_go": (
         "  1. Ouvrir PowerShell (admin) dans ce dossier\n"
-        "  2. Télécharger le binaire :\n"
-        "     Invoke-WebRequest \"https://github.com/sergehoo/kshield/releases/download/agent-v1.0.0/kshield-agent-windows-amd64.exe\" \\\n"
-        "         -OutFile C:\\Program Files\\KaydanEdge\\kshield-agent.exe\n"
-        "  3. .\\kshield-agent.exe activate --config .\\kshield-agent.toml"
+        "  2. Lancer : powershell -ExecutionPolicy Bypass -File .\\install-edge-go.ps1\n"
+        "  3. La tâche système 'KaydanEdgeGateway' sera installée et démarrée."
     ),
 }
 
@@ -373,8 +375,18 @@ class PackageGenerator:
     def _rotate_activation_token(self):
         """Regénère un token à usage unique valide {TTL} heures."""
         if self.agent.activated_at:
-            # Gateway déjà activée — on ne regénère pas le token, on rend
-            # celui existant (si présent) ou vide (l'agent utilise api_token).
+            # Un package de réinstallation embarque les credentials permanents.
+            # Répare aussi les anciennes activations créées avant leur génération
+            # obligatoire par l'endpoint /activate/.
+            update_fields = []
+            if not self.agent.api_token:
+                self.agent.api_token = secrets.token_urlsafe(32)
+                update_fields.append("api_token")
+            if not self.agent.hmac_secret:
+                self.agent.hmac_secret = secrets.token_urlsafe(48)
+                update_fields.append("hmac_secret")
+            if update_fields:
+                self.agent.save(update_fields=update_fields)
             return
 
         new_token = secrets.token_urlsafe(48)
@@ -387,6 +399,8 @@ class PackageGenerator:
     # Contexte de rendu
     # ──────────────────────────────────────────────────────────
     def _build_context(self) -> Dict[str, str]:
+        import os
+
         agent = self.agent
         tenant = agent.tenant
         site = agent.site
@@ -399,6 +413,7 @@ class PackageGenerator:
         mqtt_port = int(getattr(settings, "MQTT_PUBLIC_PORT", 0)) \
             or int(getattr(settings, "MQTT_PORT", 1883))
         mqtt_tls = bool(getattr(settings, "MQTT_TLS", False))
+        ca_path = getattr(settings, "KSHIELD_CA_CERT_PATH", None)
 
         # Credentials MQTT — Option A : compte partagé pour tous les agents.
         mqtt_username_shared = (
@@ -433,10 +448,14 @@ class PackageGenerator:
             "mqtt_host":         mqtt_host,
             "mqtt_port":         str(mqtt_port),
             "mqtt_use_tls":      "true" if mqtt_tls else "false",
+            "mqtt_ca_file":      "certs/kshield-ca.crt"
+                                    if ca_path and os.path.isfile(ca_path) else "",
             "mqtt_username":     mqtt_username_shared
                                     or f"kshield-edge-{str(agent.id)[:8]}",
             "mqtt_password":     mqtt_password_shared,
             "activation_token":  agent.activation_token or "",
+            "api_token":         agent.api_token if agent.activated_at else "",
+            "hmac_secret":       agent.hmac_secret if agent.activated_at else "",
             "activation_ttl":    str(DEFAULT_ACTIVATION_TTL_HOURS),
             "activation_expires": expires_str,
             "generated_at":      now_iso,
@@ -489,15 +508,20 @@ class PackageGenerator:
             info.external_attr = 0o755 << 16  # rendre exécutable
             zf.writestr(info, install_script)
 
-        # 4. docker-compose.yml (uniquement pour la plateforme docker)
+        # 4. Les packages Go sont autonomes : le binaire vérifié est livré dans
+        # le ZIP au lieu de dépendre de la disponibilité d'une release externe.
+        if self.platform in self.GO_PLATFORMS:
+            self._write_go_binary(zf)
+
+        # 5. docker-compose.yml (uniquement pour la plateforme docker)
         if self.platform == "docker":
             zf.writestr("docker-compose.yml",
                         DOCKER_COMPOSE_TEMPLATE.format(**ctx))
 
-        # 5. README plateforme-spécifique
+        # 6. README plateforme-spécifique
         zf.writestr("README.txt", README_TEMPLATE.format(**ctx))
 
-        # 6. Manifest de version pour l'auto-update
+        # 7. Manifest de version pour l'auto-update
         zf.writestr("VERSION.json", VERSION_MANIFEST_TEMPLATE.format(**ctx))
 
     def _render_targets_toml(self) -> str:
@@ -554,11 +578,23 @@ class PackageGenerator:
         "windows_amd64_go",
     }
 
+    GO_BINARY_NAMES = {
+        "darwin_arm64_go": "kshield-agent-darwin-arm64",
+        "darwin_amd64_go": "kshield-agent-darwin-amd64",
+        "linux_amd64_go": "kshield-agent-linux-amd64",
+        "linux_arm64_go": "kshield-agent-linux-arm64",
+        "windows_amd64_go": "kshield-agent-windows-amd64.exe",
+    }
+
     def _get_install_script(self, ctx: Dict[str, str]) -> tuple[Optional[str], str]:
         """Retourne (contenu_script, nom_fichier) selon la plateforme."""
-        # Agent Go natif → script léger qui télécharge le binaire depuis
-        # GitHub releases puis appelle activate. Pas de venv.
+        # Agent Go natif → script léger qui installe le binaire fourni dans
+        # le ZIP puis appelle activate. Pas de venv.
         if self.platform in self.GO_PLATFORMS:
+            if self.platform == "windows_amd64_go":
+                return (self._load_script_asset(
+                    "install-edge-go.ps1", subdir="agent-go/scripts",
+                ), "install-edge-go.ps1")
             return (self._load_script_asset(
                 "install-edge-go.sh", subdir="agent-go/scripts",
             ), "install-edge-go.sh")
@@ -590,6 +626,30 @@ class PackageGenerator:
                     f"exit 1\n")
         with open(script_path, "r", encoding="utf-8") as f:
             return f.read()
+
+    def _write_go_binary(self, zf: zipfile.ZipFile) -> None:
+        """Ajoute le binaire natif correspondant et son SHA-256 au package."""
+        import hashlib
+        import os
+
+        binary_name = self.GO_BINARY_NAMES[self.platform]
+        binary_path = os.path.join(
+            settings.BASE_DIR, "agent-go", "dist", binary_name,
+        )
+        if not os.path.isfile(binary_path):
+            raise FileNotFoundError(
+                f"Binaire Edge Gateway manquant: {binary_name}"
+            )
+
+        with open(binary_path, "rb") as f:
+            content = f.read()
+        checksum = hashlib.sha256(content).hexdigest()
+
+        info = zipfile.ZipInfo(f"bin/{binary_name}")
+        info.compress_type = zipfile.ZIP_DEFLATED
+        info.external_attr = (0o755 if not binary_name.endswith(".exe") else 0o644) << 16
+        zf.writestr(info, content)
+        zf.writestr("bin/SHA256SUMS.txt", f"{checksum}  {binary_name}\n")
 
 
 def _toml_escape(s: str) -> str:

@@ -1,9 +1,8 @@
 """KAYDAN SHIELD — Service geofence portable (sans GDAL).
 
 Le champ `Site.geofence` est stocké en JSON (compatible GeoJSON Polygon).
-Ce module fournit des helpers point-in-polygon basés sur Shapely, qui
-fonctionne sans GDAL/PostGIS — donc utilisable en dev SQLite et en prod
-PostgreSQL non-GIS.
+Ce module fournit des helpers point-in-polygon sans dépendance native, donc
+utilisables en dev SQLite et en prod PostgreSQL non-GIS.
 
 Format attendu pour `Site.geofence` :
 
@@ -27,17 +26,72 @@ logger = logging.getLogger(__name__)
 
 
 def _polygon_from_geojson(geofence: dict):
-    """Convertit un GeoJSON Polygon en shapely Polygon. Renvoie None si invalide."""
+    """Normalise un GeoJSON Polygon/MultiPolygon. Renvoie None si invalide."""
     if not geofence or not isinstance(geofence, dict):
         return None
-    if geofence.get("type") not in ("Polygon", "MultiPolygon"):
+    kind = geofence.get("type")
+    coordinates = geofence.get("coordinates")
+    if kind not in ("Polygon", "MultiPolygon") or not isinstance(coordinates, list):
         return None
+
     try:
-        from shapely.geometry import MultiPolygon, Polygon, shape
-        return shape(geofence)
-    except Exception:
+        raw_polygons = [coordinates] if kind == "Polygon" else coordinates
+        polygons = []
+        for raw_polygon in raw_polygons:
+            if not isinstance(raw_polygon, list) or not raw_polygon:
+                return None
+            rings = []
+            for raw_ring in raw_polygon:
+                if not isinstance(raw_ring, list) or len(raw_ring) < 3:
+                    return None
+                ring = []
+                for coordinate in raw_ring:
+                    if not isinstance(coordinate, (list, tuple)) or len(coordinate) < 2:
+                        return None
+                    ring.append((float(coordinate[0]), float(coordinate[1])))
+                rings.append(ring)
+            polygons.append(rings)
+        return polygons or None
+    except (TypeError, ValueError):
         logger.debug("Geofence invalide : %s", geofence, exc_info=True)
         return None
+
+
+def _point_on_segment(point, start, end, epsilon=1e-12) -> bool:
+    px, py = point
+    ax, ay = start
+    bx, by = end
+    cross = (px - ax) * (by - ay) - (py - ay) * (bx - ax)
+    if abs(cross) > epsilon:
+        return False
+    return (
+        min(ax, bx) - epsilon <= px <= max(ax, bx) + epsilon
+        and min(ay, by) - epsilon <= py <= max(ay, by) + epsilon
+    )
+
+
+def _ring_contains(ring, point) -> bool:
+    """Ray casting, bord inclus."""
+    inside = False
+    previous = ring[-1]
+    for current in ring:
+        if _point_on_segment(point, previous, current):
+            return True
+        x1, y1 = previous
+        x2, y2 = current
+        px, py = point
+        if (y1 > py) != (y2 > py):
+            x_intersection = (x2 - x1) * (py - y1) / (y2 - y1) + x1
+            if px < x_intersection:
+                inside = not inside
+        previous = current
+    return inside
+
+
+def _polygon_contains(rings, point) -> bool:
+    if not _ring_contains(rings[0], point):
+        return False
+    return not any(_ring_contains(hole, point) for hole in rings[1:])
 
 
 def site_contains_point(site, latitude, longitude) -> Optional[bool]:
@@ -50,13 +104,13 @@ def site_contains_point(site, latitude, longitude) -> Optional[bool]:
     """
     if latitude is None or longitude is None:
         return None
-    poly = _polygon_from_geojson(site.geofence)
-    if poly is None:
+    polygons = _polygon_from_geojson(site.geofence)
+    if polygons is None:
         return None
     try:
-        from shapely.geometry import Point
-        return bool(poly.contains(Point(float(longitude), float(latitude))))
-    except Exception:
+        point = (float(longitude), float(latitude))
+        return any(_polygon_contains(rings, point) for rings in polygons)
+    except (TypeError, ValueError, IndexError):
         logger.exception("Échec point-in-polygon site=%s", site.id)
         return None
 

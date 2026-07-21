@@ -991,12 +991,9 @@ class GatewayDownloadPackageView(APIView):
     """
     permission_classes = [IsAuthenticated]
 
-    # Plateformes supportées côté endpoint (whitelist stricte)
-    ALLOWED_PLATFORMS = {
-        "linux_deb", "linux_rpm", "linux_sh", "macos_pkg",
-        "windows_exe", "windows_portable", "docker",
-        "raspberry_pi", "mini_pc",
-    }
+    # Le modèle est la source unique du catalogue afin qu'une nouvelle
+    # plateforme publiée ne soit pas refusée par une whitelist oubliée ici.
+    ALLOWED_PLATFORMS = {code for code, _label in EdgeGatewayPackage.PLATFORM_CHOICES}
 
     def get(self, request, gid):
         # 1. Validation platform
@@ -1247,6 +1244,10 @@ class GatewayActivateView(APIView):
         a.activated_at = now
         a.activation_token = None            # usage unique
         a.activation_expires_at = None
+        if not a.api_token:
+            a.api_token = secrets.token_urlsafe(32)
+        if not a.hmac_secret:
+            a.hmac_secret = secrets.token_urlsafe(48)
 
         # Support des 2 shapes de POST :
         # - Python legacy : {"os_info": "...", "version": "...", "ip_local": "..."}

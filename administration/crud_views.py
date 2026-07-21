@@ -255,7 +255,11 @@ def make_crud(
             qs = super().get_queryset()
             related = []
             for f in self.model._meta.get_fields():
-                if getattr(f, "is_relation", False) and getattr(f, "many_to_one", False):
+                if (
+                    getattr(f, "is_relation", False)
+                    and getattr(f, "many_to_one", False)
+                    and getattr(f, "concrete", False)
+                ):
                     related.append(f.name)
             if related:
                 qs = qs.select_related(*related[:20])   # cap à 20 pour éviter les jointures monstres
@@ -403,12 +407,15 @@ def _badge_detail_extras(view, ctx):
     try:
         extras["assignments"] = list(
             badge.assignments
-                .select_related("visit_request", "assigned_by", "released_by")
+                .select_related(
+                    "holder_content_type", "site", "assigned_by",
+                    "validated_by", "closed_by",
+                )
                 .order_by("-assigned_at")[:50]
         )
         extras["assignments_total"] = badge.assignments.count()
         extras["active_assignment"] = badge.assignments.filter(
-            released_at__isnull=True,
+            closed_at__isnull=True,
         ).first()
     except Exception:
         extras["assignments"] = []

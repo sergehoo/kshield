@@ -32,6 +32,17 @@ export default defineConfig(({ mode }) => {
       outDir: "dist",
       sourcemap: false,
       target: "es2020",
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            react: ["react", "react-dom", "react-router-dom"],
+            query: ["@tanstack/react-query", "axios", "zustand"],
+            charts: ["recharts"],
+            maps: ["leaflet"],
+            icons: ["lucide-react"],
+          },
+        },
+      },
     },
   };
 });

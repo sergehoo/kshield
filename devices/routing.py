@@ -20,7 +20,7 @@ websocket_urlpatterns = [
         DeviceStatusConsumer.as_asgi(),
     ),
     re_path(
-        r"^ws/agents/(?P<agent_id>[0-9a-f-]{36})/?$",
+        r"^ws/agents/(?P<agent_id>\d+)/?$",
         AgentConsumer.as_asgi(),
     ),
     # Phase 2 — flux temps réel des événements techniques par tenant

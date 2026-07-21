@@ -11,6 +11,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/gorilla/websocket"
 	"github.com/spf13/cobra"
 
 	"github.com/sergehoo/kshield/agent-go/internal/api"
@@ -162,25 +163,46 @@ Utilise ces sorties pour rapport support client.`,
 			})
 		}
 
-		// ─── 7. WS handshake ───────────────────────────────────
-		// On teste juste que /ws/ répond (Django Channels sur ce path)
-		wsCheckURL := cfg.Cloud.ServerURL + "/ws/"
-		req, _ := http.NewRequest("GET", wsCheckURL, nil)
-		hc := &http.Client{Timeout: 5 * time.Second}
-		wresp, err := hc.Do(req)
-		if err != nil {
+		// ─── 7. WS handshake authentifié ───────────────────────
+		wsURL, parseErr := url.Parse(cfg.Cloud.ServerURL)
+		if parseErr != nil {
 			results = append(results, DoctorCheck{
-				Name: "WebSocket endpoint", Ok: false, Message: err.Error(),
+				Name: "WebSocket handshake", Ok: false, Message: parseErr.Error(),
 			})
 		} else {
-			wresp.Body.Close()
-			// 400/426 sont attendus — le serveur veut un vrai upgrade WS
-			ok := wresp.StatusCode == 400 || wresp.StatusCode == 426 ||
-				wresp.StatusCode == 200 || wresp.StatusCode == 404
-			results = append(results, DoctorCheck{
-				Name: "WebSocket endpoint", Ok: ok,
-				Message: fmt.Sprintf("HTTP %d — endpoint atteignable", wresp.StatusCode),
-			})
+			if wsURL.Scheme == "https" {
+				wsURL.Scheme = "wss"
+			} else {
+				wsURL.Scheme = "ws"
+			}
+			wsURL.Path = fmt.Sprintf("/ws/agents/%s/", cfg.Gateway.ID)
+			wsURL.RawQuery = ""
+
+			headers := http.Header{}
+			headers.Set("Authorization", "Bearer "+cfg.Cloud.APIToken)
+			dialer := websocket.Dialer{HandshakeTimeout: 5 * time.Second}
+			wsCtx, wsCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			conn, wresp, err := dialer.DialContext(wsCtx, wsURL.String(), headers)
+			wsCancel()
+			if conn != nil {
+				_ = conn.Close()
+			}
+			if err != nil {
+				status := "sans réponse HTTP"
+				if wresp != nil {
+					status = wresp.Status
+					wresp.Body.Close()
+				}
+				results = append(results, DoctorCheck{
+					Name: "WebSocket handshake", Ok: false,
+					Message: fmt.Sprintf("%s: %v", status, err),
+				})
+			} else {
+				results = append(results, DoctorCheck{
+					Name: "WebSocket handshake", Ok: true,
+					Message: "upgrade 101 authentifié",
+				})
+			}
 		}
 
 		printResults(results)

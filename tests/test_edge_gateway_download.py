@@ -1,4 +1,5 @@
 import io
+import hashlib
 import zipfile
 
 import pytest
@@ -78,6 +79,61 @@ def test_gateway_download_package_returns_installable_zip(api_client, admin_user
 
         manifest = zf.read("VERSION.json").decode()
         assert "/api/v1/devices/edge-gateway/updates/check/" in manifest
+
+
+@pytest.mark.parametrize(
+    ("platform", "binary_name", "installer_name"),
+    [
+        ("linux_amd64_go", "kshield-agent-linux-amd64", "install-edge-go.sh"),
+        (
+            "windows_amd64_go",
+            "kshield-agent-windows-amd64.exe",
+            "install-edge-go.ps1",
+        ),
+    ],
+)
+def test_go_gateway_download_embeds_verified_native_binary(
+    api_client, admin_user, gateway, platform, binary_name, installer_name
+):
+    api_client.force_authenticate(admin_user)
+
+    response = api_client.get(
+        f"/api/v1/devices/edge-gateway/{gateway.pk}/download/",
+        {"platform": platform},
+    )
+
+    assert response.status_code == 200, response.content[:500]
+    assert response["X-Kshield-Platform"] == platform
+    with zipfile.ZipFile(io.BytesIO(response.content)) as zf:
+        assert zf.testzip() is None
+        assert installer_name in zf.namelist()
+        binary = zf.read(f"bin/{binary_name}")
+        checksum_line = zf.read("bin/SHA256SUMS.txt").decode().strip()
+        assert len(binary) > 1_000_000
+        assert checksum_line == f"{hashlib.sha256(binary).hexdigest()}  {binary_name}"
+
+
+def test_activated_gateway_download_contains_reinstall_credentials(
+    api_client, admin_user, gateway
+):
+    from django.utils import timezone
+
+    gateway.activated_at = timezone.now()
+    gateway.activation_token = None
+    gateway.save(update_fields=["activated_at", "activation_token"])
+    api_client.force_authenticate(admin_user)
+
+    response = api_client.get(
+        f"/api/v1/devices/edge-gateway/{gateway.pk}/download/",
+        {"platform": "linux_amd64_go"},
+    )
+
+    assert response.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(response.content)) as zf:
+        config = zf.read("config/kshield-agent.toml").decode()
+        assert f'api_token         = "{gateway.api_token}"' in config
+        assert f'hmac_secret       = "{gateway.hmac_secret}"' in config
+        assert 'activation_token = ""' in config
 
 
 def test_gateway_download_route_accepts_api_returned_integer_id(

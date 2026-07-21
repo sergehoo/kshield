@@ -158,10 +158,12 @@ class DeviceStatusConsumer(AsyncJsonWebsocketConsumer):
 class AgentConsumer(AsyncJsonWebsocketConsumer):
     """Canal WS bi-directionnel vers un Agent local.
 
-    URL : /ws/agents/<agent_id>/?token=<agent_api_token>
+    URL : /ws/agents/<agent_id>/
     Group name : agent.<agent_id>
 
-    Le token ici n'est pas un JWT user mais le ``LocalAgent.api_token``.
+    Le token ici n'est pas un JWT user mais le ``LocalAgent.api_token``. Il est
+    lu depuis ``Authorization: Bearer``; ``?token=`` reste accepté pour les
+    anciens agents.
     """
 
     async def connect(self):
@@ -170,6 +172,12 @@ class AgentConsumer(AsyncJsonWebsocketConsumer):
         query = self.scope.get("query_string", b"").decode()
         params = parse_qs(query)
         token = (params.get("token") or [None])[0]
+        if not token:
+            headers = dict(self.scope.get("headers") or [])
+            authorization = headers.get(b"authorization", b"").decode()
+            scheme, _, credential = authorization.partition(" ")
+            if scheme.lower() == "bearer" and credential:
+                token = credential.strip()
 
         from channels.db import database_sync_to_async
         from django.utils import timezone

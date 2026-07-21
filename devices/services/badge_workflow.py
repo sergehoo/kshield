@@ -1171,9 +1171,8 @@ class BadgeWorkflowService:
     def issue_employee_badge(cls, employee, helmet=None):
         """Émet un badge RFID pour un employé.
 
-        Règle métier : les employés N'ONT PAS de casque RFID. Le paramètre
-        ``helmet`` est ignoré (rétrocompatibilité de l'API publique). Seuls
-        les ouvriers (workflow ``issue_worker_badge``) reçoivent un casque.
+        Les employés de bureau reçoivent uniquement un badge. Les employés
+        terrain ou mixtes doivent aussi être associés à un casque RFID.
         """
         from django.contrib.contenttypes.models import ContentType
 
@@ -1181,11 +1180,18 @@ class BadgeWorkflowService:
 
         from ..models import Badge, BadgeAssignment
 
-        # Casque ignoré pour employés — réservé aux ouvriers
-        helmet = None
+        requires_helmet = employee.work_location in ("field", "both")
+        if requires_helmet and helmet is None:
+            raise ValueError(
+                f"L'employé {employee.matricule} travaille sur le terrain et "
+                "doit avoir un casque RFID."
+            )
+        if not requires_helmet:
+            helmet = None
+        if helmet is not None and helmet.tenant_id != employee.tenant_id:
+            raise ValueError("Le casque et l'employé doivent appartenir au même tenant.")
 
-        from core.services import get_kaydan_tenant
-        tenant = get_kaydan_tenant()
+        tenant = employee.tenant
 
         uid = f"EMP-{employee.matricule}"
         badge, created = Badge.objects.get_or_create(
@@ -1198,22 +1204,30 @@ class BadgeWorkflowService:
                 "holder_content_type": ContentType.objects.get_for_model(Employee),
                 "holder_object_id": employee.id,
                 "qr_payload": uid,
-                "paired_helmet": None,
+                "paired_helmet": helmet,
             },
         )
         if not created:
-            badge.paired_helmet = None
+            badge.holder_kind = "employee"
+            badge.holder_content_type = ContentType.objects.get_for_model(Employee)
+            badge.holder_object_id = employee.id
+            badge.paired_helmet = helmet
             badge.qr_payload = uid
             badge.status = "active"
             badge.save()
 
-        BadgeAssignment.objects.create(
-            badge=badge,
-            tenant=badge.tenant,
-            holder_kind="employee",
-            holder_object_id=employee.id,
-            holder_label=f"{employee.first_name} {employee.last_name} ({employee.matricule})",
-        )
+        if not badge.assignments.filter(closed_at__isnull=True).exists():
+            BadgeAssignment.objects.create(
+                badge=badge,
+                tenant=badge.tenant,
+                holder_kind="employee",
+                holder_content_type=ContentType.objects.get_for_model(Employee),
+                holder_object_id=employee.id,
+                holder_label=(
+                    f"{employee.first_name} {employee.last_name} "
+                    f"({employee.matricule})"
+                ),
+            )
         BadgePDFService.generate_and_save(badge)
         return badge
 
@@ -1244,13 +1258,19 @@ class BadgeWorkflowService:
                 "Révoque-le d'abord."
             )
 
+        if badge.tenant_id != holder.tenant_id:
+            raise ValueError("Le badge et le porteur doivent appartenir au même tenant.")
+
         # Détection du type de porteur
-        # Règle métier : seuls les OUVRIERS reçoivent un casque RFID.
-        # Pour les employés, le paramètre helmet est ignoré.
         if isinstance(holder, Employee):
             holder_kind = "employee"
             category = "employee_rfid"
-            helmet = None       # employé → jamais de casque
+            if holder.work_location in ("field", "both") and helmet is None:
+                raise ValueError(
+                    "Cet employé terrain requiert un casque RFID."
+                )
+            if holder.work_location == "office":
+                helmet = None
         elif isinstance(holder, Worker):
             holder_kind = "worker"
             category = "worker_rfid"
@@ -1261,6 +1281,8 @@ class BadgeWorkflowService:
                 )
         else:
             raise ValueError("holder doit être Employee ou Worker")
+        if helmet is not None and helmet.tenant_id != holder.tenant_id:
+            raise ValueError("Le casque et le porteur doivent appartenir au même tenant.")
 
         # Mise à jour atomique du badge
         badge.holder_kind = holder_kind
@@ -1277,6 +1299,7 @@ class BadgeWorkflowService:
             badge=badge,
             tenant=badge.tenant,
             holder_kind=holder_kind,
+            holder_content_type=ContentType.objects.get_for_model(holder.__class__),
             holder_object_id=holder.id,
             holder_label=f"{holder.first_name} {holder.last_name} ({holder.matricule})",
         )
@@ -1303,8 +1326,10 @@ class BadgeWorkflowService:
                 "le couplage badge + casque est obligatoire pour tous les ouvriers."
             )
 
-        from core.services import get_kaydan_tenant
-        tenant = get_kaydan_tenant()
+        if helmet.tenant_id != worker.tenant_id:
+            raise ValueError("Le casque et l'ouvrier doivent appartenir au même tenant.")
+
+        tenant = worker.tenant
 
         uid = f"OV-{worker.matricule}"
         helmet_uid = helmet.uhf_tag_uid or helmet.serial_number
@@ -1336,6 +1361,7 @@ class BadgeWorkflowService:
             badge=badge,
             tenant=badge.tenant,
             holder_kind="worker",
+            holder_content_type=ContentType.objects.get_for_model(Worker),
             holder_object_id=worker.id,
             holder_label=f"{worker.first_name} {worker.last_name} ({worker.matricule})",
         )

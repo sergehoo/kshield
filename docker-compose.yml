@@ -193,7 +193,7 @@ services:
       # accès uniquement via Traefik → https://mqtt.${BASE_DOMAIN}
     networks:
       - kshield_network
-      - dokploy-network
+      - proxy
     labels:
       # ─── Traefik : dashboard EMQX derrière mqtt.${BASE_DOMAIN} ────────
       - traefik.enable=true
@@ -282,11 +282,13 @@ services:
     container_name: kshield_web
     hostname: shieldweb
     command: >
-      sh -c "
-      python manage.py migrate --noinput &&
-      python manage.py makemigrations --check --dry-run --no-input || echo '⚠️  MODÈLES MODIFIÉS SANS MIGRATION' &&
-      python manage.py collectstatic --noinput &&
-      gunicorn kshield.asgi:application
+      sh -ec "
+      python manage.py migrate --noinput;
+      if ! python manage.py makemigrations --check --dry-run --no-input; then
+        echo 'MODÈLES MODIFIÉS SANS MIGRATION';
+      fi;
+      python manage.py collectstatic --noinput;
+      exec gunicorn kshield.asgi:application
       -k uvicorn.workers.UvicornWorker
       --bind 0.0.0.0:8000
       --workers ${GUNICORN_WORKERS:-4}
@@ -401,7 +403,7 @@ services:
       --workers 2
       --log-level info
     depends_on:
-      shielddb:
+      shieldweb:
         condition: service_healthy
       shieldredis:
         condition: service_healthy

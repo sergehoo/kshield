@@ -51,6 +51,8 @@ esac
 
 BIN_NAME="kshield-agent-${PLATFORM}-${GOARCH}"
 BIN_URL="${RELEASE_URL}/${BIN_NAME}"
+BUNDLED_BIN="${SCRIPT_DIR}/bin/${BIN_NAME}"
+BUNDLED_CHECKSUMS="${SCRIPT_DIR}/bin/SHA256SUMS.txt"
 
 log "Plateforme : $PLATFORM/$GOARCH"
 log "Binaire    : $BIN_NAME"
@@ -59,17 +61,20 @@ log "Binaire    : $BIN_NAME"
 read_toml_value() {
     local key="$1" file="$2"
     [ -f "$file" ] || return
-    grep -E "^\s*${key}\s*=" "$file" | head -1 \
+    grep -E "^[[:space:]]*${key}[[:space:]]*=" "$file" | head -1 \
         | sed -E "s/^[^=]*=[[:space:]]*\"?([^\"]*)\"?[[:space:]]*$/\1/"
 }
 
 if [ -f "$BUNDLED_CONFIG" ]; then
     KSHIELD_SERVER_URL="${KSHIELD_SERVER_URL:-$(read_toml_value 'server_url' "$BUNDLED_CONFIG")}"
     KSHIELD_ACTIVATION_TOKEN="${KSHIELD_ACTIVATION_TOKEN:-$(read_toml_value 'activation_token' "$BUNDLED_CONFIG")}"
+    KSHIELD_API_TOKEN="${KSHIELD_API_TOKEN:-$(read_toml_value 'api_token' "$BUNDLED_CONFIG")}"
 fi
 
 : "${KSHIELD_SERVER_URL:?Variable KSHIELD_SERVER_URL requise (ou config/kshield-agent.toml présent)}"
-: "${KSHIELD_ACTIVATION_TOKEN:?Variable KSHIELD_ACTIVATION_TOKEN requise}"
+if [ -z "${KSHIELD_API_TOKEN:-}" ]; then
+    : "${KSHIELD_ACTIVATION_TOKEN:?Variable KSHIELD_ACTIVATION_TOKEN requise}"
+fi
 
 # ─── Root check ────────────────────────────────────────────────
 if [ "$(id -u)" -ne 0 ]; then
@@ -80,17 +85,32 @@ TARGET_USER="${SUDO_USER:-$(whoami)}"
 TARGET_UID=$(id -u "$TARGET_USER")
 TARGET_HOME=$(eval echo "~${TARGET_USER}")
 
-# ─── Téléchargement ─────────────────────────────────────────────
-log "Téléchargement de $BIN_URL..."
-
+# ─── Installation du binaire ────────────────────────────────────
 TMP_BIN="$(mktemp)"
-if command -v curl >/dev/null 2>&1; then
-    curl -fL --progress-bar -o "$TMP_BIN" "$BIN_URL" \
-        || err "Échec du téléchargement. Vérifier que la release ${VERSION} existe et que le binaire est publié."
-elif command -v wget >/dev/null 2>&1; then
-    wget -q --show-progress -O "$TMP_BIN" "$BIN_URL" || err "Échec du téléchargement."
+if [ -f "$BUNDLED_BIN" ]; then
+    log "Installation du binaire embarqué $BIN_NAME..."
+    cp "$BUNDLED_BIN" "$TMP_BIN"
+
+    if [ -f "$BUNDLED_CHECKSUMS" ]; then
+        EXPECTED="$(awk -v name="$BIN_NAME" '$2 == name {print $1}' "$BUNDLED_CHECKSUMS")"
+        if command -v sha256sum >/dev/null 2>&1; then
+            ACTUAL="$(sha256sum "$TMP_BIN" | awk '{print $1}')"
+        else
+            ACTUAL="$(shasum -a 256 "$TMP_BIN" | awk '{print $1}')"
+        fi
+        [ -n "$EXPECTED" ] && [ "$ACTUAL" = "$EXPECTED" ] \
+            || err "Checksum SHA-256 invalide pour $BIN_NAME."
+    fi
 else
-    err "Ni curl ni wget disponibles."
+    warn "Binaire absent du package; téléchargement de secours depuis $BIN_URL"
+    if command -v curl >/dev/null 2>&1; then
+        curl -fL --progress-bar -o "$TMP_BIN" "$BIN_URL" \
+            || err "Échec du téléchargement de la release ${VERSION}."
+    elif command -v wget >/dev/null 2>&1; then
+        wget -q --show-progress -O "$TMP_BIN" "$BIN_URL" || err "Échec du téléchargement."
+    else
+        err "Binaire absent du package et ni curl ni wget disponibles."
+    fi
 fi
 
 chmod +x "$TMP_BIN"
@@ -109,6 +129,10 @@ if [ -f "$BUNDLED_CONFIG" ]; then
         chmod 600 "$CFG_PATH"
         log "TOML installé : $CFG_PATH"
     fi
+fi
+if [ -d "${SCRIPT_DIR}/certs" ]; then
+    cp -R "${SCRIPT_DIR}/certs" "$TARGET_HOME/certs"
+    chown -R "$TARGET_USER" "$TARGET_HOME/certs"
 fi
 
 # ─── Appairage cloud (activate) ────────────────────────────────
@@ -149,6 +173,7 @@ Wants=network-online.target
 Type=simple
 User=$TARGET_USER
 Environment=HOME=$TARGET_HOME
+WorkingDirectory=$TARGET_HOME
 ExecStart=$INSTALL_BIN run --config $CFG_PATH
 Restart=on-failure
 RestartSec=5

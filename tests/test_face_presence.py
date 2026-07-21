@@ -106,11 +106,11 @@ def test_sighting_without_punch_creates_alert(base_setup):
     assert conf.delta_seconds is None
 
     # Une FraudAlert a été ouverte
-    alerts = FraudAlert.objects.filter(payload__rule_code="FACE_NO_BADGE")
+    alerts = FraudAlert.objects.filter(evidence__rule_code="FACE_NO_BADGE")
     assert alerts.count() == 1
     alert = alerts.first()
-    assert alert.payload["employee_id"] == emp.pk
-    assert alert.payload["kind"] == "arrival"
+    assert alert.evidence["employee_id"] == emp.pk
+    assert alert.evidence["kind"] == "arrival"
 
 
 # ---------------------------------------------------------------------------

@@ -1,1 +1,40 @@
 *.md
+
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+
+# Operating systems and editors
+.DS_Store
+.idea/
+.vscode/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+shvenv/
+
+# Django runtime data
+db.sqlite3
+*.sqlite3
+media/
+staticfiles/
+*.log
+celerybeat-schedule*
+
+# Frontend
+kshield-front/node_modules/
+kshield-front/dist/
+*.tsbuildinfo
+
+# Agent build outputs
+agent-go/bin/

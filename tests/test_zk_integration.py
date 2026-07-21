@@ -27,7 +27,7 @@ def setup_minimal_db(db):
     """Crée le minimum : tenant + site + device ZKTeco + employé + badge."""
     from access_control.models import AccessEvent  # noqa: F401
     from accounts.models import User  # noqa: F401
-    from core.models import Tenant
+    from core.models import Company, Tenant
     from devices.models import Badge, Device, DeviceModel
     from employees.models import Employee
     from sites.models import Site
@@ -36,9 +36,17 @@ def setup_minimal_db(db):
         code="test-tenant",
         defaults={"name": "Test Tenant", "is_active": True},
     )
+    company, _ = Company.objects.get_or_create(
+        tenant=tenant,
+        code="test-company",
+        defaults={"name": "Test Company", "is_active": True},
+    )
     site, _ = Site.objects.get_or_create(
         tenant=tenant, code="HQ",
-        defaults={"name": "Headquarters", "status": "active", "type": "office"},
+        defaults={
+            "name": "Headquarters", "status": "active", "type": "office",
+            "company": company,
+        },
     )
     model, _ = DeviceModel.objects.get_or_create(
         brand="ZKTeco", model="K14/ID",
@@ -55,7 +63,8 @@ def setup_minimal_db(db):
     emp, _ = Employee.objects.get_or_create(
         tenant=tenant, matricule="EMP-TEST-001",
         defaults={"first_name": "Test", "last_name": "User",
-                  "email": "test@example.com", "status": "active"},
+                  "email": "test@example.com", "status": "active",
+                  "company": company},
     )
     emp_ct = ContentType.objects.get_for_model(Employee)
     badge, _ = Badge.objects.get_or_create(
@@ -101,7 +110,7 @@ class TestSyncAttendances:
         mock_zk_class.return_value.open.return_value = mock_instance
 
         # Aussi mocker safe_zk_session pour qu'il retourne mock_instance
-        with patch("devices.tasks.safe_zk_session") as mock_session:
+        with patch("devices.zk_client.safe_zk_session") as mock_session:
             mock_session.return_value.__enter__.return_value = mock_instance
             mock_session.return_value.__exit__.return_value = False
             result = sync_zkteco_attendances(device_id=setup_minimal_db["device"].pk)
@@ -115,7 +124,7 @@ class TestSyncAttendances:
         assert ev.holder_kind == "employee"
         assert ev.holder_object_id == setup_minimal_db["employee"].pk
 
-    @patch("devices.tasks.safe_zk_session")
+    @patch("devices.zk_client.safe_zk_session")
     def test_pull_unknown_card_yields_denied(
         self, mock_session, setup_minimal_db,
     ):
@@ -147,7 +156,7 @@ class TestSyncAttendances:
 # push_zkteco_users
 # ─────────────────────────────────────────────────────────────────────────────
 class TestPushUsers:
-    @patch("devices.tasks.safe_zk_session")
+    @patch("devices.zk_client.safe_zk_session")
     def test_push_calls_set_user_on_active_badge(
         self, mock_session, setup_minimal_db,
     ):

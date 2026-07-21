@@ -216,30 +216,41 @@ def _open_fraud_alert(sighting, kind: str, confirmation):
         return
 
     rule_code = "FACE_NO_BADGE"
-    rule = FraudRule.objects.filter(code=rule_code).first()
-    if not rule:
-        # On peut continuer sans rule (la FraudAlert garde le code en payload)
-        rule = None
-
     severity = _cfg()["ALERT_SEVERITY"]
     emp = sighting.employee
+    tenant = emp.tenant
+    rule, _ = FraudRule.objects.get_or_create(
+        tenant=tenant,
+        code=rule_code,
+        defaults={
+            "name": "Visage détecté sans badge",
+            "severity": severity,
+            "description": "Un employé reconnu n'a pas de pointage badge correspondant.",
+        },
+    )
+    message = (
+        f"Visage de {emp.first_name} {emp.last_name} "
+        f"({emp.matricule}) détecté à "
+        f"{timezone.localtime(sighting.timestamp).strftime('%H:%M')} "
+        f"sans badge correspondant ({kind})."
+    )
     try:
         FraudAlert.objects.create(
+            tenant=tenant,
             rule=rule,
             site=sighting.site,
             severity=severity,
             status="open",
-            message=(f"Visage de {emp.first_name} {emp.last_name} "
-                      f"({emp.matricule}) détecté à "
-                      f"{timezone.localtime(sighting.timestamp).strftime('%H:%M')} "
-                      f"sans badge correspondant ({kind})."),
-            payload={
+            primary_holder_kind="employee",
+            primary_holder_id=emp.pk,
+            evidence={
                 "rule_code": rule_code,
                 "sighting_id": sighting.pk,
                 "confirmation_id": confirmation.pk,
                 "employee_id": emp.pk,
                 "kind": kind,
                 "camera_id": sighting.camera_id,
+                "message": message,
             },
             raised_at=timezone.now(),
         )
