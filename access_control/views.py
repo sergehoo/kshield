@@ -1,5 +1,6 @@
 from drf_spectacular.utils import (OpenApiExample, OpenApiResponse,
                                      extend_schema, extend_schema_view)
+from django.contrib.contenttypes.prefetch import GenericPrefetch
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -8,11 +9,14 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from accounts.hmac_auth import HMACAPIKeyAuthentication
 from accounts.permissions import IsAuthenticatedOrAPIKey
+from employees.models import Employee
+from ouvriers.models import Worker
+from visitors.models import Visitor
 
 from .models import AccessDecision, AccessEvent, AccessRule, DoorCommand, QRCodeToken
 from .serializers import (
-    AccessDecisionSerializer, AccessEventSerializer, AccessRuleSerializer,
-    DoorCommandSerializer, QRCodeTokenSerializer, ScanSerializer,
+    AccessDecisionSerializer, AccessEventDetailSerializer, AccessEventSerializer,
+    AccessRuleSerializer, DoorCommandSerializer, QRCodeTokenSerializer, ScanSerializer,
 )
 from .services import AccessGatewayService
 
@@ -67,7 +71,10 @@ class ScanView(APIView):
         event = AccessGatewayService.process_scan(
             serializer.validated_data, operator=request.user if request.user.is_authenticated else None,
         )
-        return Response(AccessEventSerializer(event).data, status=status.HTTP_201_CREATED)
+        return Response(
+            AccessEventSerializer(event, context={"request": request}).data,
+            status=status.HTTP_201_CREATED,
+        )
 
 
 @extend_schema_view(
@@ -81,7 +88,17 @@ class ScanView(APIView):
 )
 class AccessEventViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = AccessEvent.objects.select_related(
-        "site", "zone", "checkpoint", "device", "operator",
+        "site__company", "zone", "checkpoint", "device__model", "operator",
+        "holder_content_type",
+    ).prefetch_related(
+        GenericPrefetch(
+            "holder",
+            [
+                Employee.objects.select_related("position", "department"),
+                Worker.objects.select_related("trade", "subcontractor"),
+                Visitor.objects.all(),
+            ],
+        ),
     ).all()
     serializer_class = AccessEventSerializer
     filterset_fields = ("tenant", "site", "device", "decision", "method", "holder_kind", "direction")
@@ -89,7 +106,17 @@ class AccessEventViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         from accounts.scoping import scope_queryset_by_company
-        return scope_queryset_by_company(super().get_queryset(), self.request.user, "site__company")
+        queryset = scope_queryset_by_company(
+            super().get_queryset(), self.request.user, "site__company",
+        )
+        if self.action == "retrieve":
+            return queryset.select_related("decision_trace").prefetch_related("door_commands")
+        return queryset
+
+    def get_serializer_class(self):
+        if self.action == "retrieve":
+            return AccessEventDetailSerializer
+        return AccessEventSerializer
 
 
 class AccessRuleViewSet(viewsets.ModelViewSet):
