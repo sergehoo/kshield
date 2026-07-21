@@ -1,6 +1,6 @@
+from django.contrib.contenttypes.prefetch import GenericPrefetch
 from drf_spectacular.utils import (OpenApiExample, OpenApiResponse,
                                      extend_schema, extend_schema_view)
-from django.contrib.contenttypes.prefetch import GenericPrefetch
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
