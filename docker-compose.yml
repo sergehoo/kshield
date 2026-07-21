@@ -316,7 +316,10 @@ services:
     # Healthcheck via /healthz — endpoint public dédié, pas de spam de logs.
     # 200 si Django répond ; ne touche pas à la DB pour rester rapide.
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS -o /dev/null http://127.0.0.1:8000/healthz || exit 1"]
+      # Django valide l'en-tête Host avant d'atteindre la vue. Utiliser le
+      # domaine public évite un faux état unhealthy lorsque ALLOWED_HOSTS ne
+      # contient pas 127.0.0.1 (configuration normale en production).
+      test: ["CMD-SHELL", "curl -fsS -o /dev/null -H 'Host: ${BASE_DOMAIN:-kaydanshield.com}' -H 'X-Forwarded-Proto: https' http://127.0.0.1:8000/healthz || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -412,7 +415,7 @@ services:
     # les logs "GET / 301 Moved Permanently" toutes les 30s. Fallback sur nc
     # au cas où gunicorn n'a pas fini de démarrer.
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS -o /dev/null http://127.0.0.1:8001/healthz || nc -z 127.0.0.1 8001 || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS -o /dev/null -H 'Host: ${BASE_DOMAIN:-kaydanshield.com}' -H 'X-Forwarded-Proto: https' http://127.0.0.1:8001/healthz || nc -z 127.0.0.1 8001 || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5

@@ -66,6 +66,13 @@ class TenantContextMiddleware:
 
     def __call__(self, request):
         from .services import clear_current_tenant, set_current_tenant
+
+        # Ces endpoints techniques ne dépendent pas d'un tenant. /healthz doit
+        # notamment rester disponible quand PostgreSQL est indisponible.
+        if request.path in ("/healthz", "/readyz", "/metrics"):
+            request.tenant = None
+            return self.get_response(request)
+
         request.tenant = self._resolve_tenant(request)
         set_current_tenant(request.tenant)
         try:

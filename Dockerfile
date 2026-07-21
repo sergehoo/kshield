@@ -56,8 +56,10 @@ RUN mkdir -p /app/staticfiles /app/media /app/logs /app/models/silentface
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=45s --retries=3 \
-  CMD curl -fsS http://localhost:8000/api/v1/employees/face/status/ \
-        | grep -q '"enabled":true' || exit 1
+  CMD curl -fsS -o /dev/null \
+        -H "Host: ${BASE_DOMAIN:-localhost}" \
+        -H "X-Forwarded-Proto: https" \
+        http://127.0.0.1:8000/healthz || exit 1
 
 CMD ["gunicorn", "kshield.asgi:application", \
      "-k", "uvicorn.workers.UvicornWorker", \
