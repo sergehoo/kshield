@@ -100,7 +100,7 @@ export function FaceRecognitionPage() {
         <Card
           title={
             <span className="flex items-center gap-2">
-              <Upload className="w-4 h-4 text-brand-500" /> Push vers terminaux
+              <Upload className="w-4 h-4 text-brand-ink" /> Push vers terminaux
             </span>
           }
           subtitle="Envoie tous les templates vers les terminaux face configurés"
@@ -149,7 +149,7 @@ export function FaceRecognitionPage() {
             {s.recent_matches?.slice(0, 10).map((m: any, i: number) => (
               <li key={i} className="flex items-center justify-between p-2 rounded bg-surface-soft/40">
                 <div className="flex items-center gap-2">
-                  <ScanFace className="w-4 h-4 text-brand-400" />
+                  <ScanFace className="w-4 h-4 text-brand-ink" />
                   <span className="text-sm">{m.employee_name || m.badge_uid}</span>
                   <Badge tone={m.confidence > 0.8 ? "ok" : "warn"}>
                     {(m.confidence * 100).toFixed(0)}%

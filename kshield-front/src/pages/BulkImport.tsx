@@ -201,7 +201,7 @@ export function BulkImportPage() {
                 disabled={running}
                 className={cn(
                   "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium",
-                  kind === "workers" ? "bg-warn text-white" : "text-ink-muted",
+                  kind === "workers" ? "bg-warn text-on-warn" : "text-ink-muted",
                 )}
               >
                 <HardHat className="w-3.5 h-3.5" /> Ouvriers

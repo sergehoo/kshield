@@ -41,12 +41,12 @@ export function SettingsPage() {
         <Card
           title={
             <span className="flex items-center gap-2">
-              <User className="w-4 h-4 text-brand-500" /> Profil
+              <User className="w-4 h-4 text-brand-ink" /> Profil
             </span>
           }
         >
           <div className="flex flex-col items-center text-center pb-4 border-b border-surface-border">
-            <div className="w-20 h-20 rounded-2xl bg-brand-500/20 text-brand-400 grid place-items-center text-2xl font-bold border-2 border-brand-500/30">
+            <div className="w-20 h-20 rounded-2xl bg-brand-500/20 text-brand-ink grid place-items-center text-2xl font-bold border-2 border-brand-500/30">
               {initials(user?.full_name || user?.email)}
             </div>
             <h3 className="mt-3 text-sm font-semibold text-ink">

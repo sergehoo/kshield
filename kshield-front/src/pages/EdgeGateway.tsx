@@ -48,13 +48,13 @@ const PLATFORM_META: Record<string, { label: string; icon: any; color: string }>
   macos_pkg:    { label: "macOS (.pkg)",  icon: "🍎", color: "text-ink" },
   docker:       { label: "Docker",        icon: "🐳", color: "text-info" },
   raspberry_pi: { label: "Raspberry Pi",  icon: "🥧", color: "text-danger" },
-  mini_pc:      { label: "Mini PC",       icon: "🖥️", color: "text-brand-500" },
+  mini_pc:      { label: "Mini PC",       icon: "🖥️", color: "text-brand-ink" },
   // Agent Go natif (recommandé)
-  darwin_arm64_go:  { label: "macOS Apple Silicon (Go)", icon: "🍎", color: "text-brand-500" },
-  darwin_amd64_go:  { label: "macOS Intel (Go)",         icon: "🍎", color: "text-brand-500" },
-  linux_amd64_go:   { label: "Linux amd64 (Go)",         icon: "⚡", color: "text-brand-500" },
-  linux_arm64_go:   { label: "Linux ARM64 / RPi (Go)",   icon: "🥧", color: "text-brand-500" },
-  windows_amd64_go: { label: "Windows amd64 (Go)",       icon: "🪟", color: "text-brand-500" },
+  darwin_arm64_go:  { label: "macOS Apple Silicon (Go)", icon: "🍎", color: "text-brand-ink" },
+  darwin_amd64_go:  { label: "macOS Intel (Go)",         icon: "🍎", color: "text-brand-ink" },
+  linux_amd64_go:   { label: "Linux amd64 (Go)",         icon: "⚡", color: "text-brand-ink" },
+  linux_arm64_go:   { label: "Linux ARM64 / RPi (Go)",   icon: "🥧", color: "text-brand-ink" },
+  windows_amd64_go: { label: "Windows amd64 (Go)",       icon: "🪟", color: "text-brand-ink" },
 };
 
 export function EdgeGatewayPage() {
@@ -84,7 +84,7 @@ export function EdgeGatewayPage() {
                   className={cn(
                     "px-4 py-2 text-sm font-medium border-b-2 -mb-px transition",
                     tab === k
-                      ? "border-brand-500 text-brand-500"
+                      ? "border-brand-500 text-brand-ink"
                       : "border-transparent text-ink-muted hover:text-ink",
                   )}>
             {k === "gateways" && <><Server className="w-3.5 h-3.5 inline mr-1" /> Gateways</>}
@@ -609,7 +609,7 @@ function GatewayDetailModal({ gateway, onClose }: {
             <div className="max-h-56 overflow-auto text-xs space-y-1 border border-surface-border rounded p-2">
               {full.devices_discovered.map((d: any, i: number) => (
                 <div key={i} className="p-1.5 rounded bg-surface-soft flex items-center gap-2 flex-wrap">
-                  <span className="font-mono text-brand-600 min-w-[100px]">
+                  <span className="font-mono text-brand-ink min-w-[100px]">
                     {d.ip || d.serial || "?"}
                   </span>
                   {d.mac && (

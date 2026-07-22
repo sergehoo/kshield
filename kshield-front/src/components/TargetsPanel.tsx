@@ -88,7 +88,7 @@ export function TargetsPanel({ gatewayId }: Props) {
       <div className="flex items-center justify-between mb-3">
         <div>
           <h3 className="text-sm font-semibold text-ink flex items-center gap-2">
-            <Cpu className="w-4 h-4 text-brand-500" />
+            <Cpu className="w-4 h-4 text-brand-ink" />
             Équipements vendors ({targets.length})
           </h3>
           <p className="text-xs text-ink-muted mt-0.5">
@@ -132,7 +132,7 @@ export function TargetsPanel({ gatewayId }: Props) {
                 )}
               </div>
               <div className="text-xs text-ink-muted flex items-center gap-2 truncate">
-                <span className="text-brand-600">
+                <span className="text-brand-ink">
                   {VENDOR_LABELS[t.vendor] || t.vendor}
                 </span>
                 <span>·</span>

@@ -11,12 +11,12 @@ export type Stat = {
 };
 
 const toneMap = {
-  brand:  "text-brand-400 bg-brand-500/10 border-brand-500/20",
+  brand:  "text-brand-ink bg-brand-500/10 border-brand-500/20",
   ok:     "text-ok bg-ok/10 border-ok/20",
   warn:   "text-warn bg-warn/10 border-warn/20",
   danger: "text-danger bg-danger/10 border-danger/20",
   info:   "text-info bg-info/10 border-info/20",
-  muted:  "text-ink-muted bg-white/5 border-white/10",
+  muted:  "text-ink-muted bg-ink/5 border-surface-border",
 };
 
 /**
@@ -55,7 +55,7 @@ function StatCard({ stat, loading }: { stat: Stat; loading?: boolean }) {
 
   // Tone → couleur de la pastille chip en bas (au lieu d'une bordure)
   const chipTone: Record<string, string> = {
-    brand:  "bg-brand-500/15 text-brand-600",
+    brand:  "bg-brand-500/15 text-brand-ink",
     ok:     "bg-ok/15 text-ok",
     warn:   "bg-warn/15 text-warn",
     danger: "bg-danger/15 text-danger",
@@ -76,7 +76,7 @@ function StatCard({ stat, loading }: { stat: Stat; loading?: boolean }) {
       {/* Ligne du haut : icône dans un carré noir arrondi + menu 3 points fantôme */}
       <div className="flex items-start justify-between">
         {stat.icon && (
-          <div className="w-10 h-10 rounded-2xl bg-ink text-white grid place-items-center shrink-0">
+          <div className="w-10 h-10 rounded-2xl bg-ink text-surface-card grid place-items-center shrink-0">
             {stat.icon}
           </div>
         )}

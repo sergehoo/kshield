@@ -357,7 +357,7 @@ export function WorkerDetailPage() {
             className={cn(
               "px-4 py-2 text-sm whitespace-nowrap",
               tab === t.key
-                ? "font-medium text-brand-500 border-b-2 border-brand-500 -mb-px"
+                ? "font-medium text-brand-ink border-b-2 border-brand-500 -mb-px"
                 : "text-ink-muted hover:text-ink",
             )}
           >
@@ -472,7 +472,7 @@ export function WorkerDetailPage() {
 function ProfileTab({ worker: w, onEdit }: { worker: any; onEdit: () => void }) {
   const editBtn = (
     <button onClick={onEdit}
-            className="p-1.5 rounded-md hover:bg-surface-soft text-ink-muted hover:text-brand-400"
+            className="p-1.5 rounded-md hover:bg-surface-soft text-ink-muted hover:text-brand-ink"
             title="Modifier cette section">
       <Edit3 className="w-3.5 h-3.5" />
     </button>
@@ -509,7 +509,7 @@ function ProfileTab({ worker: w, onEdit }: { worker: any; onEdit: () => void }) 
           {w.id_document_file && (
             <div className="col-span-2 pt-2 mt-2 border-t border-surface-border/60">
               <a href={w.id_document_file} target="_blank" rel="noopener"
-                 className="text-xs text-brand-500 hover:underline flex items-center gap-1">
+                 className="text-xs text-brand-ink hover:underline flex items-center gap-1">
                 <FileText className="w-3.5 h-3.5" /> Télécharger la pièce jointe
               </a>
             </div>
@@ -613,7 +613,7 @@ function EquipementTab({ worker: w, badge, helmet, assignments, onLinkBadge, onL
           <ul className="divide-y divide-surface-border/50">
             {assignments.map((a: any) => (
               <li key={a.id} className="px-4 py-3 flex items-center gap-3">
-                <MapPin className="w-4 h-4 text-brand-500" />
+                <MapPin className="w-4 h-4 text-brand-ink" />
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium">{a.site_name || `Site #${a.site}`}</div>
                   <div className="text-xs text-ink-soft">

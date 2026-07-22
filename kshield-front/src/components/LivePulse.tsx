@@ -19,7 +19,7 @@ export function LivePulse({
         "inline-flex items-center gap-2 px-2 py-0.5 rounded-full text-[10px] font-semibold tracking-wider uppercase",
         active
           ? "text-ok bg-ok/10 border border-ok/20"
-          : "text-ink-muted bg-white/5 border border-white/10",
+          : "text-ink-muted bg-ink/5 border border-surface-border",
         className,
       )}
     >

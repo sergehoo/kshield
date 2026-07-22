@@ -343,7 +343,7 @@ function EventDetail({ event }: { event: AccessEvent }) {
               </p>
               {holder?.organization && <p className="mt-0.5 text-xs text-ink-soft">{holder.organization}</p>}
               {holderPath && (
-                <Link to={holderPath} className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-brand-500 hover:text-brand-600">
+                <Link to={holderPath} className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-brand-ink hover:text-brand-ink">
                   Voir le dossier <ExternalLink className="h-3 w-3" />
                 </Link>
               )}
@@ -377,7 +377,7 @@ function EventDetail({ event }: { event: AccessEvent }) {
           <DetailValue label="Dernier heartbeat" value={fmtDateTime(event.device_detail?.last_heartbeat_at)} />
         </dl>
         {event.device_detail && (
-          <Link to={`/devices/${event.device_detail.id}`} className="mt-4 inline-flex items-center gap-1 text-xs font-medium text-brand-500 hover:text-brand-600">
+          <Link to={`/devices/${event.device_detail.id}`} className="mt-4 inline-flex items-center gap-1 text-xs font-medium text-brand-ink hover:text-brand-ink">
             Voir le terminal <ExternalLink className="h-3 w-3" />
           </Link>
         )}

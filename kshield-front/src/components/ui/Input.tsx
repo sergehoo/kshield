@@ -36,7 +36,7 @@ export const Input = forwardRef<HTMLInputElement, Props>(
             className={cn(
               // Style Dappr : rounded-2xl, fond soft, pas de bordure par défaut
               "w-full px-4 py-3 rounded-2xl bg-surface-soft text-ink placeholder-ink-soft",
-              "focus:outline-none focus:ring-2 focus:ring-ink/20 focus:bg-white",
+              "focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:bg-surface-card",
               "transition-all border",
               error
                 ? "border-danger/60 focus:ring-danger/30 focus:border-danger"

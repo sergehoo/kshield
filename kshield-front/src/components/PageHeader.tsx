@@ -18,7 +18,7 @@ export function PageHeader({
     <div className="mb-6 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
       <div className="flex items-center gap-3 min-w-0">
         {icon && (
-          <div className="w-10 h-10 rounded-2xl bg-ink text-white grid place-items-center shrink-0">
+          <div className="w-10 h-10 rounded-2xl bg-ink text-surface-card grid place-items-center shrink-0">
             {icon}
           </div>
         )}

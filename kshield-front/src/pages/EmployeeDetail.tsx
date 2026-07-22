@@ -139,7 +139,7 @@ export function EmployeeDetailPage() {
             {e.photo ? (
               <img src={e.photo} alt="" className="w-28 h-28 rounded-2xl object-cover border-2 border-brand-500/30" />
             ) : (
-              <div className="w-28 h-28 rounded-2xl bg-brand-500/20 text-brand-400 grid place-items-center text-3xl font-bold border-2 border-brand-500/30">
+              <div className="w-28 h-28 rounded-2xl bg-brand-500/20 text-brand-ink grid place-items-center text-3xl font-bold border-2 border-brand-500/30">
                 {initials(`${e.first_name} ${e.last_name}`)}
               </div>
             )}
@@ -203,7 +203,7 @@ export function EmployeeDetailPage() {
           <button key={t.key} onClick={() => setTab(t.key)}
                   className={cn("px-4 py-2 text-sm whitespace-nowrap",
                     tab === t.key
-                      ? "font-medium text-brand-500 border-b-2 border-brand-500 -mb-px"
+                      ? "font-medium text-brand-ink border-b-2 border-brand-500 -mb-px"
                       : "text-ink-muted hover:text-ink")}>
             {t.label}
           </button>
@@ -254,7 +254,7 @@ export function EmployeeDetailPage() {
 function ProfileTab({ e, onEdit }: { e: any; onEdit: () => void }) {
   const editBtn = (
     <button onClick={onEdit}
-            className="p-1.5 rounded-md hover:bg-surface-soft text-ink-muted hover:text-brand-400"
+            className="p-1.5 rounded-md hover:bg-surface-soft text-ink-muted hover:text-brand-ink"
             title="Modifier cette section">
       <Edit3 className="w-3.5 h-3.5" />
     </button>
@@ -288,7 +288,7 @@ function ProfileTab({ e, onEdit }: { e: any; onEdit: () => void }) {
           {e.id_document && (
             <div className="col-span-2 pt-2 mt-2 border-t border-surface-border/60">
               <a href={e.id_document} target="_blank" rel="noopener"
-                 className="text-xs text-brand-500 hover:underline flex items-center gap-1">
+                 className="text-xs text-brand-ink hover:underline flex items-center gap-1">
                 <FileText className="w-3.5 h-3.5" /> Pièce jointe
               </a>
             </div>

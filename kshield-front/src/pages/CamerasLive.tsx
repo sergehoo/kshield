@@ -35,7 +35,7 @@ export function CamerasLivePage() {
         <Card>
           <div className="p-8 text-center text-ink-muted text-sm">
             Aucune caméra enregistrée. Ajoute des caméras depuis la page{" "}
-            <Link to="/cameras" className="text-brand-500 hover:underline">
+            <Link to="/cameras" className="text-brand-ink hover:underline">
               Caméras
             </Link>{" "}
             ou lance une auto-détection ONVIF.
@@ -98,7 +98,7 @@ function CameraTile({ camera }: { camera: any }) {
         <div className="min-w-0 flex-1">
           <Link
             to={`/cameras/${camera.id}`}
-            className="text-sm font-medium text-ink hover:text-brand-400 truncate block"
+            className="text-sm font-medium text-ink hover:text-brand-ink truncate block"
           >
             <Camera className="inline w-3.5 h-3.5 mr-1 -mt-0.5" />
             {camera.name}

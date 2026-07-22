@@ -219,7 +219,7 @@ export function MapLocationPicker({
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); doSearch(); } }}
               placeholder="Rechercher une adresse, une ville…"
-              className="w-full pl-9 pr-3 py-2 text-sm rounded-xl border border-surface-border bg-white text-ink"
+              className="w-full pl-9 pr-3 py-2 text-sm rounded-xl border border-surface-border bg-surface-card text-ink"
             />
             {searching && (
               <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 animate-spin text-ink-muted" size={14} />
@@ -228,7 +228,7 @@ export function MapLocationPicker({
           <button
             type="button"
             onClick={doSearch}
-            className="rounded-xl bg-ink text-white text-sm px-4 py-2 hover:bg-ink/85"
+            className="rounded-xl bg-ink text-surface-card text-sm px-4 py-2 hover:bg-ink/85"
           >
             Rechercher
           </button>
@@ -245,7 +245,7 @@ export function MapLocationPicker({
         </div>
 
         {suggestions.length > 0 && (
-          <ul className="absolute z-[500] left-0 right-0 mt-1 bg-white rounded-xl shadow-lg border border-surface-border max-h-64 overflow-y-auto">
+          <ul className="absolute z-[500] left-0 right-0 mt-1 bg-surface-card rounded-xl shadow-lg border border-surface-border max-h-64 overflow-y-auto">
             {suggestions.map((s) => (
               <li key={`${s.place_id}`}>
                 <button
@@ -278,7 +278,7 @@ export function MapLocationPicker({
             onChange={(e) => setManualLat(e.target.value)}
             onBlur={commitManual}
             placeholder="5.348"
-            className="w-full mt-1 px-3 py-2 text-sm rounded-xl border border-surface-border bg-white font-mono"
+            className="w-full mt-1 px-3 py-2 text-sm rounded-xl border border-surface-border bg-surface-card text-ink font-mono"
           />
         </div>
         <div>
@@ -288,7 +288,7 @@ export function MapLocationPicker({
             onChange={(e) => setManualLng(e.target.value)}
             onBlur={commitManual}
             placeholder="-4.027"
-            className="w-full mt-1 px-3 py-2 text-sm rounded-xl border border-surface-border bg-white font-mono"
+            className="w-full mt-1 px-3 py-2 text-sm rounded-xl border border-surface-border bg-surface-card text-ink font-mono"
           />
         </div>
       </div>

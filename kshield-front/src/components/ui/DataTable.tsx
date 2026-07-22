@@ -44,11 +44,11 @@ export function DataTable<T>({
   skeletonRows = 6,
 }: Props<T>) {
   return (
-    <div className={cn("rounded-xl border border-surface-border overflow-hidden", className)}>
+    <div className={cn("rounded-xl border border-surface-border bg-surface-card overflow-hidden", className)}>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr>
+            <tr className="bg-surface-soft/55">
               {columns.map((c) => (
                 <th
                   key={c.key}

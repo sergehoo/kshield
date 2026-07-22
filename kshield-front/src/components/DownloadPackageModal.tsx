@@ -189,12 +189,12 @@ export function DownloadPackageModal({ gatewayId, gatewayLabel, open, onClose }:
                 key={p.id}
                 className="flex items-center gap-3 p-3 border rounded-md hover:bg-muted/50 transition-colors"
               >
-                <div className="text-brand-500 shrink-0">{p.icon}</div>
+                <div className="text-brand-ink shrink-0">{p.icon}</div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-medium">{p.label}</span>
                     {p.native && (
-                      <span className="text-[10px] px-1.5 py-0.5 bg-brand-500/15 text-brand-600 rounded font-semibold">
+                      <span className="text-[10px] px-1.5 py-0.5 bg-brand-500/15 text-brand-ink rounded font-semibold">
                         NATIF
                       </span>
                     )}

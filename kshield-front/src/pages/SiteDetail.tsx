@@ -142,7 +142,7 @@ export function SiteDetailPage() {
                 <div className="flex-1 min-w-0">
                   <Link
                     to={`/devices/${d.id}`}
-                    className="text-sm font-medium text-ink hover:text-brand-400"
+                    className="text-sm font-medium text-ink hover:text-brand-ink"
                   >
                     {d.name}
                   </Link>

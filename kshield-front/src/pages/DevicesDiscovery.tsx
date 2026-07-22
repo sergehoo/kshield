@@ -115,7 +115,7 @@ export function DevicesDiscoveryPage() {
         actions={
           <button
             onClick={() => refetch()}
-            className="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium bg-ink text-white hover:bg-ink/85"
+            className="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium bg-ink text-surface-card hover:bg-ink/85"
           >
             <RefreshCcw size={16} /> Rafraîchir
           </button>
@@ -141,7 +141,7 @@ export function DevicesDiscoveryPage() {
               <select
                 value={compat}
                 onChange={(e) => setCompat(e.target.value as any)}
-                className="rounded-xl border border-surface-border bg-white px-3 py-2 text-sm"
+                className="rounded-xl border border-surface-border bg-surface-card px-3 py-2 text-sm text-ink"
               >
                 <option value="all">Toutes compatibilités</option>
                 {(["supported", "beta", "unknown", "unsupported"] as Compatibility[]).map((c) => (
@@ -151,7 +151,7 @@ export function DevicesDiscoveryPage() {
               <select
                 value={status}
                 onChange={(e) => setStatus(e.target.value as any)}
-                className="rounded-xl border border-surface-border bg-white px-3 py-2 text-sm"
+                className="rounded-xl border border-surface-border bg-surface-card px-3 py-2 text-sm text-ink"
               >
                 <option value="auto">Auto (détecté + testé)</option>
                 {(Object.keys(STATUS_LABELS) as DiscoveryStatus[]).map((s) => (
@@ -369,7 +369,7 @@ function DiscoveryDetailModal({
       {d.raw_payload && (
         <details className="mt-4">
           <summary className="text-xs text-ink-muted cursor-pointer">Raw payload</summary>
-          <pre className="mt-2 max-h-64 overflow-auto rounded-xl bg-ink text-white/90 p-3 text-[11px] font-mono">
+          <pre className="mt-2 max-h-64 overflow-auto rounded-xl bg-obsidian text-white/90 p-3 text-[11px] font-mono">
             {JSON.stringify(d.raw_payload, null, 2)}
           </pre>
         </details>
@@ -459,7 +459,7 @@ function AdoptModal({
           <select
             value={siteId}
             onChange={(e) => setSiteId(e.target.value ? Number(e.target.value) : "")}
-            className="mt-1 w-full rounded-xl border border-surface-border bg-white px-3 py-2 text-sm"
+            className="mt-1 w-full rounded-xl border border-surface-border bg-surface-card px-3 py-2 text-sm text-ink"
           >
             <option value="">— aucun —</option>
             {sites?.results?.map((s: any) => (

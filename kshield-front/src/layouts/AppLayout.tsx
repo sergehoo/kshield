@@ -55,7 +55,7 @@ export function AppLayout() {
     <div className="flex min-h-screen bg-surface">
       <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <div className="flex-1 flex flex-col min-w-0 py-3 pr-3">
-        <div className="bg-surface-card rounded-3xl flex-1 flex flex-col min-w-0 overflow-hidden">
+        <div className="bg-surface-card border border-surface-border/60 rounded-3xl flex-1 flex flex-col min-w-0 overflow-hidden shadow-dappr transition-colors">
           <Topbar
             onMenuClick={() => setSidebarOpen((s) => !s)}
             onSearchClick={() => setPaletteOpen(true)}

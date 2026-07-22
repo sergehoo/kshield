@@ -92,7 +92,7 @@ export function SyncConflictsPage() {
         actions={
           <button
             onClick={() => refetch()}
-            className="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium bg-ink text-white hover:bg-ink/85"
+            className="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium bg-ink text-surface-card hover:bg-ink/85"
           >
             <RefreshCcw size={16} /> Rafraîchir
           </button>
@@ -113,7 +113,7 @@ export function SyncConflictsPage() {
                   className={cn(
                     "px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-colors",
                     filter === r
-                      ? "bg-ink text-white"
+                      ? "bg-obsidian text-white"
                       : "bg-ink/5 text-ink hover:bg-ink/10",
                   )}
                 >
@@ -148,7 +148,7 @@ export function SyncConflictsPage() {
                 className={cn(
                   "w-full text-left rounded-2xl p-3 transition-colors",
                   selected?.id === c.id
-                    ? "bg-ink text-white"
+                    ? "bg-obsidian text-white"
                     : "bg-surface-card hover:bg-surface-soft/60 text-ink",
                 )}
               >
@@ -254,7 +254,7 @@ function ConflictInspector({
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             placeholder="Notes de résolution (optionnel, audit RGPD)…"
-            className="w-full rounded-xl border border-surface-border bg-white px-3 py-2 text-sm mb-3"
+            className="w-full rounded-xl border border-surface-border bg-surface-card px-3 py-2 text-sm text-ink mb-3"
           />
 
           <div className="flex flex-wrap items-center gap-2">
@@ -335,7 +335,7 @@ function PayloadPane({
         </div>
         <span className="text-[11px] text-ink-muted font-mono">v{version || "?"}</span>
       </div>
-      <pre className="max-h-72 overflow-auto rounded-xl bg-white/60 p-3 text-[11px] font-mono text-ink whitespace-pre-wrap break-words">
+      <pre className="max-h-72 overflow-auto rounded-xl bg-surface-soft/70 p-3 text-[11px] font-mono text-ink whitespace-pre-wrap break-words border border-surface-border/60">
         {typeof payload === "string"
           ? payload
           : JSON.stringify(payload ?? {}, null, 2)}

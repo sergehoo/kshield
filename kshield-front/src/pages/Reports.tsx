@@ -106,7 +106,7 @@ function AttendanceReport() {
     <Card
       title={
         <span className="flex items-center gap-2">
-          <Calendar className="w-4 h-4 text-brand-500" /> Feuille de présence
+          <Calendar className="w-4 h-4 text-brand-ink" /> Feuille de présence
         </span>
       }
       subtitle="Détail journalier par ouvrier — Excel ou PDF"

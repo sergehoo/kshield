@@ -145,7 +145,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
               className={cn(
                 "w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm transition",
                 i === cursor
-                  ? "bg-brand-500/10 text-brand-400"
+                  ? "bg-brand-500/10 text-brand-ink"
                   : "text-ink hover:bg-surface-soft/50",
               )}
             >

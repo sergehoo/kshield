@@ -137,7 +137,7 @@ export function NotificationsPage() {
               {!n.read_at && (
                 <button
                   onClick={() => markOne.mutate(n.id)}
-                  className="shrink-0 text-xs text-brand-500 hover:text-brand-400"
+                  className="shrink-0 text-xs text-brand-ink hover:text-brand-ink"
                 >
                   Marquer lu
                 </button>

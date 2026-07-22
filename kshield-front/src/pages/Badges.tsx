@@ -126,7 +126,7 @@ export function BadgesPage() {
     { key: "uid", header: "UID Badge", render: (b) => (
       <div className="flex items-center gap-2">
         <div className={cn("w-8 h-8 rounded-lg grid place-items-center",
-          b.status === "active" ? "bg-brand-500/10 text-brand-400" : "bg-white/5 text-ink-muted"
+          b.status === "active" ? "bg-brand-500/10 text-brand-ink" : "bg-ink/5 text-ink-muted"
         )}>
           <CreditCard className="w-4 h-4" />
         </div>
@@ -375,8 +375,8 @@ function BadgeGrid({ badges, onEdit, onAssoc, onSuspend, onReactivate, onRevoke 
                className="rounded-2xl border border-surface-border bg-surface-card/60 p-4 hover:border-brand-500/40 transition">
             <div className="flex items-start justify-between mb-3">
               <div className={cn("w-10 h-10 rounded-xl grid place-items-center",
-                active ? "bg-brand-500/10 text-brand-400" :
-                b.status === "revoked" ? "bg-danger/10 text-danger" : "bg-white/5 text-ink-muted"
+                active ? "bg-brand-500/10 text-brand-ink" :
+                b.status === "revoked" ? "bg-danger/10 text-danger" : "bg-ink/5 text-ink-muted"
               )}>
                 <CreditCard className="w-5 h-5" />
               </div>
@@ -811,7 +811,7 @@ function BadgeEnrollModal({ open, onClose }: { open: boolean; onClose: () => voi
                     enrollMode === "manual"
                       ? "border-brand-500 bg-brand-500/5"
                       : "border-surface-border hover:bg-surface-soft")}>
-            <Edit3 className="w-4 h-4 mx-auto mb-1 text-brand-400" />
+            <Edit3 className="w-4 h-4 mx-auto mb-1 text-brand-ink" />
             Saisie manuelle
           </button>
           <button onClick={() => setEnrollMode("live")}

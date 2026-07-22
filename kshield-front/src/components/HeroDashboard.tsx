@@ -78,7 +78,7 @@ function NotificationsHero({
   const critical = notifications.filter((n) => n.level === "danger").length;
 
   return (
-    <div className="mb-6 rounded-3xl bg-ink text-white p-6 md:p-8 relative overflow-hidden">
+    <div className="mb-6 rounded-3xl bg-obsidian text-white p-6 md:p-8 relative overflow-hidden border border-white/10 shadow-dappr">
       {/* Décoration : gradient subtil en arrière-plan */}
       <div className="absolute inset-0 opacity-30 pointer-events-none">
         <div className="absolute -top-20 -right-20 w-64 h-64 rounded-full bg-danger/20 blur-3xl" />
@@ -202,7 +202,7 @@ function StatsHero({
 
   return (
     // Style Dappr : hero noir profond comme la sidebar
-    <div className="mb-6 rounded-3xl bg-ink text-white p-6 md:p-8 relative overflow-hidden">
+    <div className="mb-6 rounded-3xl bg-obsidian text-white p-6 md:p-8 relative overflow-hidden border border-white/10 shadow-dappr">
       {/* Décoration : gradients subtils orange/bleu comme la sidebar */}
       <div className="absolute inset-0 opacity-40 pointer-events-none">
         <div className="absolute -top-20 -right-20 w-72 h-72 rounded-full bg-brand-500/15 blur-3xl" />

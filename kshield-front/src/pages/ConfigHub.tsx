@@ -111,11 +111,11 @@ export function ConfigHubPage() {
                   to={item.to}
                   className="group flex items-start gap-3 p-4 rounded-xl border border-surface-border bg-surface-card/50 hover:border-brand-500/40 hover:bg-surface-card transition-all"
                 >
-                  <div className="w-10 h-10 rounded-lg bg-brand-500/10 text-brand-400 grid place-items-center shrink-0 group-hover:bg-brand-500/20 transition">
+                  <div className="w-10 h-10 rounded-lg bg-brand-500/10 text-brand-ink grid place-items-center shrink-0 group-hover:bg-brand-500/20 transition">
                     <item.icon className="w-5 h-5" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="text-sm font-semibold text-ink group-hover:text-brand-400 transition">
+                    <div className="text-sm font-semibold text-ink group-hover:text-brand-ink transition">
                       {item.label}
                     </div>
                     <div className="text-xs text-ink-muted mt-0.5">{item.desc}</div>

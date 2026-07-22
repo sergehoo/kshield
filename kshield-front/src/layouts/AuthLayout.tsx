@@ -12,10 +12,10 @@ export function AuthLayout() {
       {/* Hero */}
       <aside className="hidden lg:flex relative flex-col justify-between p-12 bg-gradient-to-br from-brand-600/20 via-surface to-info/10">
         <div className="flex items-center gap-2.5">
-          <ShieldCheck className="w-8 h-8 text-brand-500" />
+          <ShieldCheck className="w-8 h-8 text-brand-ink" />
           <div>
             <div className="text-sm font-semibold text-ink">KAYDAN</div>
-            <div className="text-xs text-brand-500 tracking-widest font-medium">
+            <div className="text-xs text-brand-ink tracking-widest font-medium">
               SHIELD
             </div>
           </div>

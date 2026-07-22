@@ -79,10 +79,10 @@ export function KioskPage() {
       {/* Header géant */}
       <header className="flex items-center justify-between px-8 py-6 border-b border-surface-border">
         <div className="flex items-center gap-4">
-          <ShieldCheck className="w-14 h-14 text-brand-500" />
+          <ShieldCheck className="w-14 h-14 text-brand-ink" />
           <div>
             <div className="text-2xl font-black text-ink tracking-tight">
-              KAYDAN <span className="text-brand-500">SHIELD</span>
+              KAYDAN <span className="text-brand-ink">SHIELD</span>
             </div>
             <div className="text-sm text-ink-muted">Cockpit temps réel</div>
           </div>
@@ -163,7 +163,7 @@ export function KioskPage() {
         <div className="h-full rounded-2xl border border-surface-border bg-surface-card/50 flex flex-col overflow-hidden">
           <div className="flex items-center justify-between px-6 py-4 border-b border-surface-border">
             <h2 className="text-xl font-bold text-ink flex items-center gap-3">
-              <Activity className="w-6 h-6 text-brand-500" />
+              <Activity className="w-6 h-6 text-brand-ink" />
               Événements en direct
             </h2>
             <LivePulse label="temps réel · 3s" />
@@ -195,7 +195,7 @@ function KioskStat({
   hint?: string;
 }) {
   const accentClass = {
-    brand: "bg-brand-500/10 text-brand-400 border-brand-500/30",
+    brand: "bg-brand-500/10 text-brand-ink border-brand-500/30",
     ok:    "bg-ok/10 text-ok border-ok/30",
     warn:  "bg-warn/10 text-warn border-warn/30",
     danger:"bg-danger/10 text-danger border-danger/30",

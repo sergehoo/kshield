@@ -170,7 +170,7 @@ export function Sidebar({ open, onClose }: { open?: boolean; onClose?: () => voi
         className={cn(
           "fixed lg:sticky top-3 lg:top-3 z-40 shrink-0 flex flex-col",
           // Style Dappr : sidebar flottante noire arrondie
-          "bg-ink text-white rounded-3xl m-3 h-[calc(100vh-1.5rem)]",
+          "bg-obsidian text-white border border-white/10 rounded-3xl m-3 h-[calc(100vh-1.5rem)] shadow-dappr",
           "transition-all duration-200 ease-out",
           width,
           open ? "translate-x-0" : "-translate-x-full lg:translate-x-0",
@@ -231,7 +231,7 @@ export function Sidebar({ open, onClose }: { open?: boolean; onClose?: () => voi
                             "flex items-center rounded-xl transition group",
                             collapsed ? "justify-center p-2.5" : "gap-3 px-3 py-2",
                             isActive
-                              ? "bg-white text-ink font-semibold shadow-sm"
+                              ? "bg-white text-slate-950 font-semibold shadow-sm"
                               : "text-white/75 hover:text-white hover:bg-white/10",
                           )
                         }

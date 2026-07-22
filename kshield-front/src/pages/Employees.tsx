@@ -186,7 +186,7 @@ export function EmployeesPage() {
           {e.photo ? (
             <img src={e.photo} alt="" className="w-9 h-9 rounded-full object-cover border border-surface-border" />
           ) : (
-            <div className="w-9 h-9 rounded-full bg-brand-500/20 text-brand-400 grid place-items-center text-xs font-semibold">
+            <div className="w-9 h-9 rounded-full bg-brand-500/20 text-brand-ink grid place-items-center text-xs font-semibold">
               {initials(`${e.first_name} ${e.last_name}`)}
             </div>
           )}

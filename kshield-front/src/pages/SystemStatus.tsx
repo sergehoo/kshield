@@ -85,7 +85,7 @@ export function SystemStatusPage() {
           className="lg:col-span-2"
           title={
             <span className="flex items-center gap-2">
-              <HeartPulse className="w-4 h-4 text-brand-500" /> Heartbeats terminaux
+              <HeartPulse className="w-4 h-4 text-brand-ink" /> Heartbeats terminaux
             </span>
           }
           subtitle={

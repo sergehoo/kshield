@@ -243,12 +243,12 @@ export function AIPage() {
                       s.category === "analyze" ? "bg-info/10 text-info" :
                       s.category === "create"  ? "bg-ok/10 text-ok" :
                       s.category === "action"  ? "bg-warn/10 text-warn" :
-                      "bg-brand-500/10 text-brand-400",
+                      "bg-brand-500/10 text-brand-ink",
                     )}>
                       <s.icon className="w-3.5 h-3.5" />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="text-xs font-medium text-ink group-hover:text-brand-400 truncate">
+                      <div className="text-xs font-medium text-ink group-hover:text-brand-ink truncate">
                         {s.label}
                       </div>
                     </div>
@@ -285,7 +285,7 @@ export function AIPage() {
       <Card padded={false} className="flex-1 flex flex-col min-w-0">
         {/* Header chat */}
         <div className="flex items-center gap-3 px-5 py-3 border-b border-surface-border">
-          <div className="w-9 h-9 rounded-xl bg-brand-500/10 text-brand-400 grid place-items-center">
+          <div className="w-9 h-9 rounded-xl bg-brand-500/10 text-brand-ink grid place-items-center">
             <Sparkles className="w-5 h-5" />
           </div>
           <div className="flex-1 min-w-0">
@@ -420,7 +420,7 @@ function WelcomeScreen({ onPick }: { onPick: (prompt: string) => void }) {
 
   return (
     <div className="h-full flex flex-col items-center justify-center gap-4 text-center py-8">
-      <div className="w-16 h-16 rounded-2xl bg-brand-500/10 text-brand-400 grid place-items-center">
+      <div className="w-16 h-16 rounded-2xl bg-brand-500/10 text-brand-ink grid place-items-center">
         <Wand2 className="w-8 h-8" />
       </div>
       <div>
@@ -452,7 +452,7 @@ function MessageBubble({ msg }: { msg: ChatMsg }) {
     <div className={cn("flex gap-3", isUser ? "flex-row-reverse" : "flex-row")}>
       <div className={cn(
         "w-8 h-8 rounded-lg grid place-items-center shrink-0",
-        isUser ? "bg-info/10 text-info" : "bg-brand-500/10 text-brand-400",
+        isUser ? "bg-info/10 text-info" : "bg-brand-500/10 text-brand-ink",
       )}>
         {isUser ? <UserIcon className="w-4 h-4" /> : <Sparkles className="w-4 h-4" />}
       </div>
@@ -469,8 +469,8 @@ function MessageBubble({ msg }: { msg: ChatMsg }) {
             {msg.tool_result.map((t: any, i: number) => (
               <div key={i} className="text-[11px] text-ink-soft bg-surface p-2 rounded border border-surface-border">
                 <div className="flex items-center gap-1.5 mb-1">
-                  <Zap className="w-3 h-3 text-brand-500" />
-                  <code className="font-mono text-brand-400">{t.name || t.tool_name}</code>
+                  <Zap className="w-3 h-3 text-brand-ink" />
+                  <code className="font-mono text-brand-ink">{t.name || t.tool_name}</code>
                 </div>
                 {t.result && (
                   <pre className="text-[10px] overflow-x-auto text-ink-muted">
@@ -490,7 +490,7 @@ function MessageBubble({ msg }: { msg: ChatMsg }) {
 function ThinkingBubble() {
   return (
     <div className="flex gap-3">
-      <div className="w-8 h-8 rounded-lg bg-brand-500/10 text-brand-400 grid place-items-center">
+      <div className="w-8 h-8 rounded-lg bg-brand-500/10 text-brand-ink grid place-items-center">
         <Sparkles className="w-4 h-4 animate-pulse" />
       </div>
       <div className="bg-surface-soft/60 border border-surface-border rounded-2xl px-4 py-3">
@@ -519,7 +519,7 @@ function SuggestionChip({ onClick, text, icon }: { onClick: () => void; text: st
       onClick={onClick}
       className="w-full text-left flex items-center gap-2 p-2 rounded-lg bg-surface-soft/40 hover:bg-surface-soft border border-transparent hover:border-brand-500/40 transition"
     >
-      <span className="text-brand-500">{icon}</span>
+      <span className="text-brand-ink">{icon}</span>
       <span className="text-ink">{text}</span>
     </button>
   );

@@ -79,7 +79,7 @@ export function UsersPage() {
           {u.photo ? (
             <img src={u.photo} alt="" className="w-8 h-8 rounded-full object-cover" />
           ) : (
-            <div className="w-8 h-8 rounded-full bg-brand-500/20 text-brand-400 grid place-items-center text-xs font-semibold">
+            <div className="w-8 h-8 rounded-full bg-brand-500/20 text-brand-ink grid place-items-center text-xs font-semibold">
               {initials(u.full_name || u.email)}
             </div>
           )}

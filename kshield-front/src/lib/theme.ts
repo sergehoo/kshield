@@ -35,13 +35,13 @@ export function applyTheme(mode: ThemeMode) {
   if (typeof document === "undefined") return;
   const resolved = resolveTheme(mode);
   const html = document.documentElement;
-  if (resolved === "dark") {
-    html.classList.add("dark");
-    html.style.colorScheme = "dark";
-  } else {
-    html.classList.remove("dark");
-    html.style.colorScheme = "light";
-  }
+  html.classList.toggle("dark", resolved === "dark");
+  html.classList.toggle("light", resolved === "light");
+  html.dataset.theme = resolved;
+  html.style.colorScheme = resolved;
+  document
+    .querySelector('meta[name="theme-color"]')
+    ?.setAttribute("content", resolved === "dark" ? "#0a0e14" : "#f6f8fb");
 }
 
 export const useThemeStore = create<ThemeState>()(

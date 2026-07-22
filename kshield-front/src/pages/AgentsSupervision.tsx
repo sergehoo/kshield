@@ -90,7 +90,7 @@ export function AgentsSupervisionPage() {
         actions={
           <button
             onClick={() => refetch()}
-            className="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium bg-ink text-white hover:bg-ink/85"
+            className="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium bg-ink text-surface-card hover:bg-ink/85"
           >
             <RefreshCcw size={16} /> Rafraîchir
           </button>
@@ -126,7 +126,7 @@ export function AgentsSupervisionPage() {
                 className={cn(
                   "px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
                   stateFilter === s
-                    ? "bg-ink text-white"
+                    ? "bg-ink text-surface-card"
                     : "bg-ink/5 text-ink hover:bg-ink/10",
                 )}
               >
@@ -139,7 +139,7 @@ export function AgentsSupervisionPage() {
             <select
               value={typeFilter}
               onChange={(e) => setTypeFilter(e.target.value)}
-              className="rounded-xl border border-surface-border bg-white px-3 py-2 text-sm text-ink"
+              className="rounded-xl border border-surface-border bg-surface-card px-3 py-2 text-sm text-ink"
             >
               <option value="all">Tous les types</option>
               {types.results.map((t) => (

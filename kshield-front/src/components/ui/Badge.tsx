@@ -8,8 +8,8 @@ const toneMap: Record<Tone, string> = {
   warn:   "bg-warn/10 text-warn border-warn/20",
   danger: "bg-danger/10 text-danger border-danger/20",
   info:   "bg-info/10 text-info border-info/20",
-  muted:  "bg-white/5 text-ink-muted border-white/10",
-  brand:  "bg-brand-500/10 text-brand-400 border-brand-500/20",
+  muted:  "bg-ink/5 text-ink-muted border-surface-border",
+  brand:  "bg-brand-500/10 text-brand-ink border-brand-500/20",
 };
 
 export function Badge({

@@ -91,7 +91,7 @@ export function MarketplacePage() {
               </div>
               {p.verified && (
                 <span title="Plugin vérifié Kaydan">
-                  <ShieldCheck className="w-4 h-4 text-brand-500" />
+                  <ShieldCheck className="w-4 h-4 text-brand-ink" />
                 </span>
               )}
             </div>

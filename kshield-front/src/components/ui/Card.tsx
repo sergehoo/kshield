@@ -27,8 +27,8 @@ export function Card({
     <section
       className={cn(
         // Style Dappr : rounded-3xl, fond gris uni, pas de bordure, ombre légère
-        "rounded-3xl shadow-dappr transition-colors",
-        dark ? "bg-ink text-white" : "bg-surface-card",
+        "rounded-3xl border shadow-dappr transition-colors",
+        dark ? "border-white/10 bg-obsidian text-white" : "border-surface-border/60 bg-surface-card",
         className,
       )}
       {...rest}

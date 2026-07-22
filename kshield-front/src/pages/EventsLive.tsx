@@ -327,7 +327,7 @@ export default function EventsLivePage() {
             className={cn(
               "px-3 py-1.5 rounded-xl text-xs font-medium flex items-center gap-1.5 transition",
               viewMode === m.id
-                ? "bg-ink text-white"
+                ? "bg-ink text-surface-card"
                 : "bg-surface-soft text-ink-muted hover:text-ink",
             )}
           >
@@ -605,10 +605,10 @@ function WallView({ events, onSelect }: {
             "rounded-2xl p-3 min-h-[100px] text-left transition",
             "hover:brightness-110",
             e.severity === "critical" || e.severity === "emergency"
-              ? "bg-danger text-white"
+              ? "bg-danger text-on-danger"
               : e.severity === "warning"
-                ? "bg-warning text-white"
-                : "bg-ink text-white",
+                ? "bg-warning text-on-warn"
+                : "bg-obsidian text-white",
           )}
         >
           <div className="text-[10px] uppercase tracking-widest opacity-70">
@@ -722,7 +722,7 @@ function EventDetailPanel({
           <summary className="p-4 cursor-pointer text-xs font-semibold text-ink-muted uppercase tracking-widest">
             Payload technique
           </summary>
-          <pre className="p-4 bg-ink text-white text-[10px] font-mono overflow-auto max-h-64">
+          <pre className="p-4 bg-obsidian text-white text-[10px] font-mono overflow-auto max-h-64">
             {JSON.stringify(full.payload, null, 2)}
           </pre>
         </details>

@@ -163,7 +163,7 @@ export function MaintenancePage() {
                   </div>
                   <div className="text-xs text-ink-muted shrink-0 hidden md:flex flex-col items-end">
                     {t.created_by_engine && (
-                      <span className="text-[10px] text-brand-500">
+                      <span className="text-[10px] text-brand-ink">
                         auto · conf {Math.round(t.confidence * 100)}%
                       </span>
                     )}

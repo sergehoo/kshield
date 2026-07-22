@@ -52,7 +52,7 @@ export function TopologyPage() {
       {/* Tenant root */}
       <Card padded>
         <div className="flex items-center gap-3 mb-4">
-          <div className="w-11 h-11 rounded-lg bg-brand-500/10 text-brand-500 grid place-items-center">
+          <div className="w-11 h-11 rounded-lg bg-brand-500/10 text-brand-ink grid place-items-center">
             <Network className="w-5 h-5" />
           </div>
           <div>

@@ -22,7 +22,7 @@ import { cn } from "@/lib/cn";
 import { fmtRelative } from "@/lib/format";
 
 const VENDOR_META: Record<string, { label: string; icon: React.ReactNode; color: string }> = {
-  zkteco:    { label: "ZKTeco",     icon: <Fingerprint className="w-3.5 h-3.5" />, color: "text-brand-500" },
+  zkteco:    { label: "ZKTeco",     icon: <Fingerprint className="w-3.5 h-3.5" />, color: "text-brand-ink" },
   hikvision: { label: "Hikvision",  icon: <Camera      className="w-3.5 h-3.5" />, color: "text-red-500"   },
   suprema:   { label: "Suprema",    icon: <Fingerprint className="w-3.5 h-3.5" />, color: "text-blue-500"  },
   hid:       { label: "HID",        icon: <KeyRound    className="w-3.5 h-3.5" />, color: "text-purple-500" },
@@ -169,7 +169,7 @@ export default function FleetPage() {
                     <td className="py-2 px-2">
                       <Link
                         to={`/edge-gateway?gateway=${t.gateway_id}`}
-                        className="text-brand-600 hover:underline text-xs"
+                        className="text-brand-ink hover:underline text-xs"
                       >
                         {t.gateway_label}
                       </Link>

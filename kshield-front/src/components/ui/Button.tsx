@@ -16,12 +16,12 @@ type Props = ButtonHTMLAttributes<HTMLButtonElement> & {
 // Style Dappr : boutons noirs pleins, coins arrondis prononcés (rounded-xl)
 const variantMap: Record<Variant, string> = {
   primary:   "bg-brand-500 hover:bg-brand-600 text-white",
-  dark:      "bg-ink hover:bg-ink/85 text-white",
-  invert:    "bg-white hover:bg-white/90 text-ink",
+  dark:      "bg-ink hover:bg-ink/85 text-surface-card",
+  invert:    "bg-white hover:bg-white/90 text-slate-950",
   ghost:     "bg-transparent text-ink hover:bg-ink/5",
   secondary: "bg-surface-soft hover:bg-surface-soft/70 text-ink",
   outline:   "border-2 border-ink/10 text-ink hover:bg-ink/5",
-  danger:    "bg-danger/90 hover:bg-danger text-white",
+  danger:    "bg-danger/90 hover:bg-danger text-on-danger",
 };
 
 const sizeMap: Record<Size, string> = {

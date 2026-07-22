@@ -138,7 +138,7 @@ export function DashboardPage() {
           className="lg:col-span-2"
           title={
             <span className="flex items-center gap-2">
-              <Radar className="w-4 h-4 text-brand-500" /> Événements récents
+              <Radar className="w-4 h-4 text-brand-ink" /> Événements récents
             </span>
           }
           subtitle="Actualisé toutes les 8 secondes"
@@ -189,7 +189,7 @@ export function DashboardPage() {
           <div className="mt-3 flex justify-end">
             <Link
               to="/events"
-              className="text-xs text-brand-500 hover:text-brand-400 font-medium"
+              className="text-xs text-brand-ink hover:text-brand-ink font-medium"
             >
               Voir tous les événements →
             </Link>
@@ -204,17 +204,18 @@ export function DashboardPage() {
                 <AreaChart data={chartData} margin={{ top: 8, right: 8, bottom: 0, left: -18 }}>
                   <defs>
                     <linearGradient id="fillCount" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#f97316" stopOpacity={0.4} />
-                      <stop offset="100%" stopColor="#f97316" stopOpacity={0} />
+                      <stop offset="0%" stopColor="rgb(var(--c-brand-ink))" stopOpacity={0.38} />
+                      <stop offset="100%" stopColor="rgb(var(--c-brand-ink))" stopOpacity={0} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.1)" />
-                  <XAxis dataKey="hour" tick={{ fill: "#94a3b8", fontSize: 11 }} />
-                  <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgb(var(--c-surface-border))" strokeOpacity={0.65} />
+                  <XAxis dataKey="hour" tick={{ fill: "rgb(var(--c-ink-muted))", fontSize: 11 }} />
+                  <YAxis tick={{ fill: "rgb(var(--c-ink-muted))", fontSize: 11 }} />
                   <Tooltip
                     contentStyle={{
-                      background: "#0f1620",
-                      border: "1px solid rgba(148,163,184,0.14)",
+                      background: "rgb(var(--c-surface-card))",
+                      color: "rgb(var(--c-ink))",
+                      border: "1px solid rgb(var(--c-surface-border))",
                       borderRadius: 8,
                       fontSize: 12,
                     }}
@@ -222,7 +223,7 @@ export function DashboardPage() {
                   <Area
                     type="monotone"
                     dataKey="count"
-                    stroke="#f97316"
+                    stroke="rgb(var(--c-brand-ink))"
                     strokeWidth={2}
                     fill="url(#fillCount)"
                   />

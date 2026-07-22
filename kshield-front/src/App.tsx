@@ -17,14 +17,15 @@ export default function App() {
           position="top-right"
           toastOptions={{
             style: {
-              background: "#0f1620",
-              color: "#e5e7eb",
-              border: "1px solid rgba(148,163,184,0.14)",
+              background: "rgb(var(--c-surface-card))",
+              color: "rgb(var(--c-ink))",
+              border: "1px solid rgb(var(--c-surface-border))",
               fontSize: 13,
               borderRadius: 12,
+              boxShadow: "0 10px 30px rgb(0 0 0 / var(--shadow-strength))",
             },
-            success: { iconTheme: { primary: "#22c55e", secondary: "#0f1620" } },
-            error: { iconTheme: { primary: "#f87171", secondary: "#0f1620" } },
+            success: { iconTheme: { primary: "rgb(var(--c-ok))", secondary: "rgb(var(--c-surface-card))" } },
+            error: { iconTheme: { primary: "rgb(var(--c-danger))", secondary: "rgb(var(--c-surface-card))" } },
           }}
         />
       </QueryClientProvider>

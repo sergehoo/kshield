@@ -29,16 +29,17 @@
             mode === "dark" ||
             (mode === "system" &&
               window.matchMedia("(prefers-color-scheme: dark)").matches);
-          if (isDark) document.documentElement.classList.add("dark");
-          document.documentElement.style.colorScheme = isDark ? "dark" : "light";
+          var resolved = isDark ? "dark" : "light";
+          document.documentElement.classList.add(resolved);
+          document.documentElement.dataset.theme = resolved;
+          document.documentElement.style.colorScheme = resolved;
         } catch (e) {
           /* silent */
         }
       })();
     </script>
 
-    <meta name="theme-color" content="#0b0f14" media="(prefers-color-scheme: dark)" />
-    <meta name="theme-color" content="#fafafb" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#f6f8fb" />
     <title>KAYDAN SHIELD</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />

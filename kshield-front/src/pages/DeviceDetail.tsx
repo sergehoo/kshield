@@ -263,7 +263,7 @@ export function DeviceDetailPage() {
           <button key={t.key} onClick={() => setTab(t.key)}
                   className={cn("flex items-center gap-1.5 px-4 py-2 text-sm whitespace-nowrap",
                     tab === t.key
-                      ? "font-medium text-brand-500 border-b-2 border-brand-500 -mb-px"
+                      ? "font-medium text-brand-ink border-b-2 border-brand-500 -mb-px"
                       : "text-ink-muted hover:text-ink")}>
             <t.icon className="w-3.5 h-3.5" />
             {t.label}

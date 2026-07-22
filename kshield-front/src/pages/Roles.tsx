@@ -51,7 +51,7 @@ export function RolesPage() {
       header: "Rôle",
       render: (r) => (
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-brand-500/10 text-brand-400 grid place-items-center">
+          <div className="w-8 h-8 rounded-lg bg-brand-500/10 text-brand-ink grid place-items-center">
             <Shield className="w-4 h-4" />
           </div>
           <div>

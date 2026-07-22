@@ -191,10 +191,10 @@ export function DevicesPage() {
       return (
         <div className="flex items-center gap-2.5">
           <div className={cn("w-8 h-8 rounded-lg grid place-items-center shrink-0",
-            meta.color === "brand"  ? "bg-brand-500/10 text-brand-400" :
+            meta.color === "brand"  ? "bg-brand-500/10 text-brand-ink" :
             meta.color === "info"   ? "bg-info/10 text-info" :
             meta.color === "warn"   ? "bg-warn/10 text-warn" :
-            meta.color === "danger" ? "bg-danger/10 text-danger" : "bg-white/5 text-ink-muted"
+            meta.color === "danger" ? "bg-danger/10 text-danger" : "bg-ink/5 text-ink-muted"
           )}>
             <Icon className="w-4 h-4" />
           </div>
@@ -535,7 +535,7 @@ function GridView({ byType, onOpen }: { byType: [string, any[]][]; onOpen: (id: 
           <div key={type}>
             <div className="flex items-center gap-2 mb-2">
               <Icon className={cn("w-4 h-4",
-                meta.color === "brand" ? "text-brand-400" :
+                meta.color === "brand" ? "text-brand-ink" :
                 meta.color === "info"  ? "text-info" :
                 meta.color === "warn"  ? "text-warn" : "text-ink-muted"
               )} />
@@ -574,7 +574,7 @@ function SitesView({ bySite, onOpen }: { bySite: [string, any[]][]; onOpen: (id:
       {bySite.map(([site, list]) => (
         <div key={site} className="rounded-xl border border-surface-border p-4 bg-surface-card/40">
           <div className="flex items-center gap-2 mb-3">
-            <MapIcon className="w-4 h-4 text-brand-500" />
+            <MapIcon className="w-4 h-4 text-brand-ink" />
             <span className="text-sm font-semibold">{site}</span>
             <Badge tone="muted">{list.length} équipement{list.length > 1 ? "s" : ""}</Badge>
           </div>
@@ -609,7 +609,7 @@ function TopologyView({ devices, onOpen }: { devices: any[]; onOpen: (id: number
     <div className="p-4">
       <div className="flex items-center justify-center flex-wrap gap-6">
         <div className="rounded-2xl border border-brand-500/40 bg-brand-500/10 p-4 text-center">
-          <Server className="w-8 h-8 mx-auto text-brand-400" />
+          <Server className="w-8 h-8 mx-auto text-brand-ink" />
           <div className="mt-2 text-sm font-semibold">KAYDAN SHIELD Cloud</div>
           <div className="text-[10px] text-ink-soft">api.kaydanshield.com</div>
         </div>
@@ -781,7 +781,7 @@ function NetworkScanModal({ open, onClose }: { open: boolean; onClose: () => voi
                           <Badge tone="muted">Connu</Badge>
                         ) : (
                           <button onClick={() => adopt.mutate(r.ip)}
-                                  className="text-brand-500 hover:underline text-xs">
+                                  className="text-brand-ink hover:underline text-xs">
                             + Adopter
                           </button>
                         )}

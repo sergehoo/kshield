@@ -315,8 +315,8 @@ export function BadgeEnrollmentWizard({
           <li key={n} className="flex-1 flex items-center gap-2">
             <div className={cn(
               "w-8 h-8 rounded-2xl grid place-items-center text-sm font-semibold shrink-0",
-              n < step && "bg-ok text-white",
-              n === step && "bg-ink text-white",
+              n < step && "bg-ok text-on-ok",
+              n === step && "bg-ink text-surface-card",
               n > step && "bg-ink/5 text-ink-muted",
             )}>
               {n < step ? <CheckCircle2 size={14} /> : n}
@@ -463,7 +463,7 @@ function Step1({
               className={cn(
                 "rounded-2xl p-3 text-sm font-medium transition-colors border",
                 holderKind === k
-                  ? "bg-ink text-white border-ink"
+                  ? "bg-ink text-surface-card border-ink"
                   : "bg-surface-soft/40 text-ink border-transparent hover:border-ink/20",
               )}
             >
@@ -554,7 +554,7 @@ function Step2({
               className={cn(
                 "px-4 py-2 rounded-xl text-sm font-medium uppercase transition-colors",
                 tech === t
-                  ? "bg-ink text-white"
+                  ? "bg-ink text-surface-card"
                   : "bg-ink/5 text-ink hover:bg-ink/10",
               )}
             >
@@ -672,7 +672,7 @@ function Step3({
         <select
           value={siteId}
           onChange={(e) => { setSiteId(e.target.value ? Number(e.target.value) : ""); setZoneIds([]); }}
-          className="mt-1 w-full rounded-xl border border-surface-border bg-white px-3 py-2 text-sm"
+          className="mt-1 w-full rounded-xl border border-surface-border bg-surface-card px-3 py-2 text-sm text-ink"
         >
           <option value="">— choisir un site —</option>
           {sites.map((s: any) => (
@@ -688,7 +688,7 @@ function Step3({
         <select
           value={accessLevel}
           onChange={(e) => setAccessLevel(e.target.value as AccessLevel)}
-          className="mt-1 w-full rounded-xl border border-surface-border bg-white px-3 py-2 text-sm"
+          className="mt-1 w-full rounded-xl border border-surface-border bg-surface-card px-3 py-2 text-sm text-ink"
         >
           {(Object.keys(ACCESS_LEVEL_LABELS) as AccessLevel[]).map((k) => (
             <option key={k} value={k}>{ACCESS_LEVEL_LABELS[k]}</option>
@@ -713,8 +713,8 @@ function Step3({
               className={cn(
                 "px-2.5 py-1 rounded-lg text-xs font-medium transition-colors",
                 zoneIds.includes(z.id)
-                  ? "bg-ink text-white"
-                  : "bg-white text-ink hover:bg-ink/5",
+                  ? "bg-ink text-surface-card"
+                  : "bg-surface-card text-ink hover:bg-ink/5",
               )}
             >
               {z.name || z.label}
@@ -749,7 +749,7 @@ function Step3({
               className={cn(
                 "w-12 h-9 rounded-lg text-xs font-semibold transition-colors",
                 weekdays.includes(d.code)
-                  ? "bg-ink text-white"
+                  ? "bg-ink text-surface-card"
                   : "bg-ink/5 text-ink hover:bg-ink/10",
               )}
             >
@@ -804,7 +804,7 @@ function Step3({
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
           rows={2}
-          className="mt-1 w-full rounded-xl border border-surface-border bg-white px-3 py-2 text-sm"
+          className="mt-1 w-full rounded-xl border border-surface-border bg-surface-card px-3 py-2 text-sm text-ink"
         />
       </div>
     </div>
@@ -821,7 +821,7 @@ function Step4({
 }: any) {
   return (
     <div className="space-y-3">
-      <div className="rounded-3xl bg-ink text-white p-6">
+      <div className="rounded-3xl bg-obsidian text-white p-6 border border-white/10">
         <div className="text-xs uppercase text-white/60 tracking-wide">
           Attribution à confirmer
         </div>

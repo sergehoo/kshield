@@ -13,7 +13,7 @@ type Props = {
 };
 
 const accentMap = {
-  brand: "text-brand-400 bg-brand-500/10",
+  brand: "text-brand-ink bg-brand-500/10",
   info: "text-info bg-info/10",
   ok: "text-ok bg-ok/10",
   warn: "text-warn bg-warn/10",

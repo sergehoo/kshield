@@ -390,7 +390,7 @@ function ConfigsTab({ agentId, currentVersion }: { agentId: string; currentVersi
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             placeholder="Motif du changement, à quoi ça sert…"
-            className="mt-1 w-full rounded-xl border border-surface-border bg-white px-3 py-2 text-sm"
+            className="mt-1 w-full rounded-xl border border-surface-border bg-surface-card px-3 py-2 text-sm text-ink"
           />
         </div>
         {err && (
@@ -457,7 +457,7 @@ function LogsTab({ agentId }: { agentId: string }) {
             className={cn(
               "px-3 py-1.5 rounded-lg text-xs font-medium capitalize transition-colors",
               level === lvl
-                ? "bg-ink text-white"
+                ? "bg-ink text-surface-card"
                 : "bg-ink/5 text-ink hover:bg-ink/10",
             )}
           >
@@ -468,7 +468,7 @@ function LogsTab({ agentId }: { agentId: string }) {
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder="Rechercher dans les messages…"
-          className="ml-auto rounded-xl border border-surface-border bg-white px-3 py-2 text-sm min-w-[240px]"
+          className="ml-auto rounded-xl border border-surface-border bg-surface-card px-3 py-2 text-sm text-ink min-w-[240px]"
         />
       </div>
 
@@ -480,7 +480,7 @@ function LogsTab({ agentId }: { agentId: string }) {
           Aucun log pour ces filtres.
         </div>
       ) : (
-        <div className="rounded-2xl bg-ink text-white/90 p-4 font-mono text-xs max-h-[520px] overflow-y-auto">
+        <div className="rounded-2xl bg-obsidian text-white/90 p-4 font-mono text-xs max-h-[520px] overflow-y-auto border border-white/10">
           {rows.map((l) => (
             <div key={l.id} className="py-1 border-b border-white/5 last:border-0">
               <span className="text-white/40">{new Date(l.ts).toLocaleString("fr-FR")}</span>

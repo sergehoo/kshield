@@ -39,7 +39,7 @@ export function FirmwaresPage() {
             className={cn(
               "px-4 py-2 text-sm",
               tab === t.key
-                ? "font-medium text-brand-500 border-b-2 border-brand-500 -mb-px"
+                ? "font-medium text-brand-ink border-b-2 border-brand-500 -mb-px"
                 : "text-ink-muted hover:text-ink",
             )}
           >
@@ -67,7 +67,7 @@ function FirmwaresList() {
       header: "Version",
       render: (f) => (
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-brand-500/10 text-brand-400 grid place-items-center">
+          <div className="w-8 h-8 rounded-lg bg-brand-500/10 text-brand-ink grid place-items-center">
             <Package className="w-4 h-4" />
           </div>
           <div>

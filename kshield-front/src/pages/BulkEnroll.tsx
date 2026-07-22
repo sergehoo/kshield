@@ -168,7 +168,7 @@ export function BulkEnrollPage() {
                 onClick={() => setKind("helmets")}
                 className={cn(
                   "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium",
-                  kind === "helmets" ? "bg-warn text-white" : "text-ink-muted",
+                  kind === "helmets" ? "bg-warn text-on-warn" : "text-ink-muted",
                 )}
               >
                 <HardHat className="w-3.5 h-3.5" /> Casques
@@ -333,7 +333,7 @@ export function BulkEnrollPage() {
                 )}
               >
                 {kind === "badges" ? (
-                  <CreditCard className="w-4 h-4 text-brand-400 shrink-0" />
+                  <CreditCard className="w-4 h-4 text-brand-ink shrink-0" />
                 ) : (
                   <HardHat className="w-4 h-4 text-warn shrink-0" />
                 )}
@@ -397,7 +397,7 @@ function ModeCard({
         <div
           className={cn(
             "w-9 h-9 rounded-xl grid place-items-center",
-            active ? "bg-brand-500/20 text-brand-400" : "bg-surface-soft text-ink-muted",
+            active ? "bg-brand-500/20 text-brand-ink" : "bg-surface-soft text-ink-muted",
           )}
         >
           {icon}

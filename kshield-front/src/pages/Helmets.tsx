@@ -544,7 +544,7 @@ function HelmetEnrollModal({ open, onClose }: { open: boolean; onClose: () => vo
           <button onClick={() => setEnrollMode("manual")}
                   className={cn("flex-1 p-3 rounded-lg border text-sm",
                     enrollMode === "manual" ? "border-brand-500 bg-brand-500/5" : "border-surface-border")}>
-            <Edit3 className="w-4 h-4 mx-auto mb-1 text-brand-400" />
+            <Edit3 className="w-4 h-4 mx-auto mb-1 text-brand-ink" />
             Saisie manuelle
           </button>
           <button onClick={() => setEnrollMode("live")}

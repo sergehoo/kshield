@@ -112,11 +112,11 @@ export function SitesMapPage() {
           marker.bindPopup(`
             <div style="min-width:180px">
               <div style="font-weight:600;font-size:13px">${s.name}</div>
-              ${s.address ? `<div style="color:#666;font-size:11px;margin-top:2px">${s.address}</div>` : ""}
+              ${s.address ? `<div style="color:rgb(var(--c-ink-muted));font-size:11px;margin-top:2px">${s.address}</div>` : ""}
               <div style="margin-top:6px;font-size:11px">
                 🖥️ ${deviceCount} équipement(s)
               </div>
-              <a href="/sites/${s.id}" style="display:inline-block;margin-top:6px;color:#f97316;font-size:11px;font-weight:600">
+              <a href="/sites/${s.id}" style="display:inline-block;margin-top:6px;color:rgb(var(--c-brand-ink));font-size:11px;font-weight:600">
                 Ouvrir la fiche →
               </a>
             </div>
@@ -171,7 +171,7 @@ export function SitesMapPage() {
             <Card
               title={
                 <span className="flex items-center gap-2">
-                  <MapPin className="w-4 h-4 text-brand-500" /> {selected.name}
+                  <MapPin className="w-4 h-4 text-brand-ink" /> {selected.name}
                 </span>
               }
               actions={
@@ -217,7 +217,7 @@ export function SitesMapPage() {
                   <li key={s.id} className="px-4 py-2 flex items-center justify-between">
                     <Link
                       to={`/sites/${s.id}`}
-                      className="text-xs text-ink hover:text-brand-400 truncate"
+                      className="text-xs text-ink hover:text-brand-ink truncate"
                     >
                       {s.name}
                     </Link>
@@ -246,7 +246,7 @@ export function SitesMapPage() {
           color: rgb(var(--c-ink));
         }
         .leaflet-popup-tip { background: rgb(var(--c-surface-card)); }
-        .dark .leaflet-container { background: #1a1f2e; }
+        .leaflet-container { background: rgb(var(--c-surface-soft)); }
         .dark .leaflet-tile { filter: brightness(0.9) contrast(1.05) hue-rotate(180deg) invert(0.85); }
       `}</style>
     </div>

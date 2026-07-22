@@ -20,29 +20,47 @@
    * cards sans bordure avec coins ultra-arrondis.
    * ───────────────────────────────────────────────────────── */
 
-  /* ── Light mode (défaut Dappr — fond blanc pur) ────────── */
+  /* ── Light mode ─────────────────────────────────────────── */
   :root {
-    --c-surface:        255 255 255;   /* #FFFFFF blanc pur (fond général) */
-    --c-surface-soft:   240 244 250;   /* #F0F4FA gris bleuté clair pour KPI */
-    --c-surface-card:   255 255 255;   /* #FFFFFF blanc pur (container principal) */
-    --c-surface-border: 226 232 240;   /* #E2E8F0 fallback bordures */
-    --c-ink:            10 15 25;      /* #0A0F19 noir profond */
-    --c-ink-muted:      82 96 116;     /* #526074 gris moyen */
-    --c-ink-soft:       142 158 178;   /* #8E9EB2 gris pâle */
+    --c-surface:        246 248 251;
+    --c-surface-soft:   238 242 247;
+    --c-surface-card:   255 255 255;
+    --c-surface-border: 215 222 232;
+    --c-ink:            15 23 42;
+    --c-ink-muted:      71 85 105;
+    --c-ink-soft:       100 116 139;
+    --c-brand-ink:      194 65 12;
+    --c-ok:             21 128 61;
+    --c-on-ok:          255 255 255;
+    --c-warn:           180 83 9;
+    --c-on-warn:        255 255 255;
+    --c-danger:         220 38 38;
+    --c-on-danger:      255 255 255;
+    --c-info:           3 105 161;
+    --c-on-info:        255 255 255;
     --shadow-strength:  0.06;
     color-scheme: light;
   }
 
-  /* ── Dark mode (adapté) ────────────────────────────────── */
+  /* ── Dark mode ──────────────────────────────────────────── */
   .dark {
-    --c-surface:        14 18 25;      /* #0E1219 fond ultra-dark */
-    --c-surface-soft:   22 28 40;      /* #161C28 KPI cards */
-    --c-surface-card:   20 26 36;      /* #141A24 card fond */
-    --c-surface-border: 32 42 58;      /* #202A3A */
-    --c-ink:            240 243 248;   /* #F0F3F8 blanc doux */
-    --c-ink-muted:      160 174 194;   /* #A0AEC2 */
-    --c-ink-soft:       100 116 139;   /* #64748B */
-    --shadow-strength:  0.30;
+    --c-surface:        10 14 20;
+    --c-surface-soft:   25 33 45;
+    --c-surface-card:   17 23 32;
+    --c-surface-border: 47 58 74;
+    --c-ink:            241 245 249;
+    --c-ink-muted:      166 178 196;
+    --c-ink-soft:       115 130 153;
+    --c-brand-ink:      251 146 60;
+    --c-ok:             74 222 128;
+    --c-on-ok:          10 14 20;
+    --c-warn:           251 191 36;
+    --c-on-warn:        10 14 20;
+    --c-danger:         248 113 113;
+    --c-on-danger:      10 14 20;
+    --c-info:           56 189 248;
+    --c-on-info:        10 14 20;
+    --shadow-strength:  0.34;
     color-scheme: dark;
   }
 
@@ -57,6 +75,32 @@
     color: rgb(var(--c-ink));
     background: rgb(var(--c-surface));
     transition: background-color 0.2s ease, color 0.2s ease;
+  }
+
+  input,
+  select,
+  textarea {
+    color: rgb(var(--c-ink));
+    background-color: rgb(var(--c-surface-card));
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: rgb(var(--c-ink-soft));
+  }
+
+  option {
+    color: rgb(var(--c-ink));
+    background: rgb(var(--c-surface-card));
+  }
+
+  input[type="checkbox"],
+  input[type="radio"] {
+    accent-color: #f97316;
+  }
+
+  :focus-visible {
+    outline-color: rgb(var(--c-brand-ink));
   }
 
   /* Style Dappr : pas d'aura, fond gris uni pour lisibilité maximale */
@@ -87,13 +131,13 @@
 @layer components {
   /* Card : rounded-3xl, fond gris uni sans bordure */
   .card {
-    @apply rounded-3xl bg-surface-card;
+    @apply rounded-3xl border border-surface-border/60 bg-surface-card;
   }
   .card-dark {
-    @apply rounded-3xl bg-ink text-white;
+    @apply rounded-3xl bg-obsidian text-white;
   }
   .card-elevated {
-    @apply rounded-3xl bg-surface-card shadow-[0_2px_12px_rgb(0_0_0_/_0.04)];
+    @apply rounded-3xl border border-surface-border/60 bg-surface-card shadow-dappr;
   }
 
   /* Boutons — coins arrondis prononcés, noir ou blanc plein */
@@ -102,7 +146,7 @@
            transition-all disabled:opacity-50 disabled:cursor-not-allowed;
   }
   .btn-primary {
-    @apply btn bg-ink text-white hover:bg-ink/90;
+    @apply btn bg-ink text-surface-card hover:bg-ink/85;
   }
   .btn-brand {
     @apply btn bg-brand-500 hover:bg-brand-600 text-white shadow-lg shadow-brand-500/20;
@@ -111,16 +155,17 @@
     @apply btn bg-surface-soft text-ink hover:bg-surface-soft/70;
   }
   .btn-danger {
-    @apply btn bg-danger/90 hover:bg-danger text-white;
+    @apply btn bg-danger/90 hover:bg-danger text-on-danger;
   }
   /* Bouton blanc plein (usage sur card noire) */
   .btn-invert {
-    @apply btn bg-white text-ink hover:bg-white/90;
+    @apply btn bg-white text-slate-950 hover:bg-white/90;
   }
 
   .field {
-    @apply w-full px-4 py-3 rounded-2xl bg-surface-soft
-           text-ink placeholder-ink-soft focus:outline-none focus:ring-2 focus:ring-ink/20
+    @apply w-full px-4 py-3 rounded-2xl border border-surface-border/70 bg-surface-soft
+           text-ink placeholder-ink-soft focus:outline-none focus:ring-2 focus:ring-brand-500/30
+           focus:border-brand-500/50 focus:bg-surface-card
            transition-all;
   }
 
@@ -152,7 +197,7 @@
     @apply relative rounded-3xl bg-surface-soft/60 p-5 min-h-[140px] flex flex-col justify-between;
   }
   .kpi-icon {
-    @apply w-10 h-10 rounded-2xl bg-ink text-white grid place-items-center;
+    @apply w-10 h-10 rounded-2xl bg-ink text-surface-card grid place-items-center;
   }
   .kpi-value {
     @apply text-3xl md:text-4xl font-bold text-ink tracking-tight;

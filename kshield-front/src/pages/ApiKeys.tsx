@@ -66,7 +66,7 @@ export function ApiKeysPage() {
       header: "Nom",
       render: (k) => (
         <div className="flex items-center gap-2.5">
-          <Key className="w-4 h-4 text-brand-400" />
+          <Key className="w-4 h-4 text-brand-ink" />
           <div>
             <div className="text-sm font-medium text-ink">{k.name}</div>
             <code className="text-xs text-ink-soft font-mono">{k.public_id}</code>
